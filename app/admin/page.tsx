@@ -233,7 +233,7 @@ export default function AdminPage() {
                   <Input label="Provider" placeholder="OpenAI" value={newModel.provider} onChange={e => setNewModel(p => ({ ...p, provider: e.target.value }))} />
                   <div>
                     <label className="block text-xs font-medium text-gray-400 mb-1.5">Tier</label>
-                    <select value={newModel.tier} onChange={e => setNewModel(p => ({ ...p, tier: e.target.value as PublicModel['tier'] }))}
+                    <select value={newModel.tier} onChange={e => { const t = e.target.value as PublicModel['tier']; setNewModel(p => ({ ...p, tier: t })); }}
                       className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50">
                       <option value="premium">Premium</option><option value="fast">Fast</option><option value="coding">Coding</option>
                     </select>
