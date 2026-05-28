@@ -1,53 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
-import {
-  Settings,
-  Key,
-  Brain,
-  Save,
-  Eye,
-  EyeOff,
-  CheckCircle,
-  AlertCircle,
-  RefreshCw,
-  Sliders,
-  FileText,
-  Shield,
-  Cpu,
-  Activity,
-  Users,
-  BarChart2,
-  Loader2,
-} from 'lucide-react';
+import { Key, Brain, Save, Eye, EyeOff, CheckCircle, AlertCircle, Sliders, FileText, Plus, Trash2, Edit2, X, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
 import toast from 'react-hot-toast';
+import type { PublicModel } from '@/app/api/models/route';
 
-const AVAILABLE_MODELS = [
-  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', tier: 'premium' },
-  { id: 'anthropic/claude-3-haiku', name: 'Claude 3 Haiku', provider: 'Anthropic', tier: 'fast' },
-  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', tier: 'premium' },
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', tier: 'fast' },
-  { id: 'meta-llama/llama-3.1-70b-instruct', name: 'Llama 3.1 70B', provider: 'Meta', tier: 'fast' },
-  { id: 'google/gemini-flash-1.5', name: 'Gemini 1.5 Flash', provider: 'Google', tier: 'fast' },
-  { id: 'mistralai/mistral-nemo', name: 'Mistral Nemo', provider: 'Mistral', tier: 'fast' },
-  { id: 'deepseek/deepseek-coder', name: 'DeepSeek Coder', provider: 'DeepSeek', tier: 'coding' },
+const DEFAULT_MODELS: PublicModel[] = [
+  { id: 'anthropic/claude-sonnet-4-5', name: 'Claude Sonnet 4.5', provider: 'Anthropic', tier: 'premium', context_length: 200000, description: 'Latest Claude', enabled: true },
+  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', tier: 'premium', context_length: 200000, description: 'Powerful & fast', enabled: true },
+  { id: 'anthropic/claude-3-haiku', name: 'Claude 3 Haiku', provider: 'Anthropic', tier: 'fast', context_length: 200000, description: 'Fastest Claude', enabled: true },
+  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', tier: 'premium', context_length: 128000, description: 'OpenAI flagship', enabled: true },
+  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', tier: 'fast', context_length: 128000, description: 'Fast & affordable', enabled: true },
+  { id: 'google/gemini-flash-1.5', name: 'Gemini 1.5 Flash', provider: 'Google', tier: 'fast', context_length: 1000000, description: '1M context', enabled: true },
+  { id: 'meta-llama/llama-3.1-70b-instruct', name: 'Llama 3.1 70B', provider: 'Meta', tier: 'fast', context_length: 128000, description: 'Open source', enabled: true },
+  { id: 'deepseek/deepseek-coder', name: 'DeepSeek Coder', provider: 'DeepSeek', tier: 'coding', context_length: 16000, description: 'Code specialist', enabled: true },
+  { id: 'mistralai/mistral-large', name: 'Mistral Large', provider: 'Mistral', tier: 'premium', context_length: 32000, description: 'European AI', enabled: true },
 ];
 
-const DEFAULT_SYSTEM_PROMPT = `You are GlowIDE AI, an expert coding assistant specialized in Web3 development, smart contracts, and blockchain technology. You help developers write production-grade code, debug issues, deploy contracts to Arc Testnet, and build Web3 applications.
-
-Your expertise includes:
-- Solidity smart contract development (ERC20, ERC721, DeFi protocols)
-- JavaScript/TypeScript, React, Next.js development
-- Arc Testnet integration and USDC gas token usage
-- Circle assets (USDC, EURC, cirBTC) and CCTP
-- Security best practices and gas optimization
-
-Always write clean, well-commented, production-ready code. When writing Solidity, prioritize security and gas efficiency.`;
+const DEFAULT_SYSTEM_PROMPT = `You are GlowIDE AI, an expert coding assistant specialized in Web3 development, smart contracts, and full-stack engineering. You write production-grade, type-safe code with clear explanations.\n\nExpertise:\n- Solidity smart contracts (ERC20, ERC721, DeFi, security)\n- TypeScript, React, Next.js, Node.js, Express\n- Arc Testnet (Chain ID 5042002), Circle assets (USDC, EURC, cirBTC)\n- Web3 integration with viem/wagmi/ethers\n- Security best practices and gas optimization\n- Full-stack app architecture\n\nAlways write clean, well-commented, production-ready code.`;
 
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState('');
@@ -55,326 +30,290 @@ export default function AdminPage() {
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ai' | 'models' | 'prompts' | 'usage'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'models' | 'prompts'>('ai');
 
   const [settings, setSettings] = useState({
-    openrouterKey: '',
-    defaultModel: 'anthropic/claude-3.5-sonnet',
-    temperature: 0.7,
-    maxTokens: 4096,
+    openrouterKey: '', defaultModel: 'anthropic/claude-sonnet-4-5',
+    temperature: 0.7, maxTokens: 4096,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     rateLimitPerUser: 100,
-    rateLimitWindow: 24,
   });
+  const [models, setModels] = useState<PublicModel[]>(DEFAULT_MODELS);
+  const [editingModel, setEditingModel] = useState<PublicModel | null>(null);
+  const [newModel, setNewModel] = useState({ id: '', name: '', provider: '', tier: 'fast' as const, context_length: 128000, description: '' });
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [showKeyValue, setShowKeyValue] = useState(false);
+
+  // Load settings from API
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetch('/api/admin/settings', { headers: { authorization: `Bearer ${adminKey}` } })
+      .then(r => r.json())
+      .then(d => {
+        const s = d.settings as { key: string; value: string }[] ?? [];
+        const map = Object.fromEntries(s.map((x: { key: string; value: string }) => [x.key, x.value]));
+        if (map.openrouter_api_key) setSettings(prev => ({ ...prev, openrouterKey: map.openrouter_api_key }));
+        if (map.default_model) setSettings(prev => ({ ...prev, defaultModel: map.default_model }));
+        if (map.temperature) setSettings(prev => ({ ...prev, temperature: parseFloat(map.temperature) }));
+        if (map.max_tokens) setSettings(prev => ({ ...prev, maxTokens: parseInt(map.max_tokens) }));
+        if (map.system_prompt) setSettings(prev => ({ ...prev, systemPrompt: map.system_prompt }));
+        if (map.available_models) {
+          try { setModels(JSON.parse(map.available_models)); } catch {}
+        }
+      }).catch(() => {});
+  }, [isAuthenticated, adminKey]);
 
   const handleAuth = async () => {
     setIsAuthLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-
-    // In production, validate against Supabase admin_keys table
-    if (adminKey === 'admin123' || adminKey.length > 8) {
+    await new Promise(r => setTimeout(r, 600));
+    const res = await fetch('/api/admin/settings', { headers: { authorization: `Bearer ${adminKey}` } });
+    setIsAuthLoading(false);
+    if (res.ok || res.status === 200) {
       setIsAuthenticated(true);
       toast.success('Admin access granted');
     } else {
       toast.error('Invalid admin key');
     }
-    setIsAuthLoading(false);
   };
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const payload = {
+        openrouter_api_key: settings.openrouterKey,
+        default_model: settings.defaultModel,
+        temperature: String(settings.temperature),
+        max_tokens: String(settings.maxTokens),
+        system_prompt: settings.systemPrompt,
+        available_models: JSON.stringify(models),
+        rate_limit_per_user: String(settings.rateLimitPerUser),
+      };
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': adminKey,
-        },
-        body: JSON.stringify({
-          openrouter_api_key: settings.openrouterKey,
-          default_model: settings.defaultModel,
-          temperature: settings.temperature,
-          max_tokens: settings.maxTokens,
-          system_prompt: settings.systemPrompt,
-        }),
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${adminKey}` },
+        body: JSON.stringify({ settings: payload }),
       });
-
-      if (res.ok) {
-        toast.success('Settings saved successfully');
-      } else {
-        throw new Error('Failed to save');
-      }
-    } catch {
-      toast.error('Failed to save settings');
+      if (!res.ok) throw new Error('Save failed');
+      toast.success('Settings saved');
+    } catch (err) {
+      toast.error('Save failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setIsSaving(false);
     }
   };
 
+  const toggleModel = (id: string) => setModels(m => m.map(x => x.id === id ? { ...x, enabled: !x.enabled } : x));
+  const deleteModel = (id: string) => { setModels(m => m.filter(x => x.id !== id)); toast.success('Model removed'); };
+  const addModel = () => {
+    if (!newModel.id || !newModel.name) { toast.error('ID and name required'); return; }
+    if (models.find(m => m.id === newModel.id)) { toast.error('Model ID already exists'); return; }
+    setModels(m => [...m, { ...newModel, enabled: true }]);
+    setNewModel({ id: '', name: '', provider: '', tier: 'fast', context_length: 128000, description: '' });
+    setShowNewForm(false);
+    toast.success('Model added');
+  };
+  const saveEdit = () => {
+    if (!editingModel) return;
+    setModels(m => m.map(x => x.id === editingModel.id ? editingModel : x));
+    setEditingModel(null);
+    toast.success('Model updated');
+  };
+
   if (!isAuthenticated) {
     return (
-      <AppLayout title="Admin" description="System administration">
-        <div className="flex items-center justify-center h-[60vh]">
-          <Card className="w-full max-w-md p-8 text-center">
-            <div className="w-14 h-14 rounded-full bg-glow-accent/10 flex items-center justify-center mx-auto mb-5">
-              <Shield className="w-7 h-7 text-glow-accent" />
+      <AppLayout title="Admin">
+        <div className="flex items-center justify-center min-h-[60vh] p-4">
+          <Card className="p-6 md:p-8 w-full max-w-sm space-y-5">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-glow-accent/10 flex items-center justify-center mx-auto mb-3">
+                <Key className="w-6 h-6 text-glow-accent" />
+              </div>
+              <h2 className="text-lg font-bold text-white">Admin Access</h2>
+              <p className="text-xs text-gray-400 mt-1">Enter your admin key to continue</p>
             </div>
-            <h2 className="text-xl font-semibold text-white mb-2">Admin Authentication</h2>
-            <p className="text-sm text-gray-400 mb-6">
-              Enter your admin key to access the administration panel.
-            </p>
-            <div className="space-y-4 text-left">
-              <Input
-                label="Admin Key"
-                type={showKey ? 'text' : 'password'}
-                placeholder="Enter admin key..."
-                value={adminKey}
-                onChange={(e) => setAdminKey(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
-                rightIcon={
-                  <button onClick={() => setShowKey(!showKey)} className="text-gray-500 hover:text-gray-300">
-                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                }
-              />
-              <Button
-                variant="gradient"
-                className="w-full"
-                onClick={handleAuth}
-                isLoading={isAuthLoading}
-              >
-                <Key className="w-4 h-4 mr-2" /> Access Admin Panel
-              </Button>
-            </div>
+            <Input label="Admin Key" type={showKey ? 'text' : 'password'} value={adminKey}
+              onChange={e => setAdminKey(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAuth()}
+              rightIcon={<button onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>}
+            />
+            <Button onClick={handleAuth} isLoading={isAuthLoading} variant="gradient" className="w-full">
+              Authenticate
+            </Button>
           </Card>
         </div>
       </AppLayout>
     );
   }
 
+  const tabs = [
+    { id: 'ai', label: 'AI Settings', icon: Brain },
+    { id: 'models', label: 'Models', icon: Sliders },
+    { id: 'prompts', label: 'System Prompt', icon: FileText },
+  ] as const;
+
   return (
-    <AppLayout title="Admin Panel" description="Manage AI settings, models, and system configuration">
-      <div className="p-6 max-w-5xl mx-auto space-y-6">
-        {/* Auth badge */}
-        <div className="flex items-center gap-2 text-sm">
-          <CheckCircle className="w-4 h-4 text-emerald-400" />
-          <span className="text-emerald-400 font-medium">Admin authenticated</span>
+    <AppLayout title="Admin Panel">
+      <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4 md:space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg md:text-xl font-bold text-white">Admin Panel</h1>
+          <Badge variant="success" className="text-xs">Authenticated</Badge>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex gap-1 bg-glow-surface border border-glow-border rounded-xl p-1">
-          {([
-            { id: 'ai', label: 'AI Settings', icon: Brain },
-            { id: 'models', label: 'Models', icon: Cpu },
-            { id: 'prompts', label: 'System Prompts', icon: FileText },
-            { id: 'usage', label: 'Usage', icon: BarChart2 },
-          ] as const).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === tab.id
-                  ? 'bg-glow-accent text-white shadow-sm'
-                  : 'text-gray-400 hover:text-white hover:bg-glow-card'
-              }`}
-            >
-              <tab.icon className="w-4 h-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
+        {/* Tabs */}
+        <div className="flex border-b border-glow-border overflow-x-auto">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs md:text-sm font-medium whitespace-nowrap transition-colors ${activeTab === t.id ? 'text-glow-accent-light border-b-2 border-glow-accent' : 'text-gray-500 hover:text-gray-300'}`}>
+              <t.icon className="w-3.5 h-3.5" />{t.label}
             </button>
           ))}
         </div>
 
-        {/* AI Settings Tab */}
+        {/* AI Settings */}
         {activeTab === 'ai' && (
-          <div className="space-y-4">
-            <Card className="p-6">
-              <div className="flex items-center gap-3 mb-5">
-                <Key className="w-5 h-5 text-glow-accent" />
-                <h3 className="font-semibold text-white">OpenRouter API</h3>
+          <Card className="p-5 space-y-5">
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">OpenRouter API Key</label>
+              <div className="flex gap-2">
+                <input type={showKeyValue ? 'text' : 'password'} value={settings.openrouterKey}
+                  onChange={e => setSettings(p => ({ ...p, openrouterKey: e.target.value }))}
+                  placeholder="sk-or-v1-..."
+                  className="flex-1 bg-glow-bg border border-glow-border rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50 font-mono"
+                />
+                <button onClick={() => setShowKeyValue(!showKeyValue)} className="p-2 rounded-lg border border-glow-border text-gray-500 hover:text-white hover:bg-glow-card transition-colors">
+                  {showKeyValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5">API Key</label>
-                  <div className="relative">
-                    <input
-                      type={showKey ? 'text' : 'password'}
-                      placeholder="sk-or-v1-..."
-                      value={settings.openrouterKey}
-                      onChange={(e) => setSettings({ ...settings, openrouterKey: e.target.value })}
-                      className="w-full bg-glow-bg border border-glow-border rounded-lg px-4 py-2.5 pr-10 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-glow-accent/50"
-                    />
-                    <button
-                      onClick={() => setShowKey(!showKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-                    >
-                      {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">
-                    Get your API key at{' '}
-                    <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-glow-accent hover:underline">
-                      openrouter.ai/keys
-                    </a>
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Temperature</label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value={settings.temperature}
-                        onChange={(e) => setSettings({ ...settings, temperature: parseFloat(e.target.value) })}
-                        className="flex-1 accent-glow-accent"
-                      />
-                      <span className="text-sm text-white font-mono w-8 text-right">{settings.temperature}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Max Tokens</label>
-                    <select
-                      value={settings.maxTokens}
-                      onChange={(e) => setSettings({ ...settings, maxTokens: parseInt(e.target.value) })}
-                      className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2.5 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50"
-                    >
-                      {[1024, 2048, 4096, 8192, 16384].map((v) => (
-                        <option key={v} value={v}>{v.toLocaleString()} tokens</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Rate Limit (requests/user)</label>
-                    <input
-                      type="number"
-                      value={settings.rateLimitPerUser}
-                      onChange={(e) => setSettings({ ...settings, rateLimitPerUser: parseInt(e.target.value) })}
-                      className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2.5 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Rate Limit Window (hours)</label>
-                    <input
-                      type="number"
-                      value={settings.rateLimitWindow}
-                      onChange={(e) => setSettings({ ...settings, rateLimitWindow: parseInt(e.target.value) })}
-                      className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2.5 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50"
-                    />
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {/* Models Tab */}
-        {activeTab === 'models' && (
-          <div className="space-y-3">
-            {AVAILABLE_MODELS.map((model) => (
-              <Card
-                key={model.id}
-                className={`p-4 cursor-pointer transition-all ${
-                  settings.defaultModel === model.id
-                    ? 'border-glow-accent/30 bg-glow-accent/5'
-                    : 'hover:border-glow-border/80'
-                }`}
-                onClick={() => setSettings({ ...settings, defaultModel: model.id })}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                      settings.defaultModel === model.id ? 'bg-glow-accent/20' : 'bg-glow-card'
-                    }`}>
-                      <Cpu className={`w-5 h-5 ${settings.defaultModel === model.id ? 'text-glow-accent' : 'text-gray-500'}`} />
-                    </div>
-                    <div>
-                      <p className="font-medium text-white">{model.name}</p>
-                      <p className="text-xs text-gray-500">{model.id}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={model.tier === 'premium' ? 'purple' : model.tier === 'coding' ? 'success' : 'info'}
-                      className="text-xs"
-                    >
-                      {model.tier}
-                    </Badge>
-                    <span className="text-xs text-gray-500">{model.provider}</span>
-                    {settings.defaultModel === model.id && (
-                      <CheckCircle className="w-4 h-4 text-glow-accent" />
-                    )}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* System Prompts Tab */}
-        {activeTab === 'prompts' && (
-          <Card className="p-6">
-            <div className="flex items-center gap-3 mb-5">
-              <FileText className="w-5 h-5 text-glow-accent" />
-              <h3 className="font-semibold text-white">System Prompt</h3>
             </div>
-            <textarea
-              value={settings.systemPrompt}
-              onChange={(e) => setSettings({ ...settings, systemPrompt: e.target.value })}
-              rows={16}
-              className="w-full bg-glow-bg border border-glow-border rounded-xl p-4 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-glow-accent/50 font-mono resize-none"
-            />
-            <div className="flex items-center justify-between mt-3">
-              <span className="text-xs text-gray-500">{settings.systemPrompt.length} characters</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSettings({ ...settings, systemPrompt: DEFAULT_SYSTEM_PROMPT })}
-              >
-                <RefreshCw className="w-3 h-3 mr-1" /> Reset to Default
-              </Button>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Default Model</label>
+              <select value={settings.defaultModel} onChange={e => setSettings(p => ({ ...p, defaultModel: e.target.value }))}
+                className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50">
+                {models.filter(m => m.enabled).map(m => <option key={m.id} value={m.id}>{m.name} ({m.provider})</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Temperature: {settings.temperature}</label>
+              <input type="range" min="0" max="1" step="0.1" value={settings.temperature}
+                onChange={e => setSettings(p => ({ ...p, temperature: parseFloat(e.target.value) }))}
+                className="w-full accent-glow-accent" />
+              <div className="flex justify-between text-xs text-gray-600 mt-1"><span>Precise (0)</span><span>Creative (1)</span></div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Max Tokens: {settings.maxTokens.toLocaleString()}</label>
+              <input type="range" min="512" max="8192" step="256" value={settings.maxTokens}
+                onChange={e => setSettings(p => ({ ...p, maxTokens: parseInt(e.target.value) }))}
+                className="w-full accent-glow-accent" />
+            </div>
+
+            <div>
+              <Input label="Rate Limit (requests / user / 24h)" type="number" value={settings.rateLimitPerUser}
+                onChange={e => setSettings(p => ({ ...p, rateLimitPerUser: parseInt(e.target.value) || 100 }))} />
             </div>
           </Card>
         )}
 
-        {/* Usage Tab */}
-        {activeTab === 'usage' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { label: 'Total Requests', value: '1,247', icon: Activity, color: 'text-glow-accent' },
-                { label: 'Active Users', value: '23', icon: Users, color: 'text-emerald-400' },
-                { label: 'Tokens Used', value: '892K', icon: Cpu, color: 'text-glow-cyan' },
-                { label: 'Avg Response', value: '1.2s', icon: Sliders, color: 'text-amber-400' },
-              ].map((stat) => (
-                <Card key={stat.label} className="p-4">
-                  <div className="flex items-center gap-3">
-                    <stat.icon className={`w-5 h-5 ${stat.color}`} />
-                    <div>
-                      <p className="text-xs text-gray-500">{stat.label}</p>
-                      <p className="text-lg font-semibold text-white">{stat.value}</p>
-                    </div>
+        {/* Models Management */}
+        {activeTab === 'models' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-400">{models.filter(m => m.enabled).length} of {models.length} models enabled</p>
+              <Button size="sm" onClick={() => setShowNewForm(!showNewForm)} variant="secondary" className="h-8 text-xs">
+                <Plus className="w-3.5 h-3.5 mr-1" />Add Model
+              </Button>
+            </div>
+
+            {showNewForm && (
+              <Card className="p-4 border-glow-accent/30 space-y-3">
+                <p className="text-sm font-semibold text-white">Add Model</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input label="Model ID (OpenRouter)" placeholder="provider/model-name" value={newModel.id} onChange={e => setNewModel(p => ({ ...p, id: e.target.value }))} />
+                  <Input label="Display Name" placeholder="GPT-4o" value={newModel.name} onChange={e => setNewModel(p => ({ ...p, name: e.target.value }))} />
+                  <Input label="Provider" placeholder="OpenAI" value={newModel.provider} onChange={e => setNewModel(p => ({ ...p, provider: e.target.value }))} />
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Tier</label>
+                    <select value={newModel.tier} onChange={e => setNewModel(p => ({ ...p, tier: e.target.value as PublicModel['tier'] }))}
+                      className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50">
+                      <option value="premium">Premium</option><option value="fast">Fast</option><option value="coding">Coding</option>
+                    </select>
                   </div>
+                  <Input label="Context Length" type="number" value={newModel.context_length} onChange={e => setNewModel(p => ({ ...p, context_length: parseInt(e.target.value) || 128000 }))} />
+                  <Input label="Description" value={newModel.description} onChange={e => setNewModel(p => ({ ...p, description: e.target.value }))} />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="ghost" size="sm" onClick={() => setShowNewForm(false)}>Cancel</Button>
+                  <Button size="sm" onClick={addModel}>Add Model</Button>
+                </div>
+              </Card>
+            )}
+
+            <div className="space-y-2">
+              {models.map(m => (
+                <Card key={m.id} className="p-3">
+                  {editingModel?.id === m.id ? (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input label="Name" value={editingModel.name} onChange={e => setEditingModel(p => p ? ({ ...p, name: e.target.value }) : p)} />
+                        <Input label="Provider" value={editingModel.provider} onChange={e => setEditingModel(p => p ? ({ ...p, provider: e.target.value }) : p)} />
+                        <Input label="Description" value={editingModel.description ?? ''} onChange={e => setEditingModel(p => p ? ({ ...p, description: e.target.value }) : p)} />
+                        <Input label="Context Length" type="number" value={editingModel.context_length ?? 0} onChange={e => setEditingModel(p => p ? ({ ...p, context_length: parseInt(e.target.value) }) : p)} />
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <Button variant="ghost" size="sm" onClick={() => setEditingModel(null)}><X className="w-3.5 h-3.5" /></Button>
+                        <Button size="sm" onClick={saveEdit}><CheckCircle className="w-3.5 h-3.5 mr-1" />Save</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-white">{m.name}</span>
+                          <Badge variant="default" className="text-[10px]">{m.tier}</Badge>
+                          <span className="text-[10px] text-gray-500">{m.provider}</span>
+                          {m.context_length && <span className="text-[10px] text-gray-600">{(m.context_length/1000).toFixed(0)}k ctx</span>}
+                        </div>
+                        <p className="text-xs text-gray-600 font-mono truncate mt-0.5">{m.id}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => toggleModel(m.id)} className={`transition-colors ${m.enabled ? 'text-glow-accent' : 'text-gray-600'}`} title={m.enabled ? 'Disable' : 'Enable'}>
+                          {m.enabled ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
+                        </button>
+                        <button onClick={() => setEditingModel(m)} className="p-1.5 rounded text-gray-600 hover:text-gray-300 hover:bg-glow-card transition-colors">
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => deleteModel(m.id)} className="p-1.5 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </Card>
               ))}
             </div>
-            <Card className="p-6 text-center">
-              <BarChart2 className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">Detailed analytics available in the Supabase dashboard</p>
-            </Card>
           </div>
         )}
 
-        {/* Save Button */}
+        {/* System Prompt */}
+        {activeTab === 'prompts' && (
+          <Card className="p-5 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">System Prompt</label>
+              <textarea rows={16} value={settings.systemPrompt}
+                onChange={e => setSettings(p => ({ ...p, systemPrompt: e.target.value }))}
+                className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2.5 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50 resize-none font-mono"
+              />
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setSettings(p => ({ ...p, systemPrompt: DEFAULT_SYSTEM_PROMPT }))}>
+              Reset to default
+            </Button>
+          </Card>
+        )}
+
+        {/* Save */}
         <div className="flex justify-end">
           <Button variant="gradient" onClick={handleSave} isLoading={isSaving}>
-            <Save className="w-4 h-4 mr-2" /> Save Settings
+            <Save className="w-4 h-4 mr-2" />Save All Settings
           </Button>
         </div>
       </div>

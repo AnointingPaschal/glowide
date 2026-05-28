@@ -258,6 +258,13 @@ export default function DeploymentsPage() {
                       </Button>
                     )}
                     <a
+                      href={`/deployments/${contract.address}/interact`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-glow-accent border border-glow-accent/30 hover:bg-glow-accent/10 transition-colors hidden sm:flex items-center gap-1"
+                    >
+                      <Zap className="w-3 h-3" />Interact
+                    </a>
+                    <a
                       href={`https://testnet.arcscan.app/address/${contract.address}`}
                       target="_blank"
                       rel="noopener noreferrer"
