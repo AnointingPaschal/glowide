@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { useWalletStore } from '@/store/walletStore';
-import { createPublicClient, http, defineChain, encodeFunctionData, decodeFunctionResult } from 'viem';
+import { createPublicClient, http, defineChain, encodeFunctionData, type Abi } from 'viem';
 import { truncateAddress, copyToClipboard } from '@/lib/utils';
 import { ArrowLeft, Play, Send, Copy, CheckCircle, ExternalLink, ChevronDown, ChevronUp, Loader2, BookOpen, Zap, Eye, Edit3 } from 'lucide-react';
 import Link from 'next/link';
@@ -68,7 +68,7 @@ function FunctionCard({ fn, address, abi }: { fn: AbiItem; address: string; abi:
       if (isRead) {
         const data = await publicClient.readContract({
           address: address as `0x${string}`,
-          abi,
+          abi: abi as Abi,
           functionName: fn.name!,
           args,
         });
@@ -76,7 +76,7 @@ function FunctionCard({ fn, address, abi }: { fn: AbiItem; address: string; abi:
         toast.success('Read successful');
       } else {
         if (!walletAddress || !window.ethereum) { toast.error('Connect your wallet first'); return; }
-        const calldata = encodeFunctionData({ abi, functionName: fn.name!, args });
+        const calldata = encodeFunctionData({ abi: abi as Abi, functionName: fn.name!, args });
         const txHash = await (window.ethereum as { request: (a: { method: string; params: unknown[] }) => Promise<string> }).request({
           method: 'eth_sendTransaction',
           params: [{ from: walletAddress, to: address, data: calldata }],
