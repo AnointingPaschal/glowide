@@ -5,24 +5,17 @@ import { Wallet, ChevronDown, Copy, ExternalLink, LogOut, Check, AlertTriangle }
 import { truncateAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { WalletModal } from "./WalletModal";
+import type { EthereumProvider } from "@/types/ethereum";
 
 const ARC_CHAIN_ID = 5042002;
 const ARC_HEX = "0x4CF072";
-
-interface WindowEthereum {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on: (event: string, handler: (...args: unknown[]) => void) => void;
-  removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
-}
-
-declare global { interface Window { ethereum?: WindowEthereum; } }
 
 export function WalletButton() {
   const { address, isConnected, chainId, disconnect, setAddress, setChainId, setConnected, setConnecting } = useWalletStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [activeProvider, setActiveProvider] = useState<WindowEthereum | null>(null);
+  const [activeProvider, setActiveProvider] = useState<EthereumProvider | null>(null);
 
   // ── Silent reconnect on mount ─────────────────────────────────────
   useEffect(() => {
@@ -40,17 +33,21 @@ export function WalletButton() {
 
     const onAccounts = (accs: unknown) => {
       const a = accs as string[];
-      a.length ? (setAddress(a[0]), setConnected(true)) : disconnect();
+      if (a.length) { setAddress(a[0]); setConnected(true); } else { disconnect(); }
     };
     const onChain = (cid: unknown) => setChainId(parseInt(cid as string, 16));
     p.on("accountsChanged", onAccounts);
     p.on("chainChanged", onChain);
     p.on("disconnect", disconnect);
-    return () => { p.removeListener("accountsChanged", onAccounts); p.removeListener("chainChanged", onChain); p.removeListener("disconnect", disconnect); };
+    return () => {
+      p.removeListener("accountsChanged", onAccounts);
+      p.removeListener("chainChanged", onChain);
+      p.removeListener("disconnect", disconnect);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Switch to Arc ─────────────────────────────────────────────────
-  const switchToArc = async (provider: WindowEthereum) => {
+  const switchToArc = useCallback(async (provider: EthereumProvider) => {
     try {
       await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_HEX }] });
     } catch (err: unknown) {
@@ -58,7 +55,8 @@ export function WalletButton() {
         await provider.request({
           method: "wallet_addEthereumChain",
           params: [{
-            chainId: ARC_HEX, chainName: "Arc Testnet",
+            chainId: ARC_HEX,
+            chainName: "Arc Testnet",
             nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 6 },
             rpcUrls: [process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network"],
             blockExplorerUrls: [process.env.NEXT_PUBLIC_ARC_EXPLORER_URL ?? "https://testnet.arcscan.app"],
@@ -66,10 +64,10 @@ export function WalletButton() {
         });
       }
     }
-  };
+  }, []);
 
   // ── onConnect (called from modal) ─────────────────────────────────
-  const handleConnect = useCallback(async (provider: WindowEthereum, _walletName: string) => {
+  const handleConnect = useCallback(async (provider: EthereumProvider) => {
     setConnecting(true);
     try {
       const accs = await provider.request({ method: "eth_requestAccounts" }) as string[];
@@ -86,7 +84,7 @@ export function WalletButton() {
     } finally {
       setConnecting(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setConnecting, setAddress, setConnected, setChainId, switchToArc]);
 
   const handleCopy = async () => {
     if (!address) return;
