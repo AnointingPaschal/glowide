@@ -1,52 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
+// This route only persists deployment data to Supabase.
+// The actual deployment (signing + broadcast) happens client-side
+// via window.ethereum in ContractDeployer.tsx.
+
 export async function POST(req: NextRequest) {
   try {
-    const { abi, bytecode, constructorArgs, deployer, contractName, sourceCode, projectId } = await req.json();
-    if (!abi || !bytecode || !deployer) return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    const {
+      contractAddress, txHash, blockNumber, gasUsed,
+      abi, bytecode, sourceCode, contractName, deployer, projectId,
+    } = await req.json();
 
-    // In production: use ethers.js/viem server-side to deploy
-    // Generate mock deployment result for Arc Testnet
-    const contractAddress = "0x" + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    const txHash = "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    const blockNumber = Math.floor(Math.random() * 1000000) + 100000;
-    const gasUsed = Math.floor(Math.random() * 200000 + 100000).toString();
+    if (!contractAddress || !txHash || !deployer) {
+      return NextResponse.json({ error: "contractAddress, txHash, and deployer are required" }, { status: 400 });
+    }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(contractAddress)) {
+      return NextResponse.json({ error: "Invalid contract address" }, { status: 400 });
+    }
+    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+      return NextResponse.json({ error: "Invalid transaction hash" }, { status: 400 });
+    }
 
-    // Save to Supabase
     try {
       const supabase = createServerSupabaseClient();
-      await supabase.from("deployed_contracts").insert({
-        name: contractName || "Contract",
-        address: contractAddress,
-        chain_id: 5042002,
-        tx_hash: txHash,
-        deployer,
-        status: "deployed",
-        verified: false,
-        abi: JSON.stringify(abi),
-        bytecode,
-        source_code: sourceCode || "",
-        project_id: projectId || null,
-        metadata: JSON.stringify({ blockNumber, gasUsed, network: "Arc Testnet" }),
+      const { error } = await supabase.from("deployed_contracts").insert({
+        name:        contractName || "Contract",
+        address:     contractAddress.toLowerCase(),
+        chain_id:    5042002,
+        tx_hash:     txHash,
+        deployer:    deployer.toLowerCase(),
+        status:      "deployed",
+        verified:    false,
+        abi:         JSON.stringify(abi ?? []),
+        bytecode:    bytecode ?? "",
+        source_code: sourceCode ?? "",
+        project_id:  projectId ?? null,
+        metadata:    JSON.stringify({ blockNumber, gasUsed, network: "Arc Testnet" }),
       });
+      if (error) throw error;
     } catch (dbErr) {
-      console.error("DB save failed:", dbErr);
-      // Continue even if DB save fails
+      console.error("DB save error:", dbErr);
+      // Return success anyway — the contract is deployed on-chain regardless
     }
 
     return NextResponse.json({
       success: true,
       contractAddress,
       txHash,
-      blockNumber,
-      gasUsed,
       network: "Arc Testnet",
       chainId: 5042002,
       explorerUrl: `https://testnet.arcscan.app/address/${contractAddress}`,
     });
   } catch (err) {
-    console.error("Deploy error:", err);
+    console.error("Deploy route error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

@@ -5,16 +5,16 @@ type Theme = "dark" | "light";
 
 interface ThemeState {
   theme: Theme;
-  toggleTheme: () => void;
   setTheme: (t: Theme) => void;
+  toggle: () => void;
 }
 
 export const useThemeStore = create<ThemeState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       theme: "dark",
-      toggleTheme: () => set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
       setTheme: (theme) => set({ theme }),
+      toggle: () => set({ theme: get().theme === "dark" ? "light" : "dark" }),
     }),
     { name: "glowide-theme" }
   )

@@ -22,7 +22,7 @@ export function TopBar({ title: propTitle, description: propDesc }: { title?: st
   const pathname = usePathname();
   const [networkOk] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { theme, toggleTheme } = useThemeStore();
+  const { theme, toggle } = useThemeStore();
 
   useEffect(() => { setMobileOpen(false); }, [pathname]);
   useEffect(() => {
@@ -89,7 +89,7 @@ export function TopBar({ title: propTitle, description: propDesc }: { title?: st
 
           {/* Theme toggle */}
           <button
-            onClick={toggleTheme}
+            onClick={toggle}
             className="p-1.5 rounded-lg text-[var(--glow-muted)] hover:text-[var(--glow-text)] hover:bg-[var(--glow-card)] transition-colors"
             title={isLight ? "Switch to dark mode" : "Switch to light mode"}
           >
@@ -128,7 +128,7 @@ export function TopBar({ title: propTitle, description: propDesc }: { title?: st
                 );
               })}
               <div className="pt-2 border-t border-[var(--glow-border)]">
-                <button onClick={toggleTheme} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--glow-muted)] hover:text-[var(--glow-text)] hover:bg-[var(--glow-card)] transition-all">
+                <button onClick={toggle} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--glow-muted)] hover:text-[var(--glow-text)] hover:bg-[var(--glow-card)] transition-all">
                   {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
                   {isLight ? "Dark Mode" : "Light Mode"}
                 </button>
@@ -144,5 +144,18 @@ export function TopBar({ title: propTitle, description: propDesc }: { title?: st
         </div>
       )}
     </>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggle } = useThemeStore();
+  return (
+    <button
+      onClick={toggle}
+      title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+      className="p-1.5 rounded-lg text-glow-muted hover:text-glow-text hover:bg-glow-card transition-colors"
+    >
+      {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+    </button>
   );
 }

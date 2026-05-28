@@ -37,6 +37,8 @@ export default function AdminPage() {
     temperature: 0.7, maxTokens: 4096,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     rateLimitPerUser: 100,
+    deploymentFee: '0',
+    feeRecipient: '',
   });
   const [models, setModels] = useState<PublicModel[]>(DEFAULT_MODELS);
   const [fees, setFees] = useState({
@@ -64,6 +66,8 @@ export default function AdminPage() {
         if (map.temperature) setSettings(prev => ({ ...prev, temperature: parseFloat(map.temperature) }));
         if (map.max_tokens) setSettings(prev => ({ ...prev, maxTokens: parseInt(map.max_tokens) }));
         if (map.system_prompt) setSettings(prev => ({ ...prev, systemPrompt: map.system_prompt }));
+        if (map.deployment_fee) setSettings(prev => ({ ...prev, deploymentFee: map.deployment_fee }));
+        if (map.fee_recipient) setSettings(prev => ({ ...prev, feeRecipient: map.fee_recipient }));
         if (map.available_models) {
           try { setModels(JSON.parse(map.available_models)); } catch {}
         }
@@ -93,6 +97,8 @@ export default function AdminPage() {
         max_tokens: String(settings.maxTokens),
         system_prompt: settings.systemPrompt,
         available_models: JSON.stringify(models),
+        deployment_fee: settings.deploymentFee,
+        fee_recipient: settings.feeRecipient,
         deployment_fee_usdc: fees.deploymentFeeUsdc,
         deployment_fee_percent: fees.deploymentFeePercent,
         free_deployments_per_user: fees.freeDeploymentsPerUser,
@@ -223,6 +229,26 @@ export default function AdminPage() {
             <div>
               <Input label="Rate Limit (requests / user / 24h)" type="number" value={settings.rateLimitPerUser}
                 onChange={e => setSettings(p => ({ ...p, rateLimitPerUser: parseInt(e.target.value) || 100 }))} />
+            </div>
+            <div className="pt-2 border-t border-glow-border">
+              <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider mb-3">Contract Deployment Fee</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input
+                  label="Fee Amount (USDC)"
+                  type="number"
+                  placeholder="0"
+                  value={settings.deploymentFee}
+                  hint="Set to 0 for free deployments"
+                  onChange={e => setSettings(p => ({ ...p, deploymentFee: e.target.value }))}
+                />
+                <Input
+                  label="Fee Recipient Address"
+                  placeholder="0x..."
+                  value={settings.feeRecipient}
+                  hint="Your wallet address to receive fees"
+                  onChange={e => setSettings(p => ({ ...p, feeRecipient: e.target.value }))}
+                />
+              </div>
             </div>
           </Card>
         )}
