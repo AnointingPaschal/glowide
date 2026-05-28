@@ -1,219 +1,94 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --glow-bg: #08080f;
-  --glow-surface: #10101c;
-  --glow-card: #16162a;
-  --glow-border: #252540;
-  --glow-accent: #7c3aed;
-  --glow-cyan: #06b6d4;
-  --glow-text: #e2e8f0;
-  --glow-muted: #64748b;
+/* ── Dark theme (default) ──────────────────────────────────────── */
+:root, html.dark {
+  --glow-bg:           #08080f;
+  --glow-surface:      #10101c;
+  --glow-card:         #16162a;
+  --glow-border:       #252540;
+  --glow-accent:       #7c3aed;
+  --glow-accent-light: #9f67ff;
+  --glow-accent-dim:   #4a1d96;
+  --glow-cyan:         #06b6d4;
+  --glow-text:         #e2e8f0;
+  --glow-muted:        #64748b;
+  --glow-subtle:       #334155;
+  --toast-bg:          #16162a;
+  --toast-text:        #e2e8f0;
+  --toast-border:      #252540;
+  --wallet-hero-from:  #12122a;
+  --wallet-hero-to:    #08080f;
+  --card-shadow:       0 4px 24px rgba(0,0,0,0.4);
 }
 
-* {
-  box-sizing: border-box;
+/* ── Light theme ─────────────────────────────────────────────── */
+html.light {
+  --glow-bg:           #f0f2f8;
+  --glow-surface:      #ffffff;
+  --glow-card:         #f8f9fc;
+  --glow-border:       #dde3ee;
+  --glow-accent:       #7c3aed;
+  --glow-accent-light: #6d28d9;
+  --glow-accent-dim:   #ede9fe;
+  --glow-cyan:         #0891b2;
+  --glow-text:         #1e293b;
+  --glow-muted:        #64748b;
+  --glow-subtle:       #cbd5e1;
+  --toast-bg:          #ffffff;
+  --toast-text:        #1e293b;
+  --toast-border:      #dde3ee;
+  --wallet-hero-from:  #4c1d95;
+  --wallet-hero-to:    #1e1b4b;
+  --card-shadow:       0 4px 24px rgba(0,0,0,0.08);
 }
 
-html {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  scroll-behavior: smooth;
-  /* Prevent font size adjustments on mobile rotation */
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
-body {
-  background-color: var(--glow-bg);
-  color: var(--glow-text);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  overflow-x: hidden;
-  /* Use dynamic viewport height to account for mobile browser chrome */
-  min-height: 100dvh;
-}
-
-/* ========================
-   Tap highlight removal (mobile)
-======================== */
-a, button {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* ========================
-   Custom Scrollbar
-======================== */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-@media (min-width: 768px) {
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-}
-
-::-webkit-scrollbar-track {
-  background: var(--glow-surface);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--glow-border);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--glow-muted);
-}
-
-/* ========================
-   Selection
-======================== */
-::selection {
-  background-color: rgba(124, 58, 237, 0.3);
-  color: white;
-}
-
-/* ========================
-   Glassmorphism utilities
-======================== */
-@layer utilities {
-  .glass {
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    background: rgba(16, 16, 28, 0.8);
-    border: 1px solid rgba(37, 37, 64, 0.8);
-  }
-
-  .glass-card {
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    background: rgba(22, 22, 42, 0.7);
-    border: 1px solid rgba(37, 37, 64, 0.6);
-  }
-
-  .glow-border {
-    border: 1px solid transparent;
-    background-clip: padding-box;
-    position: relative;
-  }
-
-  .glow-border::before {
-    content: "";
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    background: linear-gradient(135deg, rgba(124, 58, 237, 0.5), rgba(6, 182, 212, 0.5));
-    z-index: -1;
-  }
-
-  .glow-text {
-    background: linear-gradient(135deg, #9f67ff 0%, #06b6d4 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  .terminal-text {
-    font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-    font-size: 13px;
-    line-height: 1.6;
-  }
-
-  /* Mobile-safe 100dvh */
-  .h-dvh {
-    height: 100dvh;
-  }
-  .min-h-dvh {
+/* ── Tailwind CSS variable bridge ─────────────────────────────── */
+@layer base {
+  body {
+    background-color: var(--glow-bg);
+    color: var(--glow-text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     min-height: 100dvh;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
+  a, button { -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: 2px solid var(--glow-accent); outline-offset: 2px; }
 }
 
-/* ========================
-   Monaco Editor Overrides
-======================== */
-.monaco-editor {
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace !important;
+/* ── Scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+@media (min-width: 768px) { ::-webkit-scrollbar { width: 6px; height: 6px; } }
+::-webkit-scrollbar-track { background: var(--glow-surface); }
+::-webkit-scrollbar-thumb { background: var(--glow-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--glow-muted); }
+::selection { background-color: rgba(124,58,237,0.3); color: white; }
+
+/* ── Utilities ────────────────────────────────────────────────── */
+@layer utilities {
+  .glass { backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); background:rgba(16,16,28,0.8); border:1px solid rgba(37,37,64,0.8); }
+  .glass-light { backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); background:rgba(255,255,255,0.85); border:1px solid rgba(221,227,238,0.8); }
+  .glow-text { background:linear-gradient(135deg,#9f67ff 0%,#06b6d4 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  .terminal-text { font-family:'JetBrains Mono','Fira Code',Consolas,monospace; font-size:13px; line-height:1.6; }
 }
 
-.monaco-editor .margin {
-  background-color: #0e0e1a !important;
-}
+/* ── Monaco ───────────────────────────────────────────────────── */
+.monaco-editor { font-family:'JetBrains Mono','Fira Code',Consolas,monospace !important; }
+.monaco-editor .margin { background-color:#0e0e1a !important; }
+.monaco-editor-background { background-color:#0e0e1a !important; }
 
-.monaco-editor-background {
-  background-color: #0e0e1a !important;
-}
+/* ── Resizable panels ─────────────────────────────────────────── */
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id] { width:3px; background:var(--glow-border); cursor:col-resize; transition:background 0.15s; }
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id]:hover { background:var(--glow-accent); }
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle-id] { height:3px; background:var(--glow-border); cursor:row-resize; }
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle-id]:hover { background:var(--glow-accent); }
 
-/* ========================
-   Resizable Panel Handles
-======================== */
-[data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id] {
-  width: 3px;
-  background: var(--glow-border);
-  cursor: col-resize;
-  transition: background 0.15s;
-}
-
-[data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id]:hover,
-[data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id][data-resize-handle-state="drag"] {
-  background: var(--glow-accent);
-}
-
-[data-panel-group-direction="vertical"] > [data-panel-resize-handle-id] {
-  height: 3px;
-  background: var(--glow-border);
-  cursor: row-resize;
-  transition: background 0.15s;
-}
-
-[data-panel-group-direction="vertical"] > [data-panel-resize-handle-id]:hover {
-  background: var(--glow-accent);
-}
-
-/* ========================
-   Mobile-specific improvements
-======================== */
-@media (max-width: 767px) {
-  /* Reduce font sizes for compact mobile UI */
-  .text-base { font-size: 0.875rem; }
-
-  /* Better touch targets */
-  button, a {
-    min-height: 36px;
-  }
-
-  /* Prevent overscroll bounce on iOS */
-  .overflow-hidden {
-    overscroll-behavior: none;
-  }
-}
-
-/* ========================
-   Prevent layout shift when scrollbar appears/disappears
-======================== */
-html {
-  overflow-y: scroll;
-}
-
-/* ========================
-   Focus styles
-======================== */
-:focus-visible {
-  outline: 2px solid var(--glow-accent);
-  outline-offset: 2px;
-}
-
-/* ========================
-   Prose (Markdown) styles
-======================== */
-.prose-invert {
-  --tw-prose-body: #cbd5e1;
-  --tw-prose-headings: #f1f5f9;
-  --tw-prose-code: #06b6d4;
-  --tw-prose-pre-bg: #0a0a14;
-}
+/* ── Theme transition ─────────────────────────────────────────── */
+*, *::before, *::after { transition-property: background-color, border-color, color; transition-duration: 150ms; transition-timing-function: ease; }
+/* Don't animate transforms/opacity (breaks animations) */
+.animate-spin, .animate-pulse, .animate-ping, .animate-bounce { transition: none; }

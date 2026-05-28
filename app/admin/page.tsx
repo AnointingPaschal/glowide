@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
-import { Key, Brain, Save, Eye, EyeOff, CheckCircle, AlertCircle, Sliders, FileText, Plus, Trash2, Edit2, X, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Key, Brain, Save, Eye, EyeOff, CheckCircle, AlertCircle, Sliders, FileText, Plus, Trash2, Edit2, X, Loader2, ToggleLeft, ToggleRight, DollarSign, Percent } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { PublicModel } from '@/app/api/models/route';
 
@@ -30,7 +30,7 @@ export default function AdminPage() {
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ai' | 'models' | 'prompts'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'models' | 'prompts' | 'fees'>('ai');
 
   const [settings, setSettings] = useState({
     openrouterKey: '', defaultModel: 'anthropic/claude-sonnet-4-5',
@@ -39,6 +39,13 @@ export default function AdminPage() {
     rateLimitPerUser: 100,
   });
   const [models, setModels] = useState<PublicModel[]>(DEFAULT_MODELS);
+  const [fees, setFees] = useState({
+    deploymentFeeUsdc: '0.50',
+    deploymentFeePercent: '0',
+    freeDeploymentsPerUser: '3',
+    verificationFeeUsdc: '0.00',
+    feesEnabled: false,
+  });
   const [editingModel, setEditingModel] = useState<PublicModel | null>(null);
   const [newModel, setNewModel] = useState<{ id: string; name: string; provider: string; tier: PublicModel['tier']; context_length: number; description: string }>({ id: '', name: '', provider: '', tier: 'fast', context_length: 128000, description: '' });
   const [showNewForm, setShowNewForm] = useState(false);
@@ -86,6 +93,11 @@ export default function AdminPage() {
         max_tokens: String(settings.maxTokens),
         system_prompt: settings.systemPrompt,
         available_models: JSON.stringify(models),
+        deployment_fee_usdc: fees.deploymentFeeUsdc,
+        deployment_fee_percent: fees.deploymentFeePercent,
+        free_deployments_per_user: fees.freeDeploymentsPerUser,
+        verification_fee_usdc: fees.verificationFeeUsdc,
+        fees_enabled: String(fees.feesEnabled),
         rate_limit_per_user: String(settings.rateLimitPerUser),
       };
       const res = await fetch('/api/admin/settings', {
@@ -148,6 +160,7 @@ export default function AdminPage() {
     { id: 'ai', label: 'AI Settings', icon: Brain },
     { id: 'models', label: 'Models', icon: Sliders },
     { id: 'prompts', label: 'System Prompt', icon: FileText },
+    { id: 'fees', label: 'Deployment Fees', icon: DollarSign },
   ] as const;
 
   return (
@@ -307,6 +320,71 @@ export default function AdminPage() {
             <Button variant="ghost" size="sm" onClick={() => setSettings(p => ({ ...p, systemPrompt: DEFAULT_SYSTEM_PROMPT }))}>
               Reset to default
             </Button>
+          </Card>
+        )}
+
+
+        {/* Deployment Fees */}
+        {activeTab === 'fees' && (
+          <Card className="p-5 space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-[var(--glow-text)]">Deployment Fees</h3>
+                <p className="text-xs text-[var(--glow-muted)] mt-0.5">Charge users USDC fees for contract deployments</p>
+              </div>
+              <button onClick={() => setFees(p => ({ ...p, feesEnabled: !p.feesEnabled }))} className={`relative w-12 h-6 rounded-full transition-colors ${fees.feesEnabled ? 'bg-[var(--glow-accent)]' : 'bg-[var(--glow-card)] border border-[var(--glow-border)]'}`}>
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${fees.feesEnabled ? 'translate-x-7' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {fees.feesEnabled && (
+              <div className="p-3 bg-[var(--glow-accent)]/10 border border-[var(--glow-accent)]/20 rounded-xl">
+                <p className="text-xs text-[var(--glow-accent-light)]">Fees are enabled. Users will be charged when deploying contracts.</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-[var(--glow-muted)] mb-1.5">
+                  <DollarSign className="w-3.5 h-3.5 inline mr-1" />Deployment Fee (USDC)
+                </label>
+                <input type="number" min="0" step="0.01" value={fees.deploymentFeeUsdc}
+                  onChange={e => setFees(p => ({ ...p, deploymentFeeUsdc: e.target.value }))}
+                  className="w-full bg-[var(--glow-bg)] border border-[var(--glow-border)] rounded-lg px-3 py-2 text-sm text-[var(--glow-text)] focus:outline-none focus:border-[var(--glow-accent)]/50" />
+                <p className="text-xs text-[var(--glow-muted)] mt-1">Fixed USDC fee per deployment</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--glow-muted)] mb-1.5">
+                  <Percent className="w-3.5 h-3.5 inline mr-1" />Fee Percentage (%)
+                </label>
+                <input type="number" min="0" max="100" step="0.1" value={fees.deploymentFeePercent}
+                  onChange={e => setFees(p => ({ ...p, deploymentFeePercent: e.target.value }))}
+                  className="w-full bg-[var(--glow-bg)] border border-[var(--glow-border)] rounded-lg px-3 py-2 text-sm text-[var(--glow-text)] focus:outline-none focus:border-[var(--glow-accent)]/50" />
+                <p className="text-xs text-[var(--glow-muted)] mt-1">% of gas cost charged as fee</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--glow-muted)] mb-1.5">Free Deployments / User</label>
+                <input type="number" min="0" value={fees.freeDeploymentsPerUser}
+                  onChange={e => setFees(p => ({ ...p, freeDeploymentsPerUser: e.target.value }))}
+                  className="w-full bg-[var(--glow-bg)] border border-[var(--glow-border)] rounded-lg px-3 py-2 text-sm text-[var(--glow-text)] focus:outline-none focus:border-[var(--glow-accent)]/50" />
+                <p className="text-xs text-[var(--glow-muted)] mt-1">Free deployments before charging</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--glow-muted)] mb-1.5">Verification Fee (USDC)</label>
+                <input type="number" min="0" step="0.01" value={fees.verificationFeeUsdc}
+                  onChange={e => setFees(p => ({ ...p, verificationFeeUsdc: e.target.value }))}
+                  className="w-full bg-[var(--glow-bg)] border border-[var(--glow-border)] rounded-lg px-3 py-2 text-sm text-[var(--glow-text)] focus:outline-none focus:border-[var(--glow-accent)]/50" />
+                <p className="text-xs text-[var(--glow-muted)] mt-1">Fee for contract source verification</p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-[var(--glow-surface)] border border-[var(--glow-border)] rounded-xl space-y-1.5">
+              <p className="text-xs font-semibold text-[var(--glow-text)]">Fee Summary</p>
+              <div className="flex justify-between text-xs text-[var(--glow-muted)]"><span>Per deployment</span><span className="text-[var(--glow-text)] font-medium">{fees.deploymentFeeUsdc} USDC {parseFloat(fees.deploymentFeePercent)>0 ? `+ ${fees.deploymentFeePercent}% of gas` : ''}</span></div>
+              <div className="flex justify-between text-xs text-[var(--glow-muted)]"><span>Free tier</span><span className="text-[var(--glow-text)] font-medium">{fees.freeDeploymentsPerUser} deployments / user</span></div>
+              <div className="flex justify-between text-xs text-[var(--glow-muted)]"><span>Verification</span><span className="text-[var(--glow-text)] font-medium">{parseFloat(fees.verificationFeeUsdc)===0 ? 'Free' : `${fees.verificationFeeUsdc} USDC`}</span></div>
+              <div className="flex justify-between text-xs text-[var(--glow-muted)]"><span>Status</span><span className={fees.feesEnabled ? 'text-emerald-400 font-medium' : 'text-amber-400 font-medium'}>{fees.feesEnabled ? 'Active' : 'Disabled'}</span></div>
+            </div>
           </Card>
         )}
 
