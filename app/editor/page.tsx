@@ -10,8 +10,8 @@ import { useEditorStore } from "@/store/editorStore";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
-import { useState, useCallback } from "react";
-import { Play, Rocket, MessageSquare, Plus } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { Play, Rocket, MessageSquare, Plus, AlertCircle } from "lucide-react";
 import type { CompileOutput } from "@/lib/compiler";
 import { CONTRACT_TEMPLATES, detectLanguage } from "@/lib/compiler";
 import { generateId } from "@/lib/utils";
@@ -23,7 +23,16 @@ export default function EditorPage() {
   const [rightPanel, setRightPanel] = useState<"chat" | "deploy" | null>("chat");
   const [compileResult, setCompileResult] = useState<CompileOutput | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const activeTab = tabs.find(t => t.id === activeTabId);
+
+  // Detect mobile
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const compile = async () => {
     if (!activeTab) { toast.error("No file open"); return; }
@@ -54,75 +63,128 @@ export default function EditorPage() {
     openFile(file);
   }, [setFiles, openFile]);
 
+  // Mobile notice
+  if (isMobile) {
+    return (
+      <AppLayout title="Editor">
+        <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-4">
+            <AlertCircle className="w-7 h-7 text-amber-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-white mb-2">Best on Desktop</h2>
+          <p className="text-sm text-gray-400 max-w-xs mb-6 leading-relaxed">
+            The code editor requires a larger screen for the best experience. Visit GlowIDE on a desktop or tablet browser.
+          </p>
+          <div className="space-y-2 w-full max-w-xs">
+            {(Object.keys(CONTRACT_TEMPLATES) as Array<keyof typeof CONTRACT_TEMPLATES>).map(t => (
+              <button
+                key={t}
+                onClick={() => newFile(t)}
+                className="w-full px-4 py-2.5 bg-glow-card border border-glow-border rounded-lg text-sm text-gray-300 hover:border-glow-accent/40 hover:text-white transition-all text-left"
+              >
+                📄 {t} template
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-600 mt-4">You can still browse templates. Full editing on desktop.</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="flex flex-col h-[calc(100vh-56px)]">
         {/* Toolbar */}
-        <div className="flex items-center gap-1 px-3 py-1.5 bg-glow-surface border-b border-glow-border flex-shrink-0">
-          <Button variant="ghost" size="sm" onClick={() => newFile()}><Plus className="w-3.5 h-3.5" /><span className="text-xs">New</span></Button>
-          <Button variant="ghost" size="sm" onClick={() => newFile("simple")} className="text-glow-cyan text-xs">SOL</Button>
-          <Button variant="ghost" size="sm" onClick={() => newFile("erc20")} className="text-purple-400 text-xs">ERC20</Button>
-          <Button variant="ghost" size="sm" onClick={() => newFile("erc721")} className="text-amber-400 text-xs">ERC721</Button>
-          <div className="h-4 w-px bg-glow-border mx-1" />
-          {activeTab && (<>
-            <span className="text-xs text-glow-muted truncate max-w-xs">{activeTab.path}</span>
-            {activeTab.isModified && <Badge variant="warning">unsaved</Badge>}
-            <Badge variant="info">{activeTab.language}</Badge>
-          </>)}
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-glow-border bg-glow-surface/50 flex-shrink-0">
+          <div className="flex gap-1">
+            {(Object.keys(CONTRACT_TEMPLATES) as Array<keyof typeof CONTRACT_TEMPLATES>).map(t => (
+              <Button key={t} variant="ghost" size="sm" onClick={() => newFile(t)} className="text-xs h-7 px-2">
+                {t}
+              </Button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-glow-border mx-1" />
+          <Button size="sm" variant="secondary" onClick={() => newFile()} className="text-xs h-7">
+            <Plus className="w-3.5 h-3.5 mr-1" />New
+          </Button>
+
           <div className="flex-1" />
+
           {activeTab?.language === "solidity" && (
-            <Button variant="secondary" size="sm" onClick={compile} isLoading={isCompiling} className="gap-1.5">
-              <Play className="w-3 h-3" />Compile
+            <Button size="sm" onClick={compile} isLoading={isCompiling} className="h-7 text-xs">
+              <Play className="w-3.5 h-3.5 mr-1" />
+              {isCompiling ? "Compiling…" : "Compile"}
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setRightPanel(rightPanel === "chat" ? null : "chat")}>
-            <MessageSquare className="w-3.5 h-3.5" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setRightPanel(rightPanel === "deploy" ? null : "deploy")}>
-            <Rocket className="w-3.5 h-3.5" />
-          </Button>
+
+          {compileResult && (
+            <Badge variant={compileResult.success ? "success" : "error"} className="text-xs">
+              {compileResult.success ? "Compiled" : `${compileResult.errors?.length} error(s)`}
+            </Badge>
+          )}
+
+          <div className="flex gap-1 ml-1">
+            {(["chat", "deploy"] as const).map(p => (
+              <Button
+                key={p}
+                variant={rightPanel === p ? "primary" : "ghost"}
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setRightPanel(rightPanel === p ? null : p)}
+                title={p === "chat" ? "AI Chat" : "Deploy"}
+              >
+                {p === "chat" ? <MessageSquare className="w-3.5 h-3.5" /> : <Rocket className="w-3.5 h-3.5" />}
+              </Button>
+            ))}
+          </div>
         </div>
 
-        {/* IDE layout */}
-        <div className="flex-1 min-h-0">
+        {/* Main editor layout */}
+        <div className="flex-1 overflow-hidden">
           <PanelGroup direction="horizontal">
-            <Panel defaultSize={18} minSize={12} maxSize={35}>
-              <div className="h-full bg-glow-surface border-r border-glow-border"><FileTree /></div>
+            {/* File tree */}
+            <Panel defaultSize={15} minSize={10} maxSize={25}>
+              <div className="h-full overflow-hidden bg-glow-surface border-r border-glow-border">
+                <FileTree />
+              </div>
             </Panel>
+
             <PanelResizeHandle />
-            <Panel defaultSize={rightPanel ? 55 : 82} minSize={30}>
+
+            {/* Editor + terminal */}
+            <Panel defaultSize={rightPanel ? 60 : 85} minSize={40}>
               <PanelGroup direction="vertical">
-                <Panel defaultSize={isTerminalOpen ? 70 : 100} minSize={30}>
-                  <div className="flex flex-col h-full bg-[#0e0e1a]">
+                <Panel defaultSize={isTerminalOpen ? 70 : 100} minSize={40}>
+                  <div className="flex flex-col h-full">
                     <EditorTabs />
                     <MonacoEditor />
                   </div>
                 </Panel>
-                {isTerminalOpen && (<>
-                  <PanelResizeHandle />
-                  <Panel defaultSize={30} minSize={15} maxSize={60}><Terminal /></Panel>
-                </>)}
+
+                {isTerminalOpen && (
+                  <>
+                    <PanelResizeHandle />
+                    <Panel defaultSize={30} minSize={15} maxSize={50}>
+                      <Terminal />
+                    </Panel>
+                  </>
+                )}
               </PanelGroup>
             </Panel>
-            {rightPanel && (<>
-              <PanelResizeHandle />
-              <Panel defaultSize={27} minSize={20} maxSize={45}>
-                <div className="h-full bg-glow-bg border-l border-glow-border overflow-hidden">
-                  <div className="flex border-b border-glow-border">
-                    <button onClick={() => setRightPanel("chat")} className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs transition-colors ${rightPanel === "chat" ? "text-glow-accent-light border-b-2 border-glow-accent" : "text-glow-muted hover:text-glow-text"}`}>
-                      <MessageSquare className="w-3.5 h-3.5" />AI Chat
-                    </button>
-                    <button onClick={() => setRightPanel("deploy")} className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs transition-colors ${rightPanel === "deploy" ? "text-glow-accent-light border-b-2 border-glow-accent" : "text-glow-muted hover:text-glow-text"}`}>
-                      <Rocket className="w-3.5 h-3.5" />Deploy
-                    </button>
-                  </div>
-                  <div className="h-[calc(100%-36px)] overflow-hidden">
+
+            {/* Right panel: chat / deploy */}
+            {rightPanel && (
+              <>
+                <PanelResizeHandle />
+                <Panel defaultSize={25} minSize={20} maxSize={40}>
+                  <div className="h-full overflow-hidden border-l border-glow-border">
                     {rightPanel === "chat" && <ChatPanel compact />}
-                    {rightPanel === "deploy" && <div className="overflow-y-auto h-full"><ContractDeployer compiled={compileResult} /></div>}
+                    {rightPanel === "deploy" && <ContractDeployer compiled={compileResult} />}
                   </div>
-                </div>
-              </Panel>
-            </>)}
+                </Panel>
+              </>
+            )}
           </PanelGroup>
         </div>
       </div>
