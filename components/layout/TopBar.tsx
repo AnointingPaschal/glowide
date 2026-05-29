@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useSiteSettings } from "@/hooks/useSiteSettings";
 import { usePathname } from "next/navigation";
 import { Bell, Command, Wifi, WifiOff, Code2, MessageSquare, Rocket, Search, Wallet, Settings, Home, Zap, Menu, X, Hammer, Sun, Moon } from "lucide-react";
 import { WalletButton } from "@/components/wallet/WalletButton";
@@ -31,6 +32,7 @@ export function TopBar({ title: propTitle, description: propDesc }: { title?: st
   }, [mobileOpen]);
 
   const isLight = theme === "light";
+  const siteSettings = useSiteSettings();
 
   return (
     <>
@@ -38,10 +40,15 @@ export function TopBar({ title: propTitle, description: propDesc }: { title?: st
 
         {/* Logo */}
         <Link href="/chat" className="flex items-center gap-2 flex-shrink-0 mr-1">
-          <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-glow-gradient flex items-center justify-center shadow-glow-sm">
-            <Zap className="w-3.5 h-3.5 md:w-4 md:h-4 text-white" />
-          </div>
-          <span className="hidden sm:block font-bold text-sm glow-text">GlowIDE</span>
+          {siteSettings.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={siteSettings.logoUrl} alt={siteSettings.siteName} className="w-7 h-7 md:w-8 md:h-8 rounded-lg object-contain" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} />
+          ) : (
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-glow-gradient flex items-center justify-center shadow-glow-sm">
+              <Zap className="w-3.5 h-3.5 md:w-4 md:h-4 text-white" />
+            </div>
+          )}
+          <span className="hidden sm:block font-bold text-sm glow-text">{siteSettings.siteName}</span>
         </Link>
 
         {/* Desktop Nav */}

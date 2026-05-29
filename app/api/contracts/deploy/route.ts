@@ -5,11 +5,11 @@ import { supabaseREST } from "@/lib/supabase-server";
 export async function POST(req: NextRequest) {
   try {
     const { contractAddress, txHash, blockNumber, gasUsed, abi, bytecode, sourceCode, contractName, deployer, projectId } = await req.json();
-
     if (!contractAddress || !txHash || !deployer) {
       return NextResponse.json({ error: "contractAddress, txHash, deployer required" }, { status: 400 });
     }
-
+    // Ensure ABI is always stored as a valid JSON string
+    const abiStr = Array.isArray(abi) && abi.length > 0 ? JSON.stringify(abi) : "[]";
     const row = {
       name:        contractName || "Contract",
       address:     contractAddress.toLowerCase(),
@@ -18,21 +18,19 @@ export async function POST(req: NextRequest) {
       deployer:    deployer.toLowerCase(),
       status:      "deployed",
       verified:    false,
-      abi:         JSON.stringify(abi ?? []),
+      abi:         abiStr,
       bytecode:    bytecode ?? "",
       source_code: sourceCode ?? "",
       project_id:  projectId ?? null,
       metadata:    JSON.stringify({ blockNumber, gasUsed, network: "Arc Testnet" }),
     };
-
     const { error } = await supabaseREST("POST", "deployed_contracts", row);
-    if (error) console.error("[deploy save]", error);
-    // Don't fail the response — contract is on-chain regardless of DB save
-
+    if (error) console.error("[deploy save] DB error:", error);
     return NextResponse.json({
       success: true, contractAddress, txHash,
       network: "Arc Testnet", chainId: 5042002,
       explorerUrl: `https://testnet.arcscan.app/address/${contractAddress}`,
+      abiSaved: !error && abiStr !== "[]",
     });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

@@ -192,6 +192,9 @@ export default function AdminPage() {
   const [siteSettings, setSiteSettings] = useState({
     siteName:'GlowIDE', siteTagline:'AI-Powered Web3 IDE', siteDescription:'Build smarter on Web3',
     logoUrl:'', primaryColor:'#7c3aed',
+    usdcLogoUrl:'https://www.circle.com/hubfs/USDC/USDC_icon_1.svg',
+    eurcLogoUrl:'https://www.circle.com/hubfs/EURC/EURC_icon.svg',
+    cirBTCLogoUrl:'https://cryptologos.cc/logos/bitcoin-btc-logo.svg',
   });
 
   // Auth header for API calls
@@ -791,7 +794,30 @@ export default function AdminPage() {
                   <Field><Label hint="Browser tab + header">Site Name</Label><input value={siteSettings.siteName} onChange={e=>setSiteSettings(p=>({...p,siteName:e.target.value}))} className={inputCls} placeholder="GlowIDE"/></Field>
                   <Field><Label>Tagline</Label><input value={siteSettings.siteTagline} onChange={e=>setSiteSettings(p=>({...p,siteTagline:e.target.value}))} className={inputCls} placeholder="AI-Powered Web3 IDE"/></Field>
                   <Field className="sm:col-span-2"><Label hint="Used in SEO meta tags">Description</Label><textarea value={siteSettings.siteDescription} onChange={e=>setSiteSettings(p=>({...p,siteDescription:e.target.value}))} rows={2} className={`${inputCls} resize-none`} placeholder="Build smarter on Web3"/></Field>
-                  <Field><Label hint="Full URL to logo image">Logo URL</Label><input value={siteSettings.logoUrl} onChange={e=>setSiteSettings(p=>({...p,logoUrl:e.target.value}))} className={inputCls} placeholder="https://…/logo.png"/></Field>
+                  <Field><Label hint="Full URL to your site logo image">Site Logo URL</Label>
+                    <div className="space-y-2">
+                      <input value={siteSettings.logoUrl} onChange={e=>setSiteSettings(p=>({...p,logoUrl:e.target.value}))} className={inputCls} placeholder="https://…/logo.png"/>
+                      {siteSettings.logoUrl && <div className="flex items-center gap-2 p-2 bg-glow-surface rounded-xl border border-glow-border"><img src={siteSettings.logoUrl} alt="logo" className="w-8 h-8 rounded-lg object-contain" onError={e=>((e.target as HTMLImageElement).style.display='none')}/><span className="text-xs text-glow-muted">Preview</span></div>}
+                    </div>
+                  </Field>
+                  <Field><Label hint="USDC token logo URL (Circle asset)">USDC Logo URL</Label>
+                    <div className="space-y-2">
+                      <input value={siteSettings.usdcLogoUrl} onChange={e=>setSiteSettings(p=>({...p,usdcLogoUrl:e.target.value}))} className={inputCls} placeholder="https://…/usdc.svg"/>
+                      {siteSettings.usdcLogoUrl && <div className="flex items-center gap-2 p-2 bg-glow-surface rounded-xl border border-glow-border"><img src={siteSettings.usdcLogoUrl} alt="USDC" className="w-6 h-6 rounded-full"/><span className="text-xs text-glow-muted">USDC Logo Preview</span></div>}
+                    </div>
+                  </Field>
+                  <Field><Label hint="EURC token logo URL (Circle asset)">EURC Logo URL</Label>
+                    <div className="space-y-2">
+                      <input value={siteSettings.eurcLogoUrl} onChange={e=>setSiteSettings(p=>({...p,eurcLogoUrl:e.target.value}))} className={inputCls} placeholder="https://…/eurc.svg"/>
+                      {siteSettings.eurcLogoUrl && <div className="flex items-center gap-2 p-2 bg-glow-surface rounded-xl border border-glow-border"><img src={siteSettings.eurcLogoUrl} alt="EURC" className="w-6 h-6 rounded-full"/><span className="text-xs text-glow-muted">EURC Logo Preview</span></div>}
+                    </div>
+                  </Field>
+                  <Field><Label hint="cirBTC token logo URL">cirBTC Logo URL</Label>
+                    <div className="space-y-2">
+                      <input value={siteSettings.cirBTCLogoUrl} onChange={e=>setSiteSettings(p=>({...p,cirBTCLogoUrl:e.target.value}))} className={inputCls} placeholder="https://…/cirbtc.svg"/>
+                      {siteSettings.cirBTCLogoUrl && <div className="flex items-center gap-2 p-2 bg-glow-surface rounded-xl border border-glow-border"><img src={siteSettings.cirBTCLogoUrl} alt="cirBTC" className="w-6 h-6 rounded-full"/><span className="text-xs text-glow-muted">cirBTC Logo Preview</span></div>}
+                    </div>
+                  </Field>
                   <Field><Label>Primary Color</Label>
                     <div className="flex gap-2 items-center">
                       <input type="color" value={siteSettings.primaryColor} onChange={e=>setSiteSettings(p=>({...p,primaryColor:e.target.value}))} className="w-10 h-10 rounded-xl border border-glow-border cursor-pointer bg-transparent flex-shrink-0"/>

@@ -1,6 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
+
+// Circle Agent Stack context injected into system prompt
+const CIRCLE_AGENT_CONTEXT = `
+You have access to Circle's full stack for Web3 development:
+
+CIRCLE ASSETS on Arc Testnet:
+- USDC: 0x3600000000000000000000000000000000000000 (native gas, 6 decimals)
+- EURC: 0x3700000000000000000000000000000000000000 (Euro stablecoin, 6 decimals)
+- cirBTC: 0x3800000000000000000000000000000000000000 (Circle Bitcoin, 8 decimals)
+
+CCTP (Cross-Chain Transfer Protocol):
+- Burns USDC on source chain, mints natively on destination
+- Supported chains: Ethereum, Avalanche, OP, Arbitrum, Base, Polygon, Solana, Stellar, Arc Testnet
+- CCTP domains: ETH=0, AVAX=1, OP=2, ARB=3, Stellar=4, SOL=5, Base=6, Polygon=7, Arc=9
+- For transfers: depositForBurn() on source, receiveMessage() on destination
+- Fast Transfer: sub-second finality
+- Smart contracts: TokenMessenger (source), MessageTransmitter (relay)
+
+CIRCLE AGENT STACK (developers.circle.com/agent-stack):
+- Circle's programmable wallets for AI agents
+- Nanopayments: sub-cent USDC payments, gas-free, batched settlement
+- Gateway unified balance: one USDC balance across all chains
+- EIP-4337 smart account support for gasless UX
+- Webhook events for payment confirmation
+
+PAYMENTS API:
+- Accept USDC/EURC payments via Circle Payments API
+- On-chain settlement, payment intents, webhooks
+
+When helping with Web3 code on Arc Testnet:
+1. Always use USDC for gas calculations (6 decimals, not 18)
+2. Reference correct contract addresses above
+3. For cross-chain: always use CCTP, not bridges
+4. Smart accounts: use EIP-4337 for gasless transactions
+`;
+
 export const runtime = "edge";
 export const maxDuration = 60;
 
