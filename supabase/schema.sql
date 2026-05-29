@@ -488,3 +488,39 @@ GRANT ALL ON activity_logs        TO service_role;
 GRANT ALL ON user_plans           TO service_role;
 GRANT ALL ON ai_training_examples TO service_role;
 GRANT ALL ON deployed_contracts   TO service_role;
+
+-- ============================================================
+-- LAUNCHPAD TOKENS (append-only — NEVER delete records)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS launchpad_tokens (
+  id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  token_address        TEXT NOT NULL UNIQUE,
+  creator_address      TEXT NOT NULL,
+  pair_address         TEXT,
+  name                 TEXT NOT NULL,
+  symbol               TEXT NOT NULL,
+  decimals             INTEGER DEFAULT 18,
+  total_supply         TEXT NOT NULL,
+  description          TEXT,
+  website              TEXT,
+  twitter              TEXT,
+  token_uri            TEXT,
+  image_url            TEXT,
+  lp_amount            TEXT DEFAULT '0',
+  lp_unlock_time       BIGINT DEFAULT 0,
+  lock_duration_days   INTEGER DEFAULT 0,
+  liquidity_withdrawn  BOOLEAN DEFAULT FALSE,
+  tx_hash              TEXT,
+  block_number         BIGINT,
+  chain_id             INTEGER DEFAULT 5042002,
+  launched_at          TIMESTAMPTZ DEFAULT NOW(),
+  created_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_launchpad_creator  ON launchpad_tokens(creator_address);
+CREATE INDEX IF NOT EXISTS idx_launchpad_launched ON launchpad_tokens(launched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_launchpad_symbol   ON launchpad_tokens(symbol);
+
+-- DISABLE RLS so service role can always write
+ALTER TABLE launchpad_tokens DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON launchpad_tokens TO service_role;
