@@ -1,424 +1,788 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Badge } from '@/components/ui/Badge';
-import { Key, Brain, Save, Eye, EyeOff, CheckCircle, AlertCircle, Sliders, FileText, Plus, Trash2, Edit2, X, Loader2, ToggleLeft, ToggleRight, DollarSign, Percent } from 'lucide-react';
+import {
+  Key, Brain, Save, Eye, EyeOff, CheckCircle, Sliders, FileText,
+  Plus, Trash2, Edit2, X, Loader2, DollarSign, Percent, Zap,
+  Settings, Shield, ToggleLeft, ToggleRight, RefreshCw, Copy,
+  AlertTriangle, Activity, Server, Cpu, Globe, Lock,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { PublicModel } from '@/app/api/models/route';
 
+// ── Constants ────────────────────────────────────────────────────
 const DEFAULT_MODELS: PublicModel[] = [
-  { id: 'anthropic/claude-sonnet-4-5', name: 'Claude Sonnet 4.5', provider: 'Anthropic', tier: 'premium', context_length: 200000, description: 'Latest Claude', enabled: true },
-  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', tier: 'premium', context_length: 200000, description: 'Powerful & fast', enabled: true },
-  { id: 'anthropic/claude-3-haiku', name: 'Claude 3 Haiku', provider: 'Anthropic', tier: 'fast', context_length: 200000, description: 'Fastest Claude', enabled: true },
-  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', tier: 'premium', context_length: 128000, description: 'OpenAI flagship', enabled: true },
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', tier: 'fast', context_length: 128000, description: 'Fast & affordable', enabled: true },
-  { id: 'google/gemini-flash-1.5', name: 'Gemini 1.5 Flash', provider: 'Google', tier: 'fast', context_length: 1000000, description: '1M context', enabled: true },
-  { id: 'meta-llama/llama-3.1-70b-instruct', name: 'Llama 3.1 70B', provider: 'Meta', tier: 'fast', context_length: 128000, description: 'Open source', enabled: true },
-  { id: 'deepseek/deepseek-coder', name: 'DeepSeek Coder', provider: 'DeepSeek', tier: 'coding', context_length: 16000, description: 'Code specialist', enabled: true },
-  { id: 'mistralai/mistral-large', name: 'Mistral Large', provider: 'Mistral', tier: 'premium', context_length: 32000, description: 'European AI', enabled: true },
+  { id: 'anthropic/claude-sonnet-4-5',           name: 'Claude Sonnet 4.5',     provider: 'Anthropic', tier: 'premium', context_length: 200000, description: 'Latest Claude, best balance',   enabled: true  },
+  { id: 'anthropic/claude-3.5-sonnet',            name: 'Claude 3.5 Sonnet',     provider: 'Anthropic', tier: 'premium', context_length: 200000, description: 'Powerful & fast',              enabled: true  },
+  { id: 'anthropic/claude-3-haiku',               name: 'Claude 3 Haiku',        provider: 'Anthropic', tier: 'fast',    context_length: 200000, description: 'Fastest Claude',               enabled: true  },
+  { id: 'openai/gpt-4o',                          name: 'GPT-4o',                provider: 'OpenAI',    tier: 'premium', context_length: 128000, description: 'OpenAI flagship',              enabled: true  },
+  { id: 'openai/gpt-4o-mini',                     name: 'GPT-4o Mini',           provider: 'OpenAI',    tier: 'fast',    context_length: 128000, description: 'Fast & affordable',            enabled: true  },
+  { id: 'google/gemini-flash-1.5',                name: 'Gemini 1.5 Flash',      provider: 'Google',    tier: 'fast',    context_length: 1000000,description: '1M context window',           enabled: true  },
+  { id: 'meta-llama/llama-3.1-70b-instruct',      name: 'Llama 3.1 70B',         provider: 'Meta',      tier: 'fast',    context_length: 128000, description: 'Open source',                  enabled: true  },
+  { id: 'deepseek/deepseek-coder',                name: 'DeepSeek Coder',        provider: 'DeepSeek',  tier: 'coding',  context_length: 16000,  description: 'Code specialist',              enabled: true  },
+  { id: 'mistralai/mistral-large',                name: 'Mistral Large',         provider: 'Mistral',   tier: 'premium', context_length: 32000,  description: 'European AI',                  enabled: true  },
 ];
 
-const DEFAULT_SYSTEM_PROMPT = `You are GlowIDE AI, an expert coding assistant specialized in Web3 development, smart contracts, and full-stack engineering. You write production-grade, type-safe code with clear explanations.\n\nExpertise:\n- Solidity smart contracts (ERC20, ERC721, DeFi, security)\n- TypeScript, React, Next.js, Node.js, Express\n- Arc Testnet (Chain ID 5042002), Circle assets (USDC, EURC, cirBTC)\n- Web3 integration with viem/wagmi/ethers\n- Security best practices and gas optimization\n- Full-stack app architecture\n\nAlways write clean, well-commented, production-ready code.`;
+const DEFAULT_SYSTEM_PROMPT = `You are GlowIDE AI, an expert coding assistant specialized in Web3 development, smart contracts, and full-stack engineering. You write production-grade, type-safe code with clear explanations.
 
+Expertise:
+- Solidity smart contracts (ERC20, ERC721, DeFi, security patterns)
+- TypeScript, React, Next.js, Node.js, Express, Python
+- Arc Testnet (Chain ID 5042002), Circle assets (USDC, EURC, cirBTC)
+- Web3 integration with viem/wagmi/ethers.js
+- Security best practices and gas optimization
+- Full-stack app architecture, REST & WebSocket APIs
+- Game development with Canvas, Three.js, Phaser
+
+Always write clean, well-commented, production-ready code. Provide working examples. Explain reasoning and trade-offs when relevant.`;
+
+const PROVIDER_COLORS: Record<string, string> = {
+  Anthropic: '#CC785C', OpenAI: '#10A37F', Google: '#4285F4',
+  Meta: '#0866FF', DeepSeek: '#5B5BD6', Mistral: '#FF7000',
+};
+
+// ── Types ─────────────────────────────────────────────────────────
+interface Settings {
+  openrouterKey: string; defaultModel: string;
+  temperature: number; maxTokens: number; systemPrompt: string;
+  rateLimitPerUser: number; deploymentFee: string; feeRecipient: string;
+  deploymentFeePercent: string; freeDeployments: string;
+  verificationFee: string; feesEnabled: boolean;
+}
+
+// ── Stat card ─────────────────────────────────────────────────────
+function StatCard({ icon: Icon, label, value, sub, color }: {
+  icon: React.ElementType; label: string; value: string | number;
+  sub?: string; color: string;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-glow-border bg-glow-card p-4">
+      <div className={`absolute -top-4 -right-4 w-20 h-20 rounded-full opacity-10 blur-xl`} style={{ background: color }} />
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${color}20` }}>
+          <Icon className="w-4 h-4" style={{ color }} />
+        </div>
+        <div>
+          <p className="text-[11px] text-glow-muted font-medium uppercase tracking-wider">{label}</p>
+          <p className="text-xl font-bold text-glow-text leading-tight">{value}</p>
+          {sub && <p className="text-[10px] text-glow-muted">{sub}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Toggle switch ─────────────────────────────────────────────────
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button onClick={() => onChange(!value)}
+      className={`relative w-11 h-6 rounded-full transition-all duration-200 focus:outline-none ${value ? 'bg-glow-accent' : 'bg-glow-border'}`}>
+      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  );
+}
+
+// ── Label ─────────────────────────────────────────────────────────
+function Label({ children, hint }: { children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="mb-1.5">
+      <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">{children}</p>
+      {hint && <p className="text-[10px] text-glow-muted/70 mt-0.5">{hint}</p>}
+    </div>
+  );
+}
+
+// ── Field ─────────────────────────────────────────────────────────
+function Field({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`space-y-1.5 ${className}`}>{children}</div>;
+}
+
+const inputCls = 'w-full bg-glow-bg border border-glow-border rounded-xl px-3.5 py-2.5 text-sm text-glow-text placeholder-glow-muted/50 focus:outline-none focus:border-glow-accent/60 focus:ring-1 focus:ring-glow-accent/20 transition-all';
+
+// ── MODEL ROW ─────────────────────────────────────────────────────
+function ModelRow({ model, onToggle, onEdit, onDelete }: {
+  model: PublicModel;
+  onToggle: () => void; onEdit: () => void; onDelete: () => void;
+}) {
+  const providerColor = PROVIDER_COLORS[model.provider] ?? '#7c3aed';
+  const tierBg = { premium: 'bg-purple-500/15 text-purple-400 border-purple-500/25', fast: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/25', coding: 'bg-amber-500/15 text-amber-400 border-amber-500/25' }[model.tier] ?? '';
+
+  return (
+    <div className={`group flex items-center gap-3 p-3 rounded-xl border transition-all ${model.enabled ? 'border-glow-border bg-glow-card hover:border-glow-accent/30' : 'border-glow-border/50 bg-glow-surface/50 opacity-60'}`}>
+      {/* Provider dot */}
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-white" style={{ background: providerColor }}>
+        {model.provider.slice(0, 1)}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-glow-text">{model.name}</span>
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md border ${tierBg}`}>{model.tier}</span>
+          {model.context_length && (
+            <span className="text-[10px] text-glow-muted">{(model.context_length / 1000).toFixed(0)}k ctx</span>
+          )}
+        </div>
+        <p className="text-[11px] text-glow-muted font-mono truncate mt-0.5">{model.id}</p>
+      </div>
+
+      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={onEdit} className="p-1.5 rounded-lg text-glow-muted hover:text-glow-text hover:bg-glow-surface transition-colors" title="Edit">
+          <Edit2 className="w-3.5 h-3.5" />
+        </button>
+        <button onClick={onDelete} className="p-1.5 rounded-lg text-glow-muted hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Delete">
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <Toggle value={model.enabled} onChange={onToggle} />
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MAIN PAGE
+// ══════════════════════════════════════════════════════════════════
 export default function AdminPage() {
-  const [adminKey, setAdminKey] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
-  const [showKey, setShowKey] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ai' | 'models' | 'prompts' | 'fees'>('ai');
+  const [adminKey, setAdminKey]         = useState('');
+  const [isAuth, setIsAuth]             = useState(false);
+  const [authLoading, setAuthLoading]   = useState(false);
+  const [showKey, setShowKey]           = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [activeTab, setActiveTab]       = useState<'overview' | 'ai' | 'models' | 'prompt' | 'fees'>('overview');
+  const [showApiKey, setShowApiKey]     = useState(false);
+  const [keyCopied, setKeyCopied]       = useState(false);
+  const [models, setModels]             = useState<PublicModel[]>(DEFAULT_MODELS);
+  const [editingModel, setEditingModel] = useState<PublicModel | null>(null);
+  const [showNewForm, setShowNewForm]   = useState(false);
+  const [newModel, setNewModel]         = useState<{
+    id: string; name: string; provider: string; tier: PublicModel['tier']; context_length: number; description: string;
+  }>({ id: '', name: '', provider: '', tier: 'fast', context_length: 128000, description: '' });
 
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<Settings>({
     openrouterKey: '', defaultModel: 'anthropic/claude-sonnet-4-5',
     temperature: 0.7, maxTokens: 4096,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
-    rateLimitPerUser: 100,
-    deploymentFee: '0',
-    feeRecipient: '',
+    rateLimitPerUser: 100, deploymentFee: '0', feeRecipient: '',
+    deploymentFeePercent: '0', freeDeployments: '3',
+    verificationFee: '0', feesEnabled: false,
   });
-  const [models, setModels] = useState<PublicModel[]>(DEFAULT_MODELS);
-  const [fees, setFees] = useState({
-    deploymentFeeUsdc: '0.50',
-    deploymentFeePercent: '0',
-    freeDeploymentsPerUser: '3',
-    verificationFeeUsdc: '0.00',
-    feesEnabled: false,
-  });
-  const [editingModel, setEditingModel] = useState<PublicModel | null>(null);
-  const [newModel, setNewModel] = useState<{ id: string; name: string; provider: string; tier: PublicModel['tier']; context_length: number; description: string }>({ id: '', name: '', provider: '', tier: 'fast', context_length: 128000, description: '' });
-  const [showNewForm, setShowNewForm] = useState(false);
-  const [showKeyValue, setShowKeyValue] = useState(false);
 
-  // Load settings from API
+  // Load settings
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuth) return;
     fetch('/api/admin/settings', { headers: { authorization: `Bearer ${adminKey}` } })
       .then(r => r.json())
       .then(d => {
-        const s = d.settings as { key: string; value: string }[] ?? [];
-        const map = Object.fromEntries(s.map((x: { key: string; value: string }) => [x.key, x.value]));
-        if (map.openrouter_api_key) setSettings(prev => ({ ...prev, openrouterKey: map.openrouter_api_key }));
-        if (map.default_model) setSettings(prev => ({ ...prev, defaultModel: map.default_model }));
-        if (map.temperature) setSettings(prev => ({ ...prev, temperature: parseFloat(map.temperature) }));
-        if (map.max_tokens) setSettings(prev => ({ ...prev, maxTokens: parseInt(map.max_tokens) }));
-        if (map.system_prompt) setSettings(prev => ({ ...prev, systemPrompt: map.system_prompt }));
-        if (map.deployment_fee) setSettings(prev => ({ ...prev, deploymentFee: map.deployment_fee }));
-        if (map.fee_recipient) setSettings(prev => ({ ...prev, feeRecipient: map.fee_recipient }));
-        if (map.available_models) {
-          try { setModels(JSON.parse(map.available_models)); } catch {}
+        const m = Object.fromEntries((d.settings ?? []).map((x: { key: string; value: string }) => [x.key, x.value]));
+        setSettings(p => ({
+          ...p,
+          ...(m.openrouter_api_key   && { openrouterKey:        m.openrouter_api_key }),
+          ...(m.default_model        && { defaultModel:         m.default_model }),
+          ...(m.temperature          && { temperature:          parseFloat(m.temperature) }),
+          ...(m.max_tokens           && { maxTokens:            parseInt(m.max_tokens) }),
+          ...(m.system_prompt        && { systemPrompt:         m.system_prompt }),
+          ...(m.deployment_fee       && { deploymentFee:        m.deployment_fee }),
+          ...(m.fee_recipient        && { feeRecipient:         m.fee_recipient }),
+          ...(m.deployment_fee_percent && { deploymentFeePercent: m.deployment_fee_percent }),
+          ...(m.free_deployments     && { freeDeployments:      m.free_deployments }),
+          ...(m.verification_fee     && { verificationFee:      m.verification_fee }),
+          ...(m.fees_enabled         && { feesEnabled:          m.fees_enabled === 'true' }),
+          ...(m.rate_limit_per_user  && { rateLimitPerUser:     parseInt(m.rate_limit_per_user) }),
+        }));
+        if (m.available_models) {
+          try { setModels(JSON.parse(m.available_models)); } catch { /* keep defaults */ }
         }
       }).catch(() => {});
-  }, [isAuthenticated, adminKey]);
+  }, [isAuth, adminKey]);
 
+  // Auth
   const handleAuth = async () => {
-    setIsAuthLoading(true);
-    await new Promise(r => setTimeout(r, 600));
-    const res = await fetch('/api/admin/settings', { headers: { authorization: `Bearer ${adminKey}` } });
-    setIsAuthLoading(false);
-    if (res.ok || res.status === 200) {
-      setIsAuthenticated(true);
-      toast.success('Admin access granted');
-    } else {
-      toast.error('Invalid admin key');
-    }
+    if (!adminKey.trim()) { toast.error('Enter admin key'); return; }
+    setAuthLoading(true);
+    try {
+      const res = await fetch('/api/admin/settings', { headers: { authorization: `Bearer ${adminKey}` } });
+      if (res.ok) { setIsAuth(true); toast.success('Access granted'); }
+      else toast.error('Invalid admin key');
+    } catch { toast.error('Connection failed'); }
+    finally { setAuthLoading(false); }
   };
 
+  // Save
   const handleSave = async () => {
-    setIsSaving(true);
+    setSaving(true);
     try {
-      const payload = {
-        openrouter_api_key: settings.openrouterKey,
-        default_model: settings.defaultModel,
-        temperature: String(settings.temperature),
-        max_tokens: String(settings.maxTokens),
-        system_prompt: settings.systemPrompt,
-        available_models: JSON.stringify(models),
-        deployment_fee: settings.deploymentFee,
-        fee_recipient: settings.feeRecipient,
-        deployment_fee_usdc: fees.deploymentFeeUsdc,
-        deployment_fee_percent: fees.deploymentFeePercent,
-        free_deployments_per_user: fees.freeDeploymentsPerUser,
-        verification_fee_usdc: fees.verificationFeeUsdc,
-        fees_enabled: String(fees.feesEnabled),
-        rate_limit_per_user: String(settings.rateLimitPerUser),
-      };
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${adminKey}` },
-        body: JSON.stringify({ settings: payload }),
+        body: JSON.stringify({
+          settings: {
+            openrouter_api_key:      settings.openrouterKey,
+            default_model:           settings.defaultModel,
+            temperature:             String(settings.temperature),
+            max_tokens:              String(settings.maxTokens),
+            system_prompt:           settings.systemPrompt,
+            available_models:        JSON.stringify(models),
+            deployment_fee:          settings.deploymentFee,
+            fee_recipient:           settings.feeRecipient,
+            deployment_fee_percent:  settings.deploymentFeePercent,
+            free_deployments:        settings.freeDeployments,
+            verification_fee:        settings.verificationFee,
+            fees_enabled:            String(settings.feesEnabled),
+            rate_limit_per_user:     String(settings.rateLimitPerUser),
+          },
+        }),
       });
-      if (!res.ok) throw new Error('Save failed');
-      toast.success('Settings saved');
+      if (!res.ok) throw new Error(await res.text());
+      toast.success('All settings saved successfully');
     } catch (err) {
-      toast.error('Save failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
-    } finally {
-      setIsSaving(false);
-    }
+      toast.error('Save failed: ' + (err instanceof Error ? err.message : String(err)));
+    } finally { setSaving(false); }
   };
 
-  const toggleModel = (id: string) => setModels(m => m.map(x => x.id === id ? { ...x, enabled: !x.enabled } : x));
-  const deleteModel = (id: string) => { setModels(m => m.filter(x => x.id !== id)); toast.success('Model removed'); };
+  // Models
   const addModel = () => {
-    if (!newModel.id || !newModel.name) { toast.error('ID and name required'); return; }
+    if (!newModel.id || !newModel.name) { toast.error('Model ID and name required'); return; }
     if (models.find(m => m.id === newModel.id)) { toast.error('Model ID already exists'); return; }
     setModels(m => [...m, { ...newModel, enabled: true }]);
     setNewModel({ id: '', name: '', provider: '', tier: 'fast', context_length: 128000, description: '' });
     setShowNewForm(false);
     toast.success('Model added');
   };
-  const saveEdit = () => {
-    if (!editingModel) return;
-    setModels(m => m.map(x => x.id === editingModel.id ? editingModel : x));
-    setEditingModel(null);
-    toast.success('Model updated');
-  };
 
-  if (!isAuthenticated) {
+  // ── Login screen ──────────────────────────────────────────────
+  if (!isAuth) {
     return (
       <AppLayout title="Admin">
-        <div className="flex items-center justify-center min-h-[60vh] p-4">
-          <Card className="p-6 md:p-8 w-full max-w-sm space-y-5">
-            <div className="text-center">
-              <div className="w-12 h-12 rounded-full bg-glow-accent/10 flex items-center justify-center mx-auto mb-3">
-                <Key className="w-6 h-6 text-glow-accent" />
+        <div className="min-h-[80vh] flex items-center justify-center p-4">
+          <div className="w-full max-w-sm">
+            {/* Logo */}
+            <div className="text-center mb-8">
+              <div className="inline-flex w-16 h-16 rounded-2xl bg-glow-gradient items-center justify-center mb-4 shadow-glow-lg">
+                <Shield className="w-8 h-8 text-white" />
               </div>
-              <h2 className="text-lg font-bold text-white">Admin Access</h2>
-              <p className="text-xs text-gray-400 mt-1">Enter your admin key to continue</p>
+              <h1 className="text-2xl font-bold text-glow-text">GlowIDE Admin</h1>
+              <p className="text-sm text-glow-muted mt-1">Authenticate to access the control panel</p>
             </div>
-            <Input label="Admin Key" type={showKey ? 'text' : 'password'} value={adminKey}
-              onChange={e => setAdminKey(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAuth()}
-              rightIcon={<button onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>}
-            />
-            <Button onClick={handleAuth} isLoading={isAuthLoading} variant="gradient" className="w-full">
-              Authenticate
-            </Button>
-          </Card>
+
+            <div className="bg-glow-card border border-glow-border rounded-2xl p-6 space-y-4">
+              <Field>
+                <Label>Admin Secret Key</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-glow-muted" />
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={adminKey}
+                    onChange={e => setAdminKey(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAuth()}
+                    placeholder="Enter ADMIN_SECRET_KEY…"
+                    className={`${inputCls} pl-10 pr-10 font-mono`}
+                    autoComplete="current-password"
+                  />
+                  <button onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-glow-muted hover:text-glow-text transition-colors">
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-glow-muted">Set via <code className="text-glow-accent font-mono">ADMIN_SECRET_KEY</code> env variable</p>
+              </Field>
+
+              <button
+                onClick={handleAuth}
+                disabled={authLoading}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-glow-gradient text-white font-semibold text-sm disabled:opacity-60 hover:opacity-90 transition-opacity shadow-glow-sm"
+              >
+                {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                {authLoading ? 'Authenticating…' : 'Access Admin Panel'}
+              </button>
+            </div>
+          </div>
         </div>
       </AppLayout>
     );
   }
 
-  const tabs = [
-    { id: 'ai', label: 'AI Settings', icon: Brain },
-    { id: 'models', label: 'Models', icon: Sliders },
-    { id: 'prompts', label: 'System Prompt', icon: FileText },
-    { id: 'fees', label: 'Deployment Fees', icon: DollarSign },
+  const enabledModels = models.filter(m => m.enabled).length;
+  const hasFee = parseFloat(settings.deploymentFee) > 0;
+
+  const TABS = [
+    { id: 'overview', label: 'Overview',   icon: Activity  },
+    { id: 'ai',       label: 'AI Config',  icon: Brain     },
+    { id: 'models',   label: 'Models',     icon: Sliders   },
+    { id: 'prompt',   label: 'Prompt',     icon: FileText  },
+    { id: 'fees',     label: 'Fees',       icon: DollarSign},
   ] as const;
 
   return (
     <AppLayout title="Admin Panel">
-      <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4 md:space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg md:text-xl font-bold text-white">Admin Panel</h1>
-          <Badge variant="success" className="text-xs">Authenticated</Badge>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-glow-border overflow-x-auto">
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2.5 text-xs md:text-sm font-medium whitespace-nowrap transition-colors ${activeTab === t.id ? 'text-glow-accent-light border-b-2 border-glow-accent' : 'text-gray-500 hover:text-gray-300'}`}>
-              <t.icon className="w-3.5 h-3.5" />{t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* AI Settings */}
-        {activeTab === 'ai' && (
-          <Card className="p-5 space-y-5">
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">OpenRouter API Key</label>
-              <div className="flex gap-2">
-                <input type={showKeyValue ? 'text' : 'password'} value={settings.openrouterKey}
-                  onChange={e => setSettings(p => ({ ...p, openrouterKey: e.target.value }))}
-                  placeholder="sk-or-v1-..."
-                  className="flex-1 bg-glow-bg border border-glow-border rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50 font-mono"
-                />
-                <button onClick={() => setShowKeyValue(!showKeyValue)} className="p-2 rounded-lg border border-glow-border text-gray-500 hover:text-white hover:bg-glow-card transition-colors">
-                  {showKeyValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+      <div className="min-h-full bg-glow-bg">
+        {/* ── Header ──────────────────────────────────────── */}
+        <div className="border-b border-glow-border bg-glow-surface/80 backdrop-blur-sm sticky top-0 z-10">
+          <div className="max-w-5xl mx-auto px-4 md:px-6 flex items-center justify-between h-14">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-glow-gradient flex items-center justify-center shadow-glow-sm">
+                <Shield className="w-4 h-4 text-white" />
               </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">Default Model</label>
-              <select value={settings.defaultModel} onChange={e => setSettings(p => ({ ...p, defaultModel: e.target.value }))}
-                className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50">
-                {models.filter(m => m.enabled).map(m => <option key={m.id} value={m.id}>{m.name} ({m.provider})</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">Temperature: {settings.temperature}</label>
-              <input type="range" min="0" max="1" step="0.1" value={settings.temperature}
-                onChange={e => setSettings(p => ({ ...p, temperature: parseFloat(e.target.value) }))}
-                className="w-full accent-glow-accent" />
-              <div className="flex justify-between text-xs text-gray-600 mt-1"><span>Precise (0)</span><span>Creative (1)</span></div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">Max Tokens: {settings.maxTokens.toLocaleString()}</label>
-              <input type="range" min="512" max="8192" step="256" value={settings.maxTokens}
-                onChange={e => setSettings(p => ({ ...p, maxTokens: parseInt(e.target.value) }))}
-                className="w-full accent-glow-accent" />
-            </div>
-
-            <div>
-              <Input label="Rate Limit (requests / user / 24h)" type="number" value={settings.rateLimitPerUser}
-                onChange={e => setSettings(p => ({ ...p, rateLimitPerUser: parseInt(e.target.value) || 100 }))} />
-            </div>
-            <div className="pt-2 border-t border-glow-border">
-              <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider mb-3">Contract Deployment Fee</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input
-                  label="Fee Amount (USDC)"
-                  type="number"
-                  placeholder="0"
-                  value={settings.deploymentFee}
-                  hint="Set to 0 for free deployments"
-                  onChange={e => setSettings(p => ({ ...p, deploymentFee: e.target.value }))}
-                />
-                <Input
-                  label="Fee Recipient Address"
-                  placeholder="0x..."
-                  value={settings.feeRecipient}
-                  hint="Your wallet address to receive fees"
-                  onChange={e => setSettings(p => ({ ...p, feeRecipient: e.target.value }))}
-                />
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Models Management */}
-        {activeTab === 'models' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-400">{models.filter(m => m.enabled).length} of {models.length} models enabled</p>
-              <Button size="sm" onClick={() => setShowNewForm(!showNewForm)} variant="secondary" className="h-8 text-xs">
-                <Plus className="w-3.5 h-3.5 mr-1" />Add Model
-              </Button>
-            </div>
-
-            {showNewForm && (
-              <Card className="p-4 border-glow-accent/30 space-y-3">
-                <p className="text-sm font-semibold text-white">Add Model</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Input label="Model ID (OpenRouter)" placeholder="provider/model-name" value={newModel.id} onChange={e => setNewModel(p => ({ ...p, id: e.target.value }))} />
-                  <Input label="Display Name" placeholder="GPT-4o" value={newModel.name} onChange={e => setNewModel(p => ({ ...p, name: e.target.value }))} />
-                  <Input label="Provider" placeholder="OpenAI" value={newModel.provider} onChange={e => setNewModel(p => ({ ...p, provider: e.target.value }))} />
-                  <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1.5">Tier</label>
-                    <select value={newModel.tier} onChange={e => setNewModel(p => ({ ...p, tier: e.target.value as PublicModel['tier'] }))}
-                      className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50">
-                      <option value="premium">Premium</option><option value="fast">Fast</option><option value="coding">Coding</option>
-                    </select>
-                  </div>
-                  <Input label="Context Length" type="number" value={newModel.context_length} onChange={e => setNewModel(p => ({ ...p, context_length: parseInt(e.target.value) || 128000 }))} />
-                  <Input label="Description" value={newModel.description} onChange={e => setNewModel(p => ({ ...p, description: e.target.value }))} />
-                </div>
-                <div className="flex gap-2 justify-end">
-                  <Button variant="ghost" size="sm" onClick={() => setShowNewForm(false)}>Cancel</Button>
-                  <Button size="sm" onClick={addModel}>Add Model</Button>
-                </div>
-              </Card>
-            )}
-
-            <div className="space-y-2">
-              {models.map(m => (
-                <Card key={m.id} className="p-3">
-                  {editingModel?.id === m.id ? (
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <Input label="Name" value={editingModel.name} onChange={e => setEditingModel(p => p ? ({ ...p, name: e.target.value }) : p)} />
-                        <Input label="Provider" value={editingModel.provider} onChange={e => setEditingModel(p => p ? ({ ...p, provider: e.target.value }) : p)} />
-                        <Input label="Description" value={editingModel.description ?? ''} onChange={e => setEditingModel(p => p ? ({ ...p, description: e.target.value }) : p)} />
-                        <Input label="Context Length" type="number" value={editingModel.context_length ?? 0} onChange={e => setEditingModel(p => p ? ({ ...p, context_length: parseInt(e.target.value) }) : p)} />
-                      </div>
-                      <div className="flex gap-2 justify-end">
-                        <Button variant="ghost" size="sm" onClick={() => setEditingModel(null)}><X className="w-3.5 h-3.5" /></Button>
-                        <Button size="sm" onClick={saveEdit}><CheckCircle className="w-3.5 h-3.5 mr-1" />Save</Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium text-white">{m.name}</span>
-                          <Badge variant="default" className="text-[10px]">{m.tier}</Badge>
-                          <span className="text-[10px] text-gray-500">{m.provider}</span>
-                          {m.context_length && <span className="text-[10px] text-gray-600">{(m.context_length/1000).toFixed(0)}k ctx</span>}
-                        </div>
-                        <p className="text-xs text-gray-600 font-mono truncate mt-0.5">{m.id}</p>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button onClick={() => toggleModel(m.id)} className={`transition-colors ${m.enabled ? 'text-glow-accent' : 'text-gray-600'}`} title={m.enabled ? 'Disable' : 'Enable'}>
-                          {m.enabled ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
-                        </button>
-                        <button onClick={() => setEditingModel(m)} className="p-1.5 rounded text-gray-600 hover:text-gray-300 hover:bg-glow-card transition-colors">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => deleteModel(m.id)} className="p-1.5 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* System Prompt */}
-        {activeTab === 'prompts' && (
-          <Card className="p-5 space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">System Prompt</label>
-              <textarea rows={16} value={settings.systemPrompt}
-                onChange={e => setSettings(p => ({ ...p, systemPrompt: e.target.value }))}
-                className="w-full bg-glow-bg border border-glow-border rounded-lg px-3 py-2.5 text-sm text-gray-300 focus:outline-none focus:border-glow-accent/50 resize-none font-mono"
-              />
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setSettings(p => ({ ...p, systemPrompt: DEFAULT_SYSTEM_PROMPT }))}>
-              Reset to default
-            </Button>
-          </Card>
-        )}
-
-
-        {/* Deployment Fees */}
-        {activeTab === 'fees' && (
-          <Card className="p-5 space-y-5">
-            <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-[var(--glow-text)]">Deployment Fees</h3>
-                <p className="text-xs text-[var(--glow-muted)] mt-0.5">Charge users USDC fees for contract deployments</p>
+                <h1 className="text-sm font-bold text-glow-text">Admin Panel</h1>
+                <p className="text-[10px] text-glow-muted">GlowIDE Control Center</p>
               </div>
-              <button onClick={() => setFees(p => ({ ...p, feesEnabled: !p.feesEnabled }))} className={`relative w-12 h-6 rounded-full transition-colors ${fees.feesEnabled ? 'bg-[var(--glow-accent)]' : 'bg-[var(--glow-card)] border border-[var(--glow-border)]'}`}>
-                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${fees.feesEnabled ? 'translate-x-7' : 'translate-x-1'}`} />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-2.5 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                Authenticated
+              </span>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-accent hover:bg-glow-accent/90 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-60 shadow-glow-sm"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                {saving ? 'Saving…' : 'Save All'}
               </button>
             </div>
+          </div>
 
-            {fees.feesEnabled && (
-              <div className="p-3 bg-[var(--glow-accent)]/10 border border-[var(--glow-accent)]/20 rounded-xl">
-                <p className="text-xs text-[var(--glow-accent-light)]">Fees are enabled. Users will be charged when deploying contracts.</p>
-              </div>
-            )}
+          {/* Tab bar */}
+          <div className="max-w-5xl mx-auto px-4 md:px-6 flex gap-1 overflow-x-auto pb-px">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-all ${
+                  activeTab === t.id
+                    ? 'border-glow-accent text-glow-accent-light'
+                    : 'border-transparent text-glow-muted hover:text-glow-text'
+                }`}
+              >
+                <t.icon className="w-3.5 h-3.5" />{t.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-[var(--glow-muted)] mb-1.5">
-                  <DollarSign className="w-3.5 h-3.5 inline mr-1" />Deployment Fee (USDC)
-                </label>
-                <input type="number" min="0" step="0.01" value={fees.deploymentFeeUsdc}
-                  onChange={e => setFees(p => ({ ...p, deploymentFeeUsdc: e.target.value }))}
-                  className="w-full bg-[var(--glow-bg)] border border-[var(--glow-border)] rounded-lg px-3 py-2 text-sm text-[var(--glow-text)] focus:outline-none focus:border-[var(--glow-accent)]/50" />
-                <p className="text-xs text-[var(--glow-muted)] mt-1">Fixed USDC fee per deployment</p>
+        {/* ── Content ─────────────────────────────────────── */}
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 space-y-6">
+
+          {/* ── OVERVIEW ──────────────────────────────────── */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <StatCard icon={Sliders}  label="Models"    value={enabledModels} sub={`of ${models.length} enabled`} color="#7c3aed" />
+                <StatCard icon={DollarSign} label="Deploy Fee" value={hasFee ? `${settings.deploymentFee} USDC` : 'Free'} sub={settings.feesEnabled ? 'Fees active' : 'Fees off'} color="#10b981" />
+                <StatCard icon={Activity} label="Rate Limit" value={settings.rateLimitPerUser} sub="req / user / day" color="#06b6d4" />
+                <StatCard icon={Cpu}      label="Max Tokens" value={settings.maxTokens.toLocaleString()} sub={`temp: ${settings.temperature}`} color="#f59e0b" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-[var(--glow-muted)] mb-1.5">
-                  <Percent className="w-3.5 h-3.5 inline mr-1" />Fee Percentage (%)
-                </label>
-                <input type="number" min="0" max="100" step="0.1" value={fees.deploymentFeePercent}
-                  onChange={e => setFees(p => ({ ...p, deploymentFeePercent: e.target.value }))}
-                  className="w-full bg-[var(--glow-bg)] border border-[var(--glow-border)] rounded-lg px-3 py-2 text-sm text-[var(--glow-text)] focus:outline-none focus:border-[var(--glow-accent)]/50" />
-                <p className="text-xs text-[var(--glow-muted)] mt-1">% of gas cost charged as fee</p>
+
+              {/* Quick status */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-glow-accent" />
+                    <span className="text-sm font-semibold text-glow-text">AI Configuration</span>
+                  </div>
+                  <div className="space-y-2">
+                    {[
+                      { label: 'API Key',        value: settings.openrouterKey ? '••••••••' + settings.openrouterKey.slice(-4) : 'Not set', warn: !settings.openrouterKey },
+                      { label: 'Default Model',  value: models.find(m => m.id === settings.defaultModel)?.name ?? settings.defaultModel, warn: false },
+                      { label: 'Temperature',    value: settings.temperature.toString(), warn: false },
+                    ].map(item => (
+                      <div key={item.label} className="flex items-center justify-between text-sm">
+                        <span className="text-glow-muted">{item.label}</span>
+                        <span className={item.warn ? 'text-amber-400 flex items-center gap-1' : 'text-glow-text font-mono'}>
+                          {item.warn && <AlertTriangle className="w-3 h-3" />}{item.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-glow-cyan" />
+                    <span className="text-sm font-semibold text-glow-text">Network & Fees</span>
+                  </div>
+                  <div className="space-y-2">
+                    {[
+                      { label: 'Network',     value: 'Arc Testnet' },
+                      { label: 'Chain ID',    value: '5042002' },
+                      { label: 'Deploy Fee',  value: hasFee ? `${settings.deploymentFee} USDC` : 'Free' },
+                      { label: 'Fee Status',  value: settings.feesEnabled ? 'Active' : 'Disabled' },
+                    ].map(item => (
+                      <div key={item.label} className="flex items-center justify-between text-sm">
+                        <span className="text-glow-muted">{item.label}</span>
+                        <span className="text-glow-text font-mono">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-[var(--glow-muted)] mb-1.5">Free Deployments / User</label>
-                <input type="number" min="0" value={fees.freeDeploymentsPerUser}
-                  onChange={e => setFees(p => ({ ...p, freeDeploymentsPerUser: e.target.value }))}
-                  className="w-full bg-[var(--glow-bg)] border border-[var(--glow-border)] rounded-lg px-3 py-2 text-sm text-[var(--glow-text)] focus:outline-none focus:border-[var(--glow-accent)]/50" />
-                <p className="text-xs text-[var(--glow-muted)] mt-1">Free deployments before charging</p>
+
+              {/* Warnings */}
+              {!settings.openrouterKey && (
+                <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-300">OpenRouter API key not configured</p>
+                    <p className="text-xs text-amber-400/70 mt-0.5">AI chat will not work until you add your OpenRouter API key in AI Config.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── AI CONFIG ─────────────────────────────────── */}
+          {activeTab === 'ai' && (
+            <div className="space-y-5 animate-fade-in">
+              {/* API Key */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Server className="w-4 h-4 text-glow-accent" />
+                  <span className="text-sm font-semibold text-glow-text">OpenRouter API</span>
+                </div>
+
+                <Field>
+                  <Label hint="Get your key at openrouter.ai/keys">API Key</Label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showApiKey ? 'text' : 'password'}
+                        value={settings.openrouterKey}
+                        onChange={e => setSettings(p => ({ ...p, openrouterKey: e.target.value }))}
+                        placeholder="sk-or-v1-…"
+                        className={`${inputCls} pr-20 font-mono`}
+                      />
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                        {settings.openrouterKey && (
+                          <button onClick={() => { navigator.clipboard.writeText(settings.openrouterKey); setKeyCopied(true); setTimeout(() => setKeyCopied(false), 2000); }}
+                            className="p-1 rounded text-glow-muted hover:text-glow-text transition-colors">
+                            {keyCopied ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                        <button onClick={() => setShowApiKey(!showApiKey)} className="p-1 rounded text-glow-muted hover:text-glow-text transition-colors">
+                          {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {settings.openrouterKey && (
+                    <p className="text-[11px] text-emerald-400 flex items-center gap-1"><CheckCircle className="w-3 h-3" />API key configured</p>
+                  )}
+                </Field>
+
+                <Field>
+                  <Label>Default Model</Label>
+                  <select value={settings.defaultModel} onChange={e => setSettings(p => ({ ...p, defaultModel: e.target.value }))} className={inputCls}>
+                    {['premium', 'fast', 'coding'].map(tier => {
+                      const tierModels = models.filter(m => m.tier === tier && m.enabled);
+                      if (!tierModels.length) return null;
+                      return (
+                        <optgroup key={tier} label={tier.charAt(0).toUpperCase() + tier.slice(1)}>
+                          {tierModels.map(m => <option key={m.id} value={m.id}>{m.name} — {m.provider}</option>)}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </Field>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-[var(--glow-muted)] mb-1.5">Verification Fee (USDC)</label>
-                <input type="number" min="0" step="0.01" value={fees.verificationFeeUsdc}
-                  onChange={e => setFees(p => ({ ...p, verificationFeeUsdc: e.target.value }))}
-                  className="w-full bg-[var(--glow-bg)] border border-[var(--glow-border)] rounded-lg px-3 py-2 text-sm text-[var(--glow-text)] focus:outline-none focus:border-[var(--glow-accent)]/50" />
-                <p className="text-xs text-[var(--glow-muted)] mt-1">Fee for contract source verification</p>
+
+              {/* Generation params */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Zap className="w-4 h-4 text-glow-cyan" />
+                  <span className="text-sm font-semibold text-glow-text">Generation Parameters</span>
+                </div>
+
+                <Field>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Temperature</Label>
+                    <span className="text-sm font-bold text-glow-accent font-mono">{settings.temperature}</span>
+                  </div>
+                  <input type="range" min="0" max="1" step="0.05" value={settings.temperature}
+                    onChange={e => setSettings(p => ({ ...p, temperature: parseFloat(e.target.value) }))}
+                    className="w-full h-1.5 appearance-none bg-glow-border rounded-full accent-glow-accent cursor-pointer" />
+                  <div className="flex justify-between text-[10px] text-glow-muted mt-1">
+                    <span>🎯 Precise / Deterministic</span>
+                    <span>🎨 Creative / Varied</span>
+                  </div>
+                </Field>
+
+                <Field>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Max Output Tokens</Label>
+                    <span className="text-sm font-bold text-glow-accent font-mono">{settings.maxTokens.toLocaleString()}</span>
+                  </div>
+                  <input type="range" min="512" max="8192" step="256" value={settings.maxTokens}
+                    onChange={e => setSettings(p => ({ ...p, maxTokens: parseInt(e.target.value) }))}
+                    className="w-full h-1.5 appearance-none bg-glow-border rounded-full accent-glow-accent cursor-pointer" />
+                  <div className="flex justify-between text-[10px] text-glow-muted mt-1"><span>512 (Fast)</span><span>8,192 (Long)</span></div>
+                </Field>
+
+                <Field>
+                  <Label hint="Maximum requests per user per 24-hour period">Rate Limit (req / user / 24h)</Label>
+                  <input type="number" min="1" max="10000" value={settings.rateLimitPerUser}
+                    onChange={e => setSettings(p => ({ ...p, rateLimitPerUser: parseInt(e.target.value) || 100 }))}
+                    className={inputCls} />
+                </Field>
               </div>
             </div>
+          )}
 
-            <div className="p-3 bg-[var(--glow-surface)] border border-[var(--glow-border)] rounded-xl space-y-1.5">
-              <p className="text-xs font-semibold text-[var(--glow-text)]">Fee Summary</p>
-              <div className="flex justify-between text-xs text-[var(--glow-muted)]"><span>Per deployment</span><span className="text-[var(--glow-text)] font-medium">{fees.deploymentFeeUsdc} USDC {parseFloat(fees.deploymentFeePercent)>0 ? `+ ${fees.deploymentFeePercent}% of gas` : ''}</span></div>
-              <div className="flex justify-between text-xs text-[var(--glow-muted)]"><span>Free tier</span><span className="text-[var(--glow-text)] font-medium">{fees.freeDeploymentsPerUser} deployments / user</span></div>
-              <div className="flex justify-between text-xs text-[var(--glow-muted)]"><span>Verification</span><span className="text-[var(--glow-text)] font-medium">{parseFloat(fees.verificationFeeUsdc)===0 ? 'Free' : `${fees.verificationFeeUsdc} USDC`}</span></div>
-              <div className="flex justify-between text-xs text-[var(--glow-muted)]"><span>Status</span><span className={fees.feesEnabled ? 'text-emerald-400 font-medium' : 'text-amber-400 font-medium'}>{fees.feesEnabled ? 'Active' : 'Disabled'}</span></div>
+          {/* ── MODELS ────────────────────────────────────── */}
+          {activeTab === 'models' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-glow-text">Available Models</h2>
+                  <p className="text-xs text-glow-muted mt-0.5">{enabledModels} of {models.length} models enabled for users</p>
+                </div>
+                <button
+                  onClick={() => setShowNewForm(!showNewForm)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light text-xs font-medium rounded-lg hover:bg-glow-accent/25 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />Add Model
+                </button>
+              </div>
+
+              {/* Add model form */}
+              {showNewForm && (
+                <div className="bg-glow-card border border-glow-accent/30 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-glow-text">New Model</span>
+                    <button onClick={() => setShowNewForm(false)} className="text-glow-muted hover:text-glow-text"><X className="w-4 h-4" /></button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field>
+                      <Label hint="e.g. openai/gpt-4o">OpenRouter Model ID</Label>
+                      <input value={newModel.id} onChange={e => setNewModel(p => ({ ...p, id: e.target.value }))} placeholder="provider/model-name" className={`${inputCls} font-mono`} />
+                    </Field>
+                    <Field>
+                      <Label>Display Name</Label>
+                      <input value={newModel.name} onChange={e => setNewModel(p => ({ ...p, name: e.target.value }))} placeholder="GPT-4o" className={inputCls} />
+                    </Field>
+                    <Field>
+                      <Label>Provider</Label>
+                      <input value={newModel.provider} onChange={e => setNewModel(p => ({ ...p, provider: e.target.value }))} placeholder="OpenAI" className={inputCls} />
+                    </Field>
+                    <Field>
+                      <Label>Tier</Label>
+                      <select value={newModel.tier} onChange={e => setNewModel(p => ({ ...p, tier: e.target.value as PublicModel['tier'] }))} className={inputCls}>
+                        <option value="premium">⭐ Premium</option>
+                        <option value="fast">⚡ Fast</option>
+                        <option value="coding">💻 Coding</option>
+                      </select>
+                    </Field>
+                    <Field>
+                      <Label>Context Length</Label>
+                      <input type="number" value={newModel.context_length} onChange={e => setNewModel(p => ({ ...p, context_length: parseInt(e.target.value) || 128000 }))} className={inputCls} />
+                    </Field>
+                    <Field>
+                      <Label>Description</Label>
+                      <input value={newModel.description} onChange={e => setNewModel(p => ({ ...p, description: e.target.value }))} placeholder="Short description" className={inputCls} />
+                    </Field>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setShowNewForm(false)} className="px-4 py-2 text-sm text-glow-muted border border-glow-border rounded-lg hover:bg-glow-surface transition-colors">Cancel</button>
+                    <button onClick={addModel} className="px-4 py-2 text-sm font-medium bg-glow-accent text-white rounded-lg hover:bg-glow-accent/90 transition-colors">Add Model</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit model form */}
+              {editingModel && (
+                <div className="bg-glow-card border border-glow-accent/30 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-glow-text">Edit: {editingModel.name}</span>
+                    <button onClick={() => setEditingModel(null)} className="text-glow-muted hover:text-glow-text"><X className="w-4 h-4" /></button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field><Label>Display Name</Label><input value={editingModel.name} onChange={e => setEditingModel(p => p ? { ...p, name: e.target.value } : p)} className={inputCls} /></Field>
+                    <Field><Label>Provider</Label><input value={editingModel.provider} onChange={e => setEditingModel(p => p ? { ...p, provider: e.target.value } : p)} className={inputCls} /></Field>
+                    <Field><Label>Description</Label><input value={editingModel.description ?? ''} onChange={e => setEditingModel(p => p ? { ...p, description: e.target.value } : p)} className={inputCls} /></Field>
+                    <Field><Label>Context Length</Label><input type="number" value={editingModel.context_length ?? 128000} onChange={e => setEditingModel(p => p ? { ...p, context_length: parseInt(e.target.value) } : p)} className={inputCls} /></Field>
+                    <Field>
+                      <Label>Tier</Label>
+                      <select value={editingModel.tier} onChange={e => setEditingModel(p => p ? { ...p, tier: e.target.value as PublicModel['tier'] } : p)} className={inputCls}>
+                        <option value="premium">⭐ Premium</option><option value="fast">⚡ Fast</option><option value="coding">💻 Coding</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setEditingModel(null)} className="px-4 py-2 text-sm text-glow-muted border border-glow-border rounded-lg hover:bg-glow-surface transition-colors">Cancel</button>
+                    <button onClick={() => { setModels(m => m.map(x => x.id === editingModel!.id ? editingModel! : x)); setEditingModel(null); toast.success('Model updated'); }}
+                      className="px-4 py-2 text-sm font-medium bg-glow-accent text-white rounded-lg hover:bg-glow-accent/90 transition-colors">
+                      <CheckCircle className="w-3.5 h-3.5 inline mr-1.5" />Save Changes
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Models list by tier */}
+              {(['premium', 'fast', 'coding'] as const).map(tier => {
+                const tierModels = models.filter(m => m.tier === tier);
+                if (!tierModels.length) return null;
+                const tierConfig = { premium: { label: '⭐ Premium', color: '#a855f7' }, fast: { label: '⚡ Fast', color: '#06b6d4' }, coding: { label: '💻 Coding', color: '#f59e0b' } }[tier];
+                return (
+                  <div key={tier} className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider px-1" style={{ color: tierConfig.color }}>{tierConfig.label}</p>
+                    {tierModels.map(model => (
+                      <ModelRow key={model.id} model={model}
+                        onToggle={() => setModels(m => m.map(x => x.id === model.id ? { ...x, enabled: !x.enabled } : x))}
+                        onEdit={() => setEditingModel(model)}
+                        onDelete={() => { setModels(m => m.filter(x => x.id !== model.id)); toast.success('Model removed'); }}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
             </div>
-          </Card>
-        )}
+          )}
 
-        {/* Save */}
-        <div className="flex justify-end">
-          <Button variant="gradient" onClick={handleSave} isLoading={isSaving}>
-            <Save className="w-4 h-4 mr-2" />Save All Settings
-          </Button>
+          {/* ── SYSTEM PROMPT ─────────────────────────────── */}
+          {activeTab === 'prompt' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-glow-text">System Prompt</h2>
+                  <p className="text-xs text-glow-muted mt-0.5">Defines AI personality and capabilities for all users</p>
+                </div>
+                <button onClick={() => { setSettings(p => ({ ...p, systemPrompt: DEFAULT_SYSTEM_PROMPT })); toast.success('Reset to default'); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-glow-muted border border-glow-border rounded-lg hover:bg-glow-card transition-colors">
+                  <RefreshCw className="w-3 h-3" />Reset
+                </button>
+              </div>
+
+              <div className="bg-glow-card border border-glow-border rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-glow-border bg-glow-surface/50">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
+                  </div>
+                  <span className="text-[11px] text-glow-muted font-mono">system_prompt.txt</span>
+                  <span className="text-[11px] text-glow-muted">{settings.systemPrompt.length} chars</span>
+                </div>
+                <textarea
+                  rows={18}
+                  value={settings.systemPrompt}
+                  onChange={e => setSettings(p => ({ ...p, systemPrompt: e.target.value }))}
+                  className="w-full bg-transparent px-4 py-3 text-sm text-glow-text font-mono resize-none focus:outline-none leading-relaxed"
+                  spellCheck={false}
+                />
+              </div>
+
+              <div className="p-3 bg-glow-accent/5 border border-glow-accent/15 rounded-xl text-xs text-glow-muted">
+                <strong className="text-glow-text">Tip:</strong> Be specific about expertise areas, code style preferences, and how the AI should respond to different types of questions.
+              </div>
+            </div>
+          )}
+
+          {/* ── FEES ──────────────────────────────────────── */}
+          {activeTab === 'fees' && (
+            <div className="space-y-5 animate-fade-in">
+              {/* Master toggle */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-glow-text">Enable Deployment Fees</h3>
+                    <p className="text-xs text-glow-muted mt-0.5">Charge users USDC when deploying contracts</p>
+                  </div>
+                  <Toggle value={settings.feesEnabled} onChange={v => setSettings(p => ({ ...p, feesEnabled: v }))} />
+                </div>
+                {settings.feesEnabled && (
+                  <div className="mt-3 flex items-center gap-2 p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    <p className="text-xs text-emerald-300">Fees are active. Users will be charged on contract deployment.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Fee amounts */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <DollarSign className="w-4 h-4 text-glow-accent" />
+                  <span className="text-sm font-semibold text-glow-text">Fee Structure</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field>
+                    <Label hint="Fixed USDC charged per deployment">Deployment Fee (USDC)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-glow-muted font-semibold">$</span>
+                      <input type="number" min="0" step="0.01" value={settings.deploymentFee}
+                        onChange={e => setSettings(p => ({ ...p, deploymentFee: e.target.value }))}
+                        className={`${inputCls} pl-7`} placeholder="0.00" />
+                    </div>
+                  </Field>
+
+                  <Field>
+                    <Label hint="Additional % of gas cost">Gas Fee Surcharge (%)</Label>
+                    <div className="relative">
+                      <Percent className="absolute right-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-glow-muted" />
+                      <input type="number" min="0" max="100" step="0.1" value={settings.deploymentFeePercent}
+                        onChange={e => setSettings(p => ({ ...p, deploymentFeePercent: e.target.value }))}
+                        className={`${inputCls} pr-9`} placeholder="0" />
+                    </div>
+                  </Field>
+
+                  <Field>
+                    <Label hint="Free deployments before charging starts">Free Tier (deploys / user)</Label>
+                    <input type="number" min="0" value={settings.freeDeployments}
+                      onChange={e => setSettings(p => ({ ...p, freeDeployments: e.target.value }))}
+                      className={inputCls} />
+                  </Field>
+
+                  <Field>
+                    <Label hint="Fee for source code verification (0 = free)">Verification Fee (USDC)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-glow-muted font-semibold">$</span>
+                      <input type="number" min="0" step="0.01" value={settings.verificationFee}
+                        onChange={e => setSettings(p => ({ ...p, verificationFee: e.target.value }))}
+                        className={`${inputCls} pl-7`} placeholder="0.00" />
+                    </div>
+                  </Field>
+                </div>
+              </div>
+
+              {/* Fee recipient */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Shield className="w-4 h-4 text-glow-cyan" />
+                  <span className="text-sm font-semibold text-glow-text">Fee Recipient</span>
+                </div>
+                <Field>
+                  <Label hint="All deployment fees are sent to this wallet">Recipient Wallet Address</Label>
+                  <input type="text" value={settings.feeRecipient}
+                    onChange={e => setSettings(p => ({ ...p, feeRecipient: e.target.value }))}
+                    placeholder="0x…" className={`${inputCls} font-mono`} />
+                  {settings.feeRecipient && !/^0x[0-9a-fA-F]{40}$/.test(settings.feeRecipient) && (
+                    <p className="text-xs text-amber-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Invalid Ethereum address format</p>
+                  )}
+                </Field>
+              </div>
+
+              {/* Fee summary */}
+              <div className="bg-glow-surface border border-glow-border rounded-2xl p-4">
+                <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider mb-3">Fee Summary</p>
+                <div className="space-y-2">
+                  {[
+                    { label: 'Status',          value: settings.feesEnabled ? '🟢 Active' : '⚫ Disabled' },
+                    { label: 'Per Deployment',  value: parseFloat(settings.deploymentFee) > 0 ? `${settings.deploymentFee} USDC` : 'Free' },
+                    { label: 'Gas Surcharge',   value: parseFloat(settings.deploymentFeePercent) > 0 ? `+${settings.deploymentFeePercent}%` : 'None' },
+                    { label: 'Free Tier',       value: `${settings.freeDeployments} deployments / user` },
+                    { label: 'Verification',    value: parseFloat(settings.verificationFee) > 0 ? `${settings.verificationFee} USDC` : 'Free' },
+                    { label: 'Recipient',       value: settings.feeRecipient ? settings.feeRecipient.slice(0, 10) + '…' + settings.feeRecipient.slice(-6) : 'Not set' },
+                  ].map(row => (
+                    <div key={row.label} className="flex justify-between items-center text-sm py-1 border-b border-glow-border/50 last:border-0">
+                      <span className="text-glow-muted">{row.label}</span>
+                      <span className="text-glow-text font-mono">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>
