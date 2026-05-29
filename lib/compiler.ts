@@ -13,6 +13,7 @@ export interface CompileInput {
 }
 
 export interface CompileOutput {
+  warnings?: Array<{ type: string; message: string; formattedMessage?: string }>;
   success: boolean;
   abi?: unknown[];
   bytecode?: string;

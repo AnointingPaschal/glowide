@@ -1,7 +1,9 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { useChatStore } from "@/store/chatStore";
 import { useEditorStore } from "@/store/editorStore";
+import { useFileSystemStore } from "@/store/fileSystemStore";
+import { terminalLog } from "@/components/editor/Terminal";
+import { useChatStore } from "@/store/chatStore";
 import { ChatMessage } from "./ChatMessage";
 import { Button } from "@/components/ui/Button";
 import { Send, Plus, Sparkles, Code2, Bug, RefreshCw, Zap, ChevronDown } from "lucide-react";
@@ -15,9 +17,10 @@ const QUICK_PROMPTS = [
   { icon: <Sparkles className="w-3 h-3" />, label: "Explain", prompt: "Explain how this works: " },
 ];
 
-export function ChatPanel({ compact = false }: { compact?: boolean }) {
+export function ChatPanel({ compact = false, editorMode = false }: { compact?: boolean; editorMode?: boolean }) {
   const { sessions, activeSessionId, createSession, addMessage, isStreaming, streamingContent, setStreaming, model, setModel } = useChatStore();
-  const { tabs, activeTabId } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent } = useEditorStore();
+  const { nodes, updateContent: updateFileContent } = useFileSystemStore();
   const [input, setInput] = useState("");
   const [models, setModels] = useState<PublicModel[]>([]);
   const [modelDropOpen, setModelDropOpen] = useState(false);
@@ -98,6 +101,18 @@ export function ChatPanel({ compact = false }: { compact?: boolean }) {
         }
       }
 
+      // If editorMode: auto-apply code blocks to editor
+      if (editorMode && fullContent && activeTabId) {
+        const codeMatch = fullContent.match(/```(?:\w+)?\n([\s\S]+?)```/);
+        if (codeMatch) {
+          const code = codeMatch[1].trim();
+          updateTabContent(activeTabId, code);
+          // Also persist to filesystem
+          const node = nodes.find(n => n.id === activeTabId);
+          if (node) updateFileContent(node.id, code);
+          terminalLog("AI applied code changes to editor", "ai");
+        }
+      }
       useChatStore.getState().finalizeStream(sessionId!);
     } catch (err) {
       setStreaming(false);
