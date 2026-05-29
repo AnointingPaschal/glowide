@@ -468,3 +468,23 @@ CREATE TABLE IF NOT EXISTS ai_training_examples (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================================
+-- Ensure system_settings has updated_at column (idempotent)
+-- Run this in your Supabase SQL editor if settings won't save
+-- ============================================================
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Disable RLS so service role key can always read/write
+ALTER TABLE system_settings      DISABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_logs        DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_plans           DISABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_training_examples DISABLE ROW LEVEL SECURITY;
+ALTER TABLE deployed_contracts   DISABLE ROW LEVEL SECURITY;
+
+-- Allow service role full access (belt-and-suspenders)
+GRANT ALL ON system_settings      TO service_role;
+GRANT ALL ON activity_logs        TO service_role;
+GRANT ALL ON user_plans           TO service_role;
+GRANT ALL ON ai_training_examples TO service_role;
+GRANT ALL ON deployed_contracts   TO service_role;
