@@ -419,3 +419,52 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================================
+-- USER PLANS & SUBSCRIPTIONS (append to existing schema)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_plans (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  wallet_address TEXT NOT NULL,
+  plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free','pro','enterprise')),
+  tokens_used INTEGER DEFAULT 0,
+  tokens_limit INTEGER DEFAULT 50000,
+  storage_used_bytes BIGINT DEFAULT 0,
+  storage_limit_bytes BIGINT DEFAULT 52428800, -- 50MB free
+  deployments_used INTEGER DEFAULT 0,
+  deployments_limit INTEGER DEFAULT 3,
+  subscription_tx TEXT,
+  subscription_start TIMESTAMPTZ,
+  subscription_end TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(wallet_address)
+);
+
+-- ============================================================
+-- ACTIVITY LOGS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  wallet_address TEXT,
+  action TEXT NOT NULL,
+  details JSONB DEFAULT '{}',
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_wallet ON activity_logs(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON activity_logs(created_at DESC);
+
+-- ============================================================
+-- TRAINING EXAMPLES (AI training data stored in DB)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ai_training_examples (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_message TEXT NOT NULL,
+  assistant_response TEXT NOT NULL,
+  category TEXT DEFAULT 'general',
+  enabled BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);

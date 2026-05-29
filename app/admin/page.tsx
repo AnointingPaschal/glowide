@@ -7,9 +7,21 @@ import {
   Plus, Trash2, Edit2, X, Loader2, DollarSign, Percent, Zap,
   Settings, Shield, ToggleLeft, ToggleRight, RefreshCw, Copy,
   AlertTriangle, Activity, Server, Cpu, Globe, Lock,
+  Users, BookOpen, CreditCard, Rocket,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { PublicModel } from '@/app/api/models/route';
+
+
+// ── Extra Types ───────────────────────────────────────────────────
+interface UserPlan {
+  id: string; wallet_address: string; plan: string; tokens_used: number; tokens_limit: number;
+  storage_used_bytes: number; storage_limit_bytes: number; deployments_used: number;
+  deployments_limit: number; subscription_end?: string; created_at: string;
+}
+interface TrainingExample {
+  id: string; user_message: string; assistant_response: string; category: string; enabled: boolean; created_at: string;
+}
 
 // ── Constants ────────────────────────────────────────────────────
 const DEFAULT_MODELS: PublicModel[] = [
@@ -149,7 +161,12 @@ export default function AdminPage() {
   const [authLoading, setAuthLoading]   = useState(false);
   const [showKey, setShowKey]           = useState(false);
   const [saving, setSaving]             = useState(false);
-  const [activeTab, setActiveTab]       = useState<'overview' | 'ai' | 'models' | 'prompt' | 'fees'>('overview');
+  const [activeTab, setActiveTab]       = useState<'overview' | 'ai' | 'models' | 'prompt' | 'fees' | 'users' | 'training' | 'plans'>('overview');
+  const [usersData, setUsersData]         = useState<{users: UserPlan[]; activity: Record<string, {actions: number; lastSeen: string; actions_list: string[]}>; stats: {totalUsers: number; totalDeployments: number; proUsers: number}} | null>(null);
+  const [trainingExamples, setTrainingExamples] = useState<TrainingExample[]>([]);
+  const [loadingUsers, setLoadingUsers]   = useState(false);
+  const [loadingTraining, setLoadingTraining] = useState(false);
+  const [savingTraining, setSavingTraining] = useState(false);
   const [showApiKey, setShowApiKey]     = useState(false);
   const [keyCopied, setKeyCopied]       = useState(false);
   const [models, setModels]             = useState<PublicModel[]>(DEFAULT_MODELS);
@@ -195,6 +212,22 @@ export default function AdminPage() {
         }
       }).catch(() => {});
   }, [isAuth, adminKey]);
+
+  // Load users
+  useEffect(() => {
+    if (!isAuth || activeTab !== 'users') return;
+    setLoadingUsers(true);
+    fetch('/api/admin/users', { headers: { authorization: `Bearer ${adminKey}` } })
+      .then(r => r.json()).then(d => setUsersData(d)).catch(() => {}).finally(() => setLoadingUsers(false));
+  }, [isAuth, activeTab, adminKey]);
+
+  // Load training
+  useEffect(() => {
+    if (!isAuth || activeTab !== 'training') return;
+    setLoadingTraining(true);
+    fetch('/api/admin/training', { headers: { authorization: `Bearer ${adminKey}` } })
+      .then(r => r.json()).then(d => { if (d.examples) setTrainingExamples(d.examples); }).catch(() => {}).finally(() => setLoadingTraining(false));
+  }, [isAuth, activeTab, adminKey]);
 
   // Auth
   const handleAuth = async () => {
@@ -311,6 +344,9 @@ export default function AdminPage() {
     { id: 'models',   label: 'Models',     icon: Sliders   },
     { id: 'prompt',   label: 'Prompt',     icon: FileText  },
     { id: 'fees',     label: 'Fees',       icon: DollarSign},
+    { id: 'users',    label: 'Users',      icon: Users     },
+    { id: 'training', label: 'AI Training',icon: BookOpen  },
+    { id: 'plans',    label: 'Plans',      icon: CreditCard},
   ] as const;
 
   return (
@@ -779,6 +815,178 @@ export default function AdminPage() {
                       <span className="text-glow-text font-mono">{row.value}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── USERS ─────────────────────────────────────── */}
+          {activeTab === 'users' && (
+            <div className="space-y-5 animate-fade-in">
+              {loadingUsers ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-glow-accent" /></div>
+              ) : usersData ? (
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    <StatCard icon={Users} label="Total Users" value={usersData.stats.totalUsers} color="#7c3aed" />
+                    <StatCard icon={CreditCard} label="Pro Users" value={usersData.stats.proUsers} sub="paid plans" color="#10b981" />
+                    <StatCard icon={Rocket} label="Deployments" value={usersData.stats.totalDeployments} color="#06b6d4" />
+                  </div>
+                  <div className="bg-glow-card border border-glow-border rounded-2xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-glow-border flex items-center justify-between">
+                      <span className="text-sm font-semibold text-glow-text">All Users</span>
+                      <span className="text-xs text-glow-muted">{usersData.users.length} total</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead><tr className="border-b border-glow-border bg-glow-surface/50">
+                          <th className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">Wallet</th>
+                          <th className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">Plan</th>
+                          <th className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">Tokens</th>
+                          <th className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">Deploys</th>
+                          <th className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">Storage</th>
+                          <th className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">Activity</th>
+                          <th className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">Since</th>
+                        </tr></thead>
+                        <tbody>
+                          {usersData.users.map(u => {
+                            const act = usersData.activity[u.wallet_address];
+                            return (
+                              <tr key={u.id} className="border-b border-glow-border/50 hover:bg-glow-surface/30 transition-colors">
+                                <td className="px-4 py-2.5 font-mono text-xs text-glow-text">{u.wallet_address.slice(0,10)}…{u.wallet_address.slice(-6)}</td>
+                                <td className="px-4 py-2.5">
+                                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${u.plan === 'free' ? 'text-gray-400 border-gray-700 bg-gray-800/50' : u.plan === 'pro' ? 'text-purple-400 border-purple-500/30 bg-purple-500/10' : 'text-amber-400 border-amber-500/30 bg-amber-500/10'}`}>
+                                    {u.plan.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5 text-xs text-glow-muted">{(u.tokens_used ?? 0).toLocaleString()} / {(u.tokens_limit ?? 0).toLocaleString()}</td>
+                                <td className="px-4 py-2.5 text-xs text-glow-muted">{u.deployments_used ?? 0} / {u.deployments_limit}</td>
+                                <td className="px-4 py-2.5 text-xs text-glow-muted">{((u.storage_used_bytes ?? 0) / 1024 / 1024).toFixed(1)} MB</td>
+                                <td className="px-4 py-2.5 text-xs text-glow-muted">{act?.actions ?? 0} actions</td>
+                                <td className="px-4 py-2.5 text-xs text-glow-muted">{new Date(u.created_at).toLocaleDateString()}</td>
+                              </tr>
+                            );
+                          })}
+                          {usersData.users.length === 0 && (
+                            <tr><td colSpan={7} className="px-4 py-8 text-center text-glow-muted text-sm">No users yet</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-16 text-glow-muted">Failed to load users</div>
+              )}
+            </div>
+          )}
+
+          {/* ── TRAINING ──────────────────────────────────── */}
+          {activeTab === 'training' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-glow-text">AI Training Data</h2>
+                  <p className="text-xs text-glow-muted mt-0.5">Edit examples to shape AI behaviour · {trainingExamples.length} examples</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setTrainingExamples(p => [...p, { id: `new-${Date.now()}`, user_message: '', assistant_response: '', category: 'general', enabled: true, created_at: new Date().toISOString() }])}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light rounded-lg hover:bg-glow-accent/25 transition-colors">
+                    <Plus className="w-3.5 h-3.5" />Add Example
+                  </button>
+                  <button onClick={async () => {
+                    setSavingTraining(true);
+                    try {
+                      const res = await fetch('/api/admin/training', { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${adminKey}` }, body: JSON.stringify({ examples: trainingExamples.filter(e => e.enabled) }) });
+                      if (res.ok) toast.success('Training data saved');
+                      else toast.error('Save failed');
+                    } catch { toast.error('Save failed'); } finally { setSavingTraining(false); }
+                  }} disabled={savingTraining}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 rounded-lg hover:bg-emerald-500/25 transition-colors disabled:opacity-50">
+                    {savingTraining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}Save Training
+                  </button>
+                </div>
+              </div>
+
+              {loadingTraining ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-glow-accent" /></div>
+              ) : (
+                <div className="space-y-3">
+                  {trainingExamples.map((ex, i) => (
+                    <div key={ex.id} className={`bg-glow-card border rounded-2xl p-4 space-y-3 ${ex.enabled ? 'border-glow-border' : 'border-glow-border/30 opacity-50'}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-glow-muted">#{i+1}</span>
+                          <select value={ex.category} onChange={e => setTrainingExamples(p => p.map((x,j) => j===i ? {...x, category: e.target.value} : x))}
+                            className="text-xs bg-glow-bg border border-glow-border rounded-lg px-2 py-1 text-glow-muted focus:outline-none">
+                            {['general','solidity','react','nodejs','web3','security','gas-optimization'].map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Toggle value={ex.enabled} onChange={v => setTrainingExamples(p => p.map((x,j) => j===i ? {...x, enabled: v} : x))} />
+                          <button onClick={() => setTrainingExamples(p => p.filter((_,j) => j!==i))} className="p-1 text-glow-muted hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-[10px] text-glow-muted uppercase tracking-wider mb-1.5 font-semibold">User Message</p>
+                          <textarea value={ex.user_message} onChange={e => setTrainingExamples(p => p.map((x,j) => j===i ? {...x, user_message: e.target.value} : x))}
+                            className="w-full bg-glow-bg border border-glow-border rounded-xl p-3 text-sm text-glow-text focus:outline-none focus:border-glow-accent/50 resize-none font-mono" rows={4} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-glow-muted uppercase tracking-wider mb-1.5 font-semibold">AI Response</p>
+                          <textarea value={ex.assistant_response} onChange={e => setTrainingExamples(p => p.map((x,j) => j===i ? {...x, assistant_response: e.target.value} : x))}
+                            className="w-full bg-glow-bg border border-glow-border rounded-xl p-3 text-sm text-glow-text focus:outline-none focus:border-glow-accent/50 resize-none font-mono" rows={4} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── PLANS ─────────────────────────────────────── */}
+          {activeTab === 'plans' && (
+            <div className="space-y-5 animate-fade-in">
+              <div>
+                <h2 className="text-base font-semibold text-glow-text">Subscription Plans</h2>
+                <p className="text-xs text-glow-muted mt-0.5">Configure plan tiers and pricing for users</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[
+                  { name: 'Free', tier: 'free', price: '0', tokens: '50,000', storage: '50 MB', deployments: '3', color: '#6b7280', desc: 'Perfect for exploring GlowIDE' },
+                  { name: 'Pro', tier: 'pro', price: '10 USDC/mo', tokens: '500,000', storage: '500 MB', deployments: '50', color: '#7c3aed', desc: 'For serious developers' },
+                  { name: 'Enterprise', tier: 'enterprise', price: 'Custom', tokens: '5,000,000', storage: '5 GB', deployments: '500', color: '#f59e0b', desc: 'For teams and businesses' },
+                ].map(plan => (
+                  <div key={plan.tier} className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-glow-text">{plan.name}</span>
+                        <span className="text-sm font-semibold" style={{ color: plan.color }}>{plan.price}</span>
+                      </div>
+                      <p className="text-xs text-glow-muted">{plan.desc}</p>
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      {[['AI Tokens / mo', plan.tokens],['Storage', plan.storage],['Deployments', plan.deployments]].map(([k,v]) => (
+                        <div key={k} className="flex justify-between">
+                          <span className="text-glow-muted">{k}</span>
+                          <span className="text-glow-text font-medium">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="p-4 bg-glow-accent/5 border border-glow-accent/15 rounded-2xl">
+                <p className="text-xs text-glow-text font-medium mb-1">Subscription Fee Address</p>
+                <p className="text-xs text-glow-muted mb-3">Users pay subscription fees to this wallet. Same as your deployment fee recipient.</p>
+                <div className="flex gap-2">
+                  <input value={settings.feeRecipient} onChange={e => setSettings(p => ({ ...p, feeRecipient: e.target.value }))}
+                    placeholder="0x…" className={`${inputCls} flex-1 font-mono`} />
+                  <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-glow-accent text-white text-xs font-medium rounded-xl hover:bg-glow-accent/90 transition-colors disabled:opacity-50">
+                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                  </button>
                 </div>
               </div>
             </div>
