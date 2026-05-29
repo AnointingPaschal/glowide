@@ -9,7 +9,7 @@ import {
   Plus, Trash2, Edit2, X, Loader2, DollarSign, Percent, Zap,
   ToggleLeft, ToggleRight, RefreshCw, Copy, AlertTriangle,
   Activity, Server, Globe, Lock, Users, BookOpen, CreditCard,
-  Rocket, Wallet, ArrowDownToLine, ExternalLink, TrendingUp, Settings,
+  Code2, Rocket, Wallet, ArrowDownToLine, ExternalLink, TrendingUp, Settings,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { PublicModel } from '@/app/api/models/route';
@@ -146,7 +146,7 @@ export default function AdminPage() {
   }, [isConnected, address, isAuth, handleAuth]);
 
   // ── Settings state ─────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'overview'|'ai'|'models'|'prompt'|'fees'|'treasury'|'users'|'training'|'plans'|'website'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview'|'ai'|'models'|'prompt'|'fees'|'treasury'|'contracts'|'users'|'training'|'plans'|'website'>('overview');
   const [saving, setSaving]       = useState(false);
   const [testingDb, setTestingDb] = useState(false);
   const [dbStatus, setDbStatus]   = useState<Record<string,unknown> | null>(null);
@@ -180,6 +180,8 @@ export default function AdminPage() {
   const [withdrawTo, setWithdrawTo]             = useState('');
   const [withdrawAmt, setWithdrawAmt]           = useState('');
   const [isWithdrawing, setIsWithdrawing]       = useState(false);
+  const [deployingContract, setDeployingContract] = useState<string | null>(null);
+  const [contractBuildStatus, setContractBuildStatus] = useState<Record<string, { compiling?: boolean; compiled?: boolean; deploying?: boolean; deployed?: boolean; address?: string; txHash?: string; error?: string }>>({});
 
   const [settings, setSettings] = useState({
     openrouterKey:'', defaultModel:'anthropic/claude-sonnet-4-5',
