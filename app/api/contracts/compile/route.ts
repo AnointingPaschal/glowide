@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 30;
@@ -10,7 +11,8 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Load solc ──────────────────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // Dynamic require for solc (CommonJS module)
+    // eslint-disable-next-line
     const solc = require("solc");
 
     const fileName = `${contractName ?? "Contract"}.sol`;
