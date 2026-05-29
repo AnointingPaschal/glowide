@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href:"/editor",      icon:Code2,        label:"Editor"      },
   { href:"/build",       icon:Hammer,       label:"Build"       },
   { href:"/deployments", icon:Rocket,       label:"Deploy"      },
+  { href:"/launchpad",   icon:Zap,          label:"Launchpad"   },
   { href:"/explorer",    icon:Search,       label:"Explorer"    },
   { href:"/wallet",      icon:Wallet,       label:"Wallet"      },
   { href:"/settings",    icon:Settings,     label:"Settings"    },
