@@ -470,11 +470,17 @@ export default function AdminPage() {
               <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2"><Server className="w-4 h-4 text-glow-cyan"/><span className="text-sm font-semibold text-glow-text">Database Connection</span></div>
-                  <button onClick={testDbConnection} disabled={testingDb}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-glow-surface border border-glow-border rounded-lg text-glow-muted hover:text-glow-text disabled:opacity-50 transition-colors">
-                    {testingDb ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <RefreshCw className="w-3.5 h-3.5"/>}
-                    Test Connection
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={testDbConnection} disabled={testingDb}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-glow-surface border border-glow-border rounded-lg text-glow-muted hover:text-glow-text disabled:opacity-50 transition-colors">
+                      {testingDb ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <RefreshCw className="w-3.5 h-3.5"/>}
+                      Test DB
+                    </button>
+                    <a href="/api/admin/env-check" target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-glow-surface border border-glow-border rounded-lg text-glow-muted hover:text-glow-text transition-colors">
+                      Check Env Vars ↗
+                    </a>
+                  </div>
                 </div>
                 <p className="text-xs text-glow-muted">If Save All shows errors, run this to diagnose Supabase connectivity. Also run the SQL in <code className="text-glow-accent">supabase/schema.sql</code> to fix RLS.</p>
                 {dbStatus && (
