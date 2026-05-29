@@ -1,9 +1,5 @@
-// ── GlowIDE Compiler Types & Circle SCP Contract Templates ─────────────────
-// All contracts follow Circle's Smart Contract Platform conventions:
-//   - Arc Testnet (Chain ID 5042002), USDC as native gas (6 decimals)
-//   - evmVersion: paris
-//   - OpenZeppelin v5.0.2 via @openzeppelin/contracts imports
-//   - Circle SCP template patterns: defaultAdmin, primarySaleRecipient, roles
+// ── GlowIDE Compiler — Circle SCP aligned, OpenZeppelin v5.0.2 ─────────────
+// Arc Testnet: Chain 5042002 · USDC native gas (6 decimals) · evmVersion: paris
 // Reference: https://developers.circle.com/contracts
 
 export interface CompileInput {
@@ -24,11 +20,45 @@ export interface CompileOutput {
   metadata?: { compiler: { version: string }; optimizer: object; evmVersion: string };
 }
 
-// ── Circle SCP-aligned contract templates ───────────────────────────────────
+export function detectLanguage(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    ts:"typescript", tsx:"typescript", js:"javascript", jsx:"javascript",
+    sol:"solidity", py:"python", rs:"rust", go:"go", cpp:"cpp", c:"c",
+    html:"html", css:"css", json:"json", md:"markdown", sh:"shell",
+    yaml:"yaml", yml:"yaml", toml:"toml", java:"java", kt:"kotlin",
+    swift:"swift", rb:"ruby", php:"php",
+  };
+  return map[ext] ?? "plaintext";
+}
+
+export function getFileIcon(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const m: Record<string,string> = { ts:"ts", tsx:"tsx", js:"js", jsx:"jsx", sol:"sol", py:"py", html:"html", css:"css", json:"json", md:"md" };
+  return m[ext] ?? "file";
+}
+
+export async function compileContract(input: CompileInput): Promise<CompileOutput> {
+  const res = await fetch("/api/contracts/compile", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return res.json();
+}
+
+// ── OpenZeppelin v5.0.2 — breaking changes from v4 ─────────────────────────
+// • Counters.sol REMOVED — use plain uint256
+// • Ownable constructor now requires initialOwner address
+// • _safeMint / _mint signatures unchanged
+// • ERC721._update(to, tokenId, auth) replaces _beforeTokenTransfer
+// • ERC1155._update(from, to, ids, values) replaces _beforeTokenTransfer
+// • AccessControl unchanged
+// • SafeERC20, ReentrancyGuard unchanged
+
 export const CONTRACT_TEMPLATES = {
 
-  // ── ERC-20: Circle USDC-compatible fungible token ─────────────────────────
-  erc20: `// SPDX-License-Identifier: MIT
+// ── ERC-20: Circle USDC-compatible token ──────────────────────────────────
+erc20: `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -37,25 +67,25 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
- * @title GlowToken
- * @notice Circle SCP-aligned ERC-20 with minting, burning, pausing and roles.
- * @dev Deployed on Arc Testnet. Gas paid in USDC (6 decimals).
- *      Compatible with Circle's Smart Contract Platform templates.
+ * @title GlowToken  
+ * @notice ERC-20 with mint, burn, pause, AccessControl — Circle SCP aligned.
+ * @dev OpenZeppelin v5.0.2 compatible. Arc Testnet (USDC gas, 6 decimals).
+ *
+ * Circle SCP: deploy via POST /templates/{id}/deploy  blockchain: ARC-TESTNET
  */
 contract GlowToken is ERC20, ERC20Burnable, ERC20Pausable, AccessControl {
-    bytes32 public constant MINTER_ROLE  = keccak256("MINTER_ROLE");
-    bytes32 public constant PAUSER_ROLE  = keccak256("PAUSER_ROLE");
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     uint256 public constant MAX_SUPPLY = 1_000_000_000 * 10 ** 18;
 
-    event TokensMinted(address indexed to,   uint256 amount);
-    event TokensBurned(address indexed from, uint256 amount);
+    event TokensMinted(address indexed to, uint256 amount);
 
     /**
-     * @param name            Token name
-     * @param symbol          Token symbol
-     * @param defaultAdmin    Address granted DEFAULT_ADMIN_ROLE (Circle SCP convention)
-     * @param initialSupply   Tokens minted to defaultAdmin on deploy (in wei)
+     * @param name           Token name
+     * @param symbol         Token symbol
+     * @param defaultAdmin   Admin address — receives all roles (Circle SCP convention)
+     * @param initialSupply  Tokens minted to defaultAdmin at deploy (in wei, 0 = none)
      */
     constructor(
         string memory name,
@@ -81,54 +111,53 @@ contract GlowToken is ERC20, ERC20Burnable, ERC20Pausable, AccessControl {
     function pause()   external onlyRole(PAUSER_ROLE) { _pause(); }
     function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); }
 
+    // OZ v5: override required for ERC20Pausable
     function _update(address from, address to, uint256 value)
         internal override(ERC20, ERC20Pausable)
     { super._update(from, to, value); }
 }
 `,
 
-  // ── ERC-721: Circle SCP NFT template ──────────────────────────────────────
-  erc721: `// SPDX-License-Identifier: MIT
+// ── ERC-721: NFT — NO Counters (removed in OZ v5) ─────────────────────────
+erc721: `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 
 /**
  * @title GlowNFT
- * @notice Circle SCP-aligned ERC-721 with URI storage, royalties and roles.
- * @dev primarySaleRecipient and royaltyRecipient follow Circle SCP conventions.
+ * @notice ERC-721 with URIStorage, pause, royalties — Circle SCP aligned.
+ * @dev OpenZeppelin v5.0.2. Counters removed; uses uint256 counter instead.
+ *      Constructor follows Circle SCP template params.
  */
 contract GlowNFT is ERC721, ERC721URIStorage, ERC721Pausable, AccessControl {
-    using Counters for Counters.Counter;
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    bytes32 public constant MINTER_ROLE  = keccak256("MINTER_ROLE");
-    bytes32 public constant PAUSER_ROLE  = keccak256("PAUSER_ROLE");
-
-    Counters.Counter private _tokenIdCounter;
+    // Plain uint256 counter — Counters.sol was removed in OZ v5
+    uint256 private _nextTokenId;
 
     address public primarySaleRecipient;
     address public royaltyRecipient;
-    uint96  public royaltyBps; // basis points (100 = 1%)
-
-    uint256 public mintPrice; // in USDC micro-units (6 decimals)
-    uint256 public maxSupply;
+    uint96  public royaltyBps;   // basis points (500 = 5%)
+    uint256 public mintPrice;    // USDC micro-units
+    uint256 public maxSupply;    // 0 = unlimited
 
     event Minted(address indexed to, uint256 indexed tokenId, string uri);
     event RoyaltyUpdated(address recipient, uint96 bps);
 
     /**
-     * @param name                 Collection name
-     * @param symbol               Collection symbol
-     * @param defaultAdmin         Admin address (Circle SCP convention)
-     * @param primarySaleRecipient_ Primary sale proceeds recipient
-     * @param royaltyRecipient_    Royalty recipient
-     * @param royaltyBps_          Royalty in basis points (500 = 5%)
-     * @param mintPrice_           Mint price in USDC (e.g. 1000000 = 1 USDC)
-     * @param maxSupply_           Maximum token supply (0 = unlimited)
+     * @param name                  Collection name
+     * @param symbol                Collection symbol
+     * @param defaultAdmin          Admin address (Circle SCP convention)
+     * @param primarySaleRecipient_ Primary sale recipient
+     * @param royaltyRecipient_     Royalty recipient
+     * @param royaltyBps_           Royalty basis points (500 = 5%)
+     * @param mintPrice_            Mint price in USDC micro-units (0 = free)
+     * @param maxSupply_            Max supply (0 = unlimited)
      */
     constructor(
         string memory name,
@@ -151,17 +180,16 @@ contract GlowNFT is ERC721, ERC721URIStorage, ERC721Pausable, AccessControl {
     }
 
     function mintTo(address to, string calldata uri) external onlyRole(MINTER_ROLE) whenNotPaused {
-        uint256 tokenId = _tokenIdCounter.current();
-        if (maxSupply > 0) require(tokenId < maxSupply, "Max supply reached");
-        _tokenIdCounter.increment();
+        if (maxSupply > 0) require(_nextTokenId < maxSupply, "Max supply reached");
+        uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, uri);
         emit Minted(to, tokenId, uri);
     }
 
-    function totalMinted() external view returns (uint256) { return _tokenIdCounter.current(); }
-    function pause()   external onlyRole(PAUSER_ROLE) { _pause(); }
-    function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); }
+    function totalMinted() external view returns (uint256) { return _nextTokenId; }
+    function pause()       external onlyRole(PAUSER_ROLE) { _pause(); }
+    function unpause()     external onlyRole(PAUSER_ROLE) { _unpause(); }
 
     function setRoyalty(address recipient, uint96 bps) external onlyRole(DEFAULT_ADMIN_ROLE) {
         royaltyRecipient = recipient;
@@ -169,15 +197,23 @@ contract GlowNFT is ERC721, ERC721URIStorage, ERC721Pausable, AccessControl {
         emit RoyaltyUpdated(recipient, bps);
     }
 
-    // Overrides
-    function tokenURI(uint256 id) public view override(ERC721, ERC721URIStorage) returns (string memory) { return super.tokenURI(id); }
-    function supportsInterface(bytes4 id) public view override(ERC721, ERC721URIStorage, AccessControl) returns (bool) { return super.supportsInterface(id); }
-    function _update(address to, uint256 id, address auth) internal override(ERC721, ERC721Pausable) returns (address) { return super._update(to, id, auth); }
+    // ── OZ v5 overrides ─────────────────────────────────────────────────
+    function tokenURI(uint256 id)
+        public view override(ERC721, ERC721URIStorage) returns (string memory)
+    { return super.tokenURI(id); }
+
+    function supportsInterface(bytes4 id)
+        public view override(ERC721, ERC721URIStorage, AccessControl) returns (bool)
+    { return super.supportsInterface(id); }
+
+    function _update(address to, uint256 id, address auth)
+        internal override(ERC721, ERC721Pausable) returns (address)
+    { return super._update(to, id, auth); }
 }
 `,
 
-  // ── ERC-1155: Circle SCP Multi-Token template ─────────────────────────────
-  erc1155: `// SPDX-License-Identifier: MIT
+// ── ERC-1155: Multi-token — Circle SCP template aea21da6 ──────────────────
+erc1155: `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
@@ -187,20 +223,20 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
  * @title GlowMultiToken
- * @notice Circle SCP ERC-1155 template — matches Circle's deployed template
- *         (templateId: aea21da6-0aa2-4971-9a1a-5098842b1248)
- * @dev Deploy via: POST /templates/aea21da6.../deploy on Circle SCP
+ * @notice ERC-1155 matching Circle SCP template aea21da6-0aa2-4971-9a1a-5098842b1248
+ * @dev mintTo(address,uint256,string,uint256) matches Circle SCP API signature.
+ *      OpenZeppelin v5.0.2 — _update(from,to,ids,values) override.
  */
 contract GlowMultiToken is ERC1155, ERC1155Pausable, ERC1155Supply, AccessControl {
-    bytes32 public constant MINTER_ROLE  = keccak256("MINTER_ROLE");
-    bytes32 public constant PAUSER_ROLE  = keccak256("PAUSER_ROLE");
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     string  public name;
     address public primarySaleRecipient;
     address public royaltyRecipient;
-    uint96  public royaltyPercent; // basis points
+    uint96  public royaltyPercent;
 
-    event TokenMinted(address indexed to, uint256 indexed id, uint256 amount, string uri);
+    event TokenMinted(address indexed to, uint256 indexed id, uint256 amount);
 
     constructor(
         string memory name_,
@@ -218,12 +254,13 @@ contract GlowMultiToken is ERC1155, ERC1155Pausable, ERC1155Supply, AccessContro
         _grantRole(PAUSER_ROLE, defaultAdmin);
     }
 
+    // Matches Circle SCP API: abiFunctionSignature "mintTo(address,uint256,string,uint256)"
     function mintTo(address to, uint256 id, string calldata uri_, uint256 amount)
         external onlyRole(MINTER_ROLE) whenNotPaused
     {
         _mint(to, id, amount, "");
         if (bytes(uri_).length > 0) emit URI(uri_, id);
-        emit TokenMinted(to, id, amount, uri_);
+        emit TokenMinted(to, id, amount);
     }
 
     function mintBatch(address to, uint256[] calldata ids, uint256[] calldata amounts)
@@ -234,6 +271,7 @@ contract GlowMultiToken is ERC1155, ERC1155Pausable, ERC1155Supply, AccessContro
     function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); }
     function setURI(string calldata newUri) external onlyRole(DEFAULT_ADMIN_ROLE) { _setURI(newUri); }
 
+    // OZ v5: single _update covers all three bases
     function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
         internal override(ERC1155, ERC1155Pausable, ERC1155Supply)
     { super._update(from, to, ids, values); }
@@ -244,29 +282,25 @@ contract GlowMultiToken is ERC1155, ERC1155Pausable, ERC1155Supply, AccessContro
 }
 `,
 
-  // ── Simple Storage (learning / demo) ──────────────────────────────────────
-  simple: `// SPDX-License-Identifier: MIT
+// ── Simple Storage — no imports, compiles instantly ───────────────────────
+simple: `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 /**
  * @title SimpleStorage
- * @notice Demo contract — store and retrieve values on Arc Testnet.
- *         No imports needed; compile and deploy instantly.
+ * @notice No imports — compiles and deploys instantly on Arc Testnet.
  */
 contract SimpleStorage {
     address public owner;
     uint256 private _value;
     string  private _message;
 
-    event ValueChanged(uint256 newValue, address changedBy);
-    event MessageChanged(string newMessage, address changedBy);
+    event ValueChanged(uint256 newValue);
+    event MessageChanged(string newMessage);
 
-    error NotOwner(address caller);
+    error NotOwner();
 
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner(msg.sender);
-        _;
-    }
+    modifier onlyOwner() { if (msg.sender != owner) revert NotOwner(); _; }
 
     constructor(uint256 initialValue, string memory initialMessage) {
         owner    = msg.sender;
@@ -274,26 +308,15 @@ contract SimpleStorage {
         _message = initialMessage;
     }
 
-    function setValue(uint256 newValue) external onlyOwner {
-        _value = newValue;
-        emit ValueChanged(newValue, msg.sender);
-    }
-
-    function setMessage(string calldata newMessage) external onlyOwner {
-        _message = newMessage;
-        emit MessageChanged(newMessage, msg.sender);
-    }
-
+    function setValue(uint256 v) external onlyOwner { _value = v; emit ValueChanged(v); }
+    function setMessage(string calldata m) external onlyOwner { _message = m; emit MessageChanged(m); }
     function getValue()   external view returns (uint256) { return _value; }
     function getMessage() external view returns (string memory) { return _message; }
-    function getAll()     external view returns (uint256 val, string memory msg_, address owner_) {
-        return (_value, _message, owner);
-    }
 }
 `,
 
-  // ── DeFi Staking: USDC staking on Arc Testnet ──────────────────────────────
-  staking: `// SPDX-License-Identifier: MIT
+// ── DeFi Staking — USDC staking on Arc Testnet ────────────────────────────
+staking: `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -304,15 +327,15 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /**
  * @title GlowStaking
  * @notice Stake USDC (Arc Testnet native, 6 decimals), earn reward tokens.
- *         Follows Circle SCP conventions for Arc Testnet deployment.
+ * @dev OpenZeppelin v5.0.2 — Ownable constructor requires initialOwner param.
  */
 contract GlowStaking is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
-    IERC20 public immutable stakingToken;  // USDC on Arc Testnet
+    IERC20 public immutable stakingToken;
     IERC20 public immutable rewardToken;
 
-    uint256 public rewardRate;           // reward tokens per second (1e18 scale)
+    uint256 public rewardRate;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
     uint256 public totalStaked;
@@ -326,21 +349,21 @@ contract GlowStaking is ReentrancyGuard, Ownable {
     }
     mapping(address => UserInfo) public users;
 
-    event Staked(address indexed user,     uint256 amount);
-    event Withdrawn(address indexed user,  uint256 amount);
+    event Staked(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
     event RewardClaimed(address indexed user, uint256 reward);
-    event RewardRateSet(uint256 newRate);
 
     error ZeroAmount();
-    error StillLocked(uint256 unlockTime);
+    error StillLocked(uint256 unlockAt);
     error NoRewards();
 
-    constructor(address _stakingToken, address _rewardToken, uint256 _rewardRate, address _owner)
-        Ownable(_owner)
+    // OZ v5: Ownable requires initialOwner in constructor
+    constructor(address stakingToken_, address rewardToken_, uint256 rewardRate_, address initialOwner)
+        Ownable(initialOwner)
     {
-        stakingToken  = IERC20(_stakingToken);
-        rewardToken   = IERC20(_rewardToken);
-        rewardRate    = _rewardRate;
+        stakingToken  = IERC20(stakingToken_);
+        rewardToken   = IERC20(rewardToken_);
+        rewardRate    = rewardRate_;
         lastUpdateTime = block.timestamp;
     }
 
@@ -393,33 +416,24 @@ contract GlowStaking is ReentrancyGuard, Ownable {
 
     function setRewardRate(uint256 newRate) external onlyOwner updateReward(address(0)) {
         rewardRate = newRate;
-        emit RewardRateSet(newRate);
     }
 }
 `,
 
-  // ── GlowIDE Treasury (Circle SCP-compatible fee collection) ───────────────
-  treasury: `// SPDX-License-Identifier: MIT
+// ── GlowIDE Treasury — fee collection ─────────────────────────────────────
+treasury: `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title GlowIDETreasury
- * @notice Collects all GlowIDE platform fees (deployment, AI, storage, subscriptions).
- *         Deployed on Arc Testnet — USDC is the native currency (6 decimals).
- * @dev    Admin can withdraw to any address. Ownership transfer is 2-step.
+ * @notice Collects all GlowIDE platform fees on Arc Testnet.
+ * @dev No Counters, no external tokens needed — pure native USDC (Arc gas token).
  */
 contract GlowIDETreasury is ReentrancyGuard {
-    using SafeERC20 for IERC20;
-
     address public admin;
     address public pendingAdmin;
-
-    // Arc Testnet native USDC (update with deployed address)
-    address public constant USDC = address(0); // Set after deployment
 
     uint256 public totalReceived;
     uint256 public totalWithdrawn;
@@ -428,22 +442,22 @@ contract GlowIDETreasury is ReentrancyGuard {
     struct TxRecord { address from; uint256 amount; string feeType; uint256 timestamp; }
     TxRecord[] public transactions;
 
-    event FeeReceived(address indexed from, uint256 amount, string feeType, uint256 indexed txId);
-    event Withdrawn(address indexed to,   uint256 amount);
+    event FeeReceived(address indexed from, uint256 amount, string feeType, uint256 txId);
+    event Withdrawn(address indexed to, uint256 amount);
     event AdminTransferInitiated(address indexed candidate);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
 
     error NotAdmin();
     error NotPendingAdmin();
-    error Insufficient(uint256 requested, uint256 available);
+    error Insufficient(uint256 need, uint256 have);
     error TransferFailed();
     error ZeroAddress();
 
     modifier onlyAdmin() { if (msg.sender != admin) revert NotAdmin(); _; }
 
-    constructor(address _admin) {
-        if (_admin == address(0)) revert ZeroAddress();
-        admin = _admin;
+    constructor(address admin_) {
+        if (admin_ == address(0)) revert ZeroAddress();
+        admin = admin_;
     }
 
     receive() external payable { _record(msg.sender, msg.value, "native"); }
@@ -454,8 +468,8 @@ contract GlowIDETreasury is ReentrancyGuard {
 
     function _record(address from, uint256 amount, string memory feeType) internal {
         totalReceived += amount;
-        transactions.push(TxRecord({ from:from, amount:amount, feeType:feeType, timestamp:block.timestamp }));
-        emit FeeReceived(from, feeType, amount, transactionCount++);
+        transactions.push(TxRecord(from, amount, feeType, block.timestamp));
+        emit FeeReceived(from, amount, feeType, transactionCount++);
     }
 
     function withdraw(address payable to, uint256 amount) external onlyAdmin nonReentrant {
@@ -485,56 +499,16 @@ contract GlowIDETreasury is ReentrancyGuard {
     function acceptAdminTransfer() external {
         if (msg.sender != pendingAdmin) revert NotPendingAdmin();
         emit AdminTransferred(admin, pendingAdmin);
-        admin       = pendingAdmin;
+        admin = pendingAdmin;
         pendingAdmin = address(0);
     }
 
-    function balance()   external view returns (uint256) { return address(this).balance; }
-    function txCount()   external view returns (uint256) { return transactionCount; }
-    function stats() external view returns (uint256 bal, uint256 recv, uint256 wdrn, uint256 cnt) {
+    function balance()  external view returns (uint256) { return address(this).balance; }
+    function txCount()  external view returns (uint256) { return transactionCount; }
+    function stats()    external view returns (uint256 bal, uint256 recv, uint256 wdrn, uint256 cnt) {
         return (address(this).balance, totalReceived, totalWithdrawn, transactionCount);
-    }
-    function getTransactions(uint256 offset, uint256 limit) external view returns (TxRecord[] memory out, uint256 total) {
-        total = transactions.length;
-        uint256 end = offset + limit > total ? total : offset + limit;
-        out = new TxRecord[](end - offset);
-        for (uint256 i = offset; i < end; i++) out[i - offset] = transactions[i];
     }
 }
 `,
+
 };
-
-// ── Detect language from filename extension ─────────────────────────────────
-export function detectLanguage(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string, string> = {
-    ts:"typescript", tsx:"typescript", js:"javascript", jsx:"javascript",
-    sol:"solidity",  py:"python",      rs:"rust",       go:"go",
-    cpp:"cpp",       c:"c",            html:"html",     css:"css",
-    json:"json",     md:"markdown",    sh:"shell",      yaml:"yaml",
-    yml:"yaml",      toml:"toml",      env:"plaintext", java:"java",
-    kt:"kotlin",     swift:"swift",    rb:"ruby",       php:"php",
-  };
-  return map[ext] ?? "plaintext";
-}
-
-// ── Stub compile function (used by legacy code paths) ───────────────────────
-export async function compileContract(input: CompileInput): Promise<CompileOutput> {
-  const res = await fetch("/api/contracts/compile", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  return res.json();
-}
-
-// ── Legacy export for components that import from here ──────────────────────
-export function getFileIcon(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  const icons: Record<string, string> = {
-    ts:"typescript", tsx:"tsx", js:"javascript", jsx:"jsx",
-    sol:"solidity", py:"python", html:"html", css:"css",
-    json:"json", md:"markdown",
-  };
-  return icons[ext] ?? "file";
-}
