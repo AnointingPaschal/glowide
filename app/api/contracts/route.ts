@@ -1,23 +1,28 @@
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { supabaseREST } from "@/lib/supabase-server";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const deployer = searchParams.get("deployer");
-  try {
-    const supabase = createServerSupabaseClient();
-    let q = supabase.from("deployed_contracts").select("*").order("created_at", { ascending: false });
-    if (deployer) q = q.ilike("deployer", deployer);
-    const { data, error } = await q;
-    if (error) throw error;
-    const contracts = (data ?? []).map(c => ({
-      ...c,
-      abi: typeof c.abi === "string" ? JSON.parse(c.abi) : (c.abi ?? []),
-      deployedAt: c.created_at,
-      network: "Arc Testnet",
-    }));
-    return NextResponse.json({ contracts });
-  } catch (err) {
-    return NextResponse.json({ contracts: [], error: String(err) });
+  const deployer = searchParams.get("deployer")?.toLowerCase();
+
+  const query = deployer
+    ? `select=*&deployer=ilike.${encodeURIComponent(deployer)}&order=created_at.desc`
+    : `select=*&order=created_at.desc&limit=100`;
+
+  const { data, error } = await supabaseREST("GET", "deployed_contracts", undefined, query);
+
+  if (error) {
+    console.error("[contracts GET]", error);
+    return NextResponse.json({ contracts: [], error }, { status: 200 }); // return empty, not 500
   }
+
+  const contracts = (Array.isArray(data) ? data : []).map((c: Record<string,unknown>) => ({
+    ...c,
+    abi: typeof c.abi === "string" ? (() => { try { return JSON.parse(c.abi as string); } catch { return []; } })() : (c.abi ?? []),
+    deployedAt: c.created_at,
+    network: "Arc Testnet",
+  }));
+
+  return NextResponse.json({ contracts });
 }
