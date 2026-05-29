@@ -148,6 +148,24 @@ export default function AdminPage() {
   // ── Settings state ─────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'overview'|'ai'|'models'|'prompt'|'fees'|'treasury'|'users'|'training'|'plans'|'website'>('overview');
   const [saving, setSaving]       = useState(false);
+  const [testingDb, setTestingDb] = useState(false);
+  const [dbStatus, setDbStatus]   = useState<Record<string,unknown> | null>(null);
+
+  const testDbConnection = async () => {
+    setTestingDb(true);
+    setDbStatus(null);
+    try {
+      const res = await fetch('/api/admin/debug', { headers: { authorization: `Wallet ${address}` } });
+      const data = await res.json();
+      setDbStatus(data);
+      const hasErrors = Object.values(data).some(v => typeof v === 'object' && v !== null && 'error' in v);
+      if (hasErrors) toast.error('DB has issues — see status below');
+      else toast.success('Database connection OK');
+    } catch (err) {
+      setDbStatus({ exception: String(err) });
+      toast.error('Connection test failed');
+    } finally { setTestingDb(false); }
+  };
   const [showApiKey, setShowApiKey] = useState(false);
   const [models, setModels]       = useState<PublicModel[]>(DEFAULT_MODELS);
   const [editingModel, setEditingModel] = useState<PublicModel|null>(null);
@@ -269,9 +287,18 @@ export default function AdminPage() {
         body: JSON.stringify({ settings: payload }),
       });
       const data = await res.json();
-      if (!res.ok && res.status !== 207) throw new Error(data.error ?? 'Save failed');
-      if (data.errors?.length) toast.error(`Saved with ${data.errors.length} error(s)`);
-      else toast.success(`All settings saved (${data.saved} keys)`);
+      if (!res.ok && res.status !== 207) throw new Error(data.error ?? `Save failed (${res.status})`);
+      if (data.saved === 0 && data.errors?.length) {
+        // Nothing saved - show first error detail
+        const firstErr = data.errors?.[0] ?? 'Unknown error';
+        throw new Error(`Nothing saved. First error: ${firstErr}`);
+      }
+      if (data.errors?.length) {
+        toast.error(`Partially saved (${data.saved}/${data.saved + data.errors.length}). Check console.`);
+        console.error('[admin save] errors:', data.errors);
+      } else {
+        toast.success(`Saved ${data.saved} settings ✓`);
+      }
     } catch (err) {
       toast.error('Save failed: ' + (err instanceof Error ? err.message : String(err)));
     } finally { setSaving(false); }
@@ -438,6 +465,33 @@ export default function AdminPage() {
                   <p className="text-sm text-amber-300">OpenRouter API key not configured. AI chat will not work until you add it in <button onClick={()=>setActiveTab('ai')} className="underline">AI Config</button>.</p>
                 </div>
               )}
+
+              {/* Database connection tester */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2"><Server className="w-4 h-4 text-glow-cyan"/><span className="text-sm font-semibold text-glow-text">Database Connection</span></div>
+                  <button onClick={testDbConnection} disabled={testingDb}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-glow-surface border border-glow-border rounded-lg text-glow-muted hover:text-glow-text disabled:opacity-50 transition-colors">
+                    {testingDb ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <RefreshCw className="w-3.5 h-3.5"/>}
+                    Test Connection
+                  </button>
+                </div>
+                <p className="text-xs text-glow-muted">If Save All shows errors, run this to diagnose Supabase connectivity. Also run the SQL in <code className="text-glow-accent">supabase/schema.sql</code> to fix RLS.</p>
+                {dbStatus && (
+                  <div className="bg-glow-bg border border-glow-border rounded-xl p-3 space-y-1.5 max-h-48 overflow-y-auto">
+                    {Object.entries(dbStatus).map(([k, v]) => {
+                      const isErr = typeof v === 'object' && v !== null && 'error' in v;
+                      return (
+                        <div key={k} className="flex items-start gap-2 text-xs">
+                          <span className={isErr ? 'text-red-400' : 'text-emerald-400'} style={{minWidth:'12px'}}>{isErr ? '✗' : '✓'}</span>
+                          <span className="text-glow-muted font-mono">{k}:</span>
+                          <span className={isErr ? 'text-red-300' : 'text-glow-text'}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
