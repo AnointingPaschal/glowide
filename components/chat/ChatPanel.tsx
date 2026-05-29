@@ -43,6 +43,13 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
+  const abortRef = useRef<AbortController | null>(null);
+
+  const stopStreaming = () => {
+    abortRef.current?.abort();
+    useChatStore.getState().finalizeStream(activeSessionId ?? "");
+  };
+
   const sendMessage = async () => {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
@@ -62,7 +69,9 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
       : "";
 
     try {
+      abortRef.current = new AbortController();
       const response = await fetch("/api/ai/chat", {
+        signal: abortRef.current.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -244,9 +253,15 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
             className="flex-1 bg-transparent text-sm text-glow-text placeholder:text-glow-muted resize-none focus:outline-none min-h-[20px] max-h-32 overflow-y-auto"
             onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 128) + "px"; }}
           />
-          <Button onClick={sendMessage} disabled={!input.trim() || isStreaming} isLoading={isStreaming} size="icon" className="self-end flex-shrink-0 h-8 w-8">
-            <Send className="w-3.5 h-3.5" />
-          </Button>
+          {isStreaming ? (
+            <Button onClick={stopStreaming} size="icon" variant="secondary" className="self-end flex-shrink-0 h-8 w-8" title="Stop generation">
+              <span className="w-3 h-3 bg-current rounded-sm" />
+            </Button>
+          ) : (
+            <Button onClick={sendMessage} disabled={!input.trim()} size="icon" className="self-end flex-shrink-0 h-8 w-8">
+              <Send className="w-3.5 h-3.5" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

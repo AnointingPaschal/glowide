@@ -1,84 +1,109 @@
 "use client";
-import type { ChatMessage as ChatMsg } from "@/types";
-import { cn } from "@/lib/utils";
-import ReactMarkdown from "react-markdown";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { useState } from "react";
-import { Copy, Check, User, Zap } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Copy, Check, Edit3, ExternalLink, RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { ChatMessage as ChatMessageType } from "@/types";
+import { CodePreview, extractPreviewableCode } from "@/components/preview/CodePreview";
 
-interface Props { message: ChatMsg; isStreaming?: boolean; }
+interface ChatMessageProps {
+  message: ChatMessageType;
+  isStreaming?: boolean;
+  onEdit?: (content: string) => void;
+  onRetry?: () => void;
+}
 
-export function ChatMessage({ message, isStreaming }: Props) {
+export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessageProps) {
+  const [copied, setCopied]   = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState(message.content);
   const isUser = message.role === "user";
-  const [copied, setCopied] = useState<string | null>(null);
 
-  const copyCode = async (code: string, id: string) => {
-    await navigator.clipboard.writeText(code);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
+  const copy = async () => {
+    await navigator.clipboard.writeText(message.content);
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
-  return (
-    <div className={cn("flex gap-3 px-4 py-3 group", isUser ? "flex-row-reverse" : "flex-row")}>
-      {/* Avatar */}
-      <div className={cn(
-        "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white",
-        isUser ? "bg-glow-accent/80" : "bg-glow-gradient"
-      )}>
-        {isUser ? <User className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-      </div>
+  const previewable = !isUser ? extractPreviewableCode(message.content) : null;
 
-      {/* Content */}
-      <div className={cn("flex-1 min-w-0", isUser && "flex flex-col items-end")}>
-        <div className={cn(
-          "rounded-2xl px-4 py-2.5 max-w-[85%] text-sm",
-          isUser
-            ? "bg-glow-accent/20 border border-glow-accent/30 text-glow-text rounded-tr-sm"
-            : "bg-glow-card border border-glow-border text-glow-text rounded-tl-sm"
-        )}>
-          {isUser ? (
-            <p className="whitespace-pre-wrap">{message.content}</p>
+  const openExternal = () => {
+    const w = window.open("", "_blank", "width=900,height=600");
+    if (!w) return;
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Preview</title></head><body style="margin:0;padding:16px;font-family:system-ui;background:#fff">${message.content.replace(/```[\w]*\n|```/g, "")}</body></html>`);
+  };
+
+  if (isUser) {
+    return (
+      <div className="flex justify-end px-4 py-2 group">
+        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-glow-accent px-4 py-2.5 text-sm text-white">
+          {editing ? (
+            <div className="space-y-2">
+              <textarea autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                className="w-full bg-glow-accent-dim text-white text-sm rounded-lg p-2 resize-none focus:outline-none min-w-[200px]" rows={3} />
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => { setEditing(false); setEditVal(message.content); }} className="text-xs text-white/60 hover:text-white">Cancel</button>
+                <button onClick={() => { onEdit?.(editVal); setEditing(false); }} className="text-xs bg-white/20 hover:bg-white/30 text-white px-2 py-1 rounded-lg">Save &amp; Resend</button>
+              </div>
+            </div>
           ) : (
-            <div className="prose prose-invert prose-sm max-w-none">
-              <ReactMarkdown
-                components={{
-                  code({ node, className, children, ...props }) {
-                    const match = /language-(\w+)/.exec(className || "");
-                    const isBlock = !!(props as { inline?: boolean }).inline === false && match;
-                    const code = String(children).replace(/\n$/, "");
-                    const id = Math.random().toString(36).slice(2);
-                    if (isBlock) {
-                      return (
-                        <div className="relative group/code my-2">
-                          <div className="flex items-center justify-between px-3 py-1.5 bg-[#0a0a14] border-b border-glow-border rounded-t-lg">
-                            <span className="text-xs text-glow-muted">{match[1]}</span>
-                            <button
-                              onClick={() => copyCode(code, id)}
-                              className="text-glow-muted hover:text-glow-text transition-colors"
-                            >
-                              {copied === id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                          <pre className="!mt-0 !rounded-t-none !bg-[#0a0a14] !border !border-glow-border">
-                            <code className={className}>{children}</code>
-                          </pre>
-                        </div>
-                      );
-                    }
-                    return <code className="bg-glow-surface px-1.5 py-0.5 rounded text-glow-cyan text-xs" {...props}>{children}</code>;
-                  },
-                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                  ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
-                  ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
-                  h3: ({ children }) => <h3 className="text-base font-semibold mb-1 text-glow-text">{children}</h3>,
-                  h4: ({ children }) => <h4 className="text-sm font-semibold mb-1 text-glow-text">{children}</h4>,
-                  strong: ({ children }) => <strong className="font-semibold text-glow-text">{children}</strong>,
-                  a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-glow-cyan underline">{children}</a>,
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
-              {isStreaming && <span className="inline-block w-2 h-4 bg-glow-accent animate-pulse ml-0.5 rounded-sm" />}
+            <p className="whitespace-pre-wrap">{message.content}</p>
+          )}
+        </div>
+        {!editing && (
+          <div className="flex flex-col gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity self-end">
+            <button onClick={() => setEditing(true)} className="p-1 rounded text-glow-muted hover:text-glow-text" title="Edit"><Edit3 className="w-3.5 h-3.5" /></button>
+            <button onClick={copy} className="p-1 rounded text-glow-muted hover:text-glow-text" title="Copy">{copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-2 group">
+      <div className="flex items-start gap-3">
+        {/* AI avatar */}
+        <div className="w-7 h-7 rounded-xl bg-glow-gradient flex items-center justify-center flex-shrink-0 mt-0.5 shadow-glow-sm">
+          <span className="text-white text-xs font-bold">AI</span>
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className={cn("text-sm text-glow-text prose prose-invert max-w-none prose-pre:bg-glow-bg prose-pre:border prose-pre:border-glow-border prose-pre:rounded-xl prose-code:text-glow-cyan prose-code:bg-glow-bg prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded", isStreaming && "after:content-['▋'] after:text-glow-accent after:animate-pulse")}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}
+              components={{
+                pre: ({ children }) => <pre className="overflow-x-auto text-xs">{children}</pre>,
+                code: ({ node, className, children, ...props }) => {
+                  const inline = !className;
+                  return inline ? <code className="text-glow-cyan bg-glow-bg px-1 py-0.5 rounded text-xs" {...props}>{children}</code>
+                    : <code className={cn("text-xs", className)} {...props}>{children}</code>;
+                },
+              }}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+
+          {/* Preview button for HTML/React */}
+          {previewable && !isStreaming && (
+            <CodePreview code={previewable.code} language={previewable.language} className="mt-2" compact />
+          )}
+
+          {/* Action bar */}
+          {!isStreaming && (
+            <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={copy} className="flex items-center gap-1 px-2 py-1 text-xs text-glow-muted hover:text-glow-text bg-glow-card border border-glow-border rounded-lg transition-colors">
+                {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}{copied ? "Copied" : "Copy"}
+              </button>
+              {previewable && (
+                <button onClick={openExternal} className="flex items-center gap-1 px-2 py-1 text-xs text-glow-muted hover:text-glow-text bg-glow-card border border-glow-border rounded-lg transition-colors">
+                  <ExternalLink className="w-3 h-3" />Open
+                </button>
+              )}
+              {onRetry && (
+                <button onClick={onRetry} className="flex items-center gap-1 px-2 py-1 text-xs text-glow-muted hover:text-glow-text bg-glow-card border border-glow-border rounded-lg transition-colors">
+                  <RotateCcw className="w-3 h-3" />Retry
+                </button>
+              )}
             </div>
           )}
         </div>

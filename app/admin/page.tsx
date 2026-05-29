@@ -162,7 +162,8 @@ export default function AdminPage() {
   const [authLoading, setAuthLoading]   = useState(false);
   const [showKey, setShowKey]           = useState(false);
   const [saving, setSaving]             = useState(false);
-  const [activeTab, setActiveTab]       = useState<'overview' | 'ai' | 'models' | 'prompt' | 'fees' | 'users' | 'training' | 'plans'>('overview');
+  const [activeTab, setActiveTab]       = useState<'overview' | 'ai' | 'models' | 'prompt' | 'fees' | 'users' | 'training' | 'plans' | 'website'>('overview');
+  const [siteSettings, setSiteSettings] = useState({ siteName:'GlowIDE', siteTagline:'AI-Powered Web3 IDE', siteDescription:'Build smarter on Web3', logoUrl:'', primaryColor:'#7c3aed', logoType:'text' });
   const [usersData, setUsersData]         = useState<{users: UserPlan[]; activity: Record<string, {actions: number; lastSeen: string; actions_list: string[]}>; stats: {totalUsers: number; totalDeployments: number; proUsers: number}} | null>(null);
   const [trainingExamples, setTrainingExamples] = useState<TrainingExample[]>([]);
   const [loadingUsers, setLoadingUsers]   = useState(false);
@@ -273,6 +274,11 @@ export default function AdminPage() {
             free_deployments:        settings.freeDeployments,
             verification_fee:        settings.verificationFee,
             fees_enabled:            String(settings.feesEnabled),
+            site_name:               siteSettings.siteName,
+            site_tagline:            siteSettings.siteTagline,
+            site_description:        siteSettings.siteDescription,
+            logo_url:                siteSettings.logoUrl,
+            primary_color:           siteSettings.primaryColor,
             rate_limit_per_user:     String(settings.rateLimitPerUser),
           },
         }),
@@ -358,6 +364,7 @@ export default function AdminPage() {
     { id: 'users',    label: 'Users',      icon: Users     },
     { id: 'training', label: 'AI Training',icon: BookOpen  },
     { id: 'plans',    label: 'Plans',      icon: CreditCard},
+    { id: 'website',  label: 'Website',    icon: Globe     },
   ] as const;
 
   return (
@@ -826,6 +833,50 @@ export default function AdminPage() {
                       <span className="text-glow-text font-mono">{row.value}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── WEBSITE ─────────────────────────────── */}
+          {activeTab === 'website' && (
+            <div className="space-y-5 animate-fade-in">
+              <div>
+                <h2 className="text-base font-semibold text-glow-text">Website Settings</h2>
+                <p className="text-xs text-glow-muted mt-0.5">Customize your GlowIDE branding and appearance</p>
+              </div>
+
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1"><Globe className="w-4 h-4 text-glow-accent" /><span className="text-sm font-semibold text-glow-text">Branding</span></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field><Label hint="Displayed in the header and browser tab">Site Name</Label><input value={siteSettings.siteName} onChange={e=>setSiteSettings(p=>({...p,siteName:e.target.value}))} className={inputCls} placeholder="GlowIDE" /></Field>
+                  <Field><Label hint="Short description under the name">Tagline</Label><input value={siteSettings.siteTagline} onChange={e=>setSiteSettings(p=>({...p,siteTagline:e.target.value}))} className={inputCls} placeholder="AI-Powered Web3 IDE" /></Field>
+                  <Field className="sm:col-span-2"><Label hint="Used in SEO meta tags">Description</Label><textarea value={siteSettings.siteDescription} onChange={e=>setSiteSettings(p=>({...p,siteDescription:e.target.value}))} rows={2} className={`${inputCls} resize-none`} placeholder="Build smarter on Web3" /></Field>
+                  <Field><Label hint="Full URL to your logo image (PNG, SVG, WebP)">Logo URL</Label><input value={siteSettings.logoUrl} onChange={e=>setSiteSettings(p=>({...p,logoUrl:e.target.value}))} className={inputCls} placeholder="https://yourdomain.com/logo.png" /></Field>
+                  <Field><Label hint="Accent color used throughout the UI">Primary Color</Label>
+                    <div className="flex gap-2 items-center">
+                      <input type="color" value={siteSettings.primaryColor} onChange={e=>setSiteSettings(p=>({...p,primaryColor:e.target.value}))} className="w-10 h-10 rounded-xl border border-glow-border cursor-pointer bg-transparent" />
+                      <input value={siteSettings.primaryColor} onChange={e=>setSiteSettings(p=>({...p,primaryColor:e.target.value}))} className={`${inputCls} font-mono flex-1`} placeholder="#7c3aed" />
+                    </div>
+                  </Field>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5">
+                <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider mb-3">Preview</p>
+                <div className="flex items-center gap-3 p-3 bg-glow-surface rounded-xl border border-glow-border">
+                  {siteSettings.logoUrl ? (
+                    <img src={siteSettings.logoUrl} alt="logo" className="w-8 h-8 rounded-lg object-contain" onError={e=>((e.target as HTMLImageElement).style.display='none')} />
+                  ) : (
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style={{background:siteSettings.primaryColor}}>
+                      {siteSettings.siteName?.[0]??'G'}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-bold" style={{color:siteSettings.primaryColor}}>{siteSettings.siteName || 'GlowIDE'}</p>
+                    <p className="text-xs text-glow-muted">{siteSettings.siteTagline || 'AI-Powered Web3 IDE'}</p>
+                  </div>
                 </div>
               </div>
             </div>
