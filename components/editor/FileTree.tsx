@@ -28,7 +28,7 @@ function FileTreeItem({ node, depth, nodes, onSelect }: FileTreeItemProps) {
         }}
       >
         {node.type === "directory" ? (
-          <>{isOpen ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}<span className="text-sm">{getFileIcon(node.name, true)}</span></>
+          <>{isOpen ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}<span className="text-sm">{getFileIcon(node.name)}</span></>
         ) : (
           <><span className="w-3" /><span className="text-sm">{getFileIcon(node.name)}</span></>
         )}

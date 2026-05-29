@@ -527,14 +527,3 @@ export async function compileContract(input: CompileInput): Promise<CompileOutpu
   });
   return res.json();
 }
-
-// ── Legacy export for components that import from here ──────────────────────
-export function getFileIcon(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  const icons: Record<string, string> = {
-    ts:"typescript", tsx:"tsx", js:"javascript", jsx:"jsx",
-    sol:"solidity", py:"python", html:"html", css:"css",
-    json:"json", md:"markdown",
-  };
-  return icons[ext] ?? "file";
-}
