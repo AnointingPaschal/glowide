@@ -298,32 +298,39 @@ export default function LaunchpadPage() {
       const totalSupplyWei = BigInt(Math.floor(parseFloat(form.totalSupply) * Math.pow(10, form.decimals)));
       const liquidityWei   = BigInt(Math.round(parseFloat(form.liquidityUsdc) * 1e18));
 
-      if (!FACTORY_ADDRESS) {
-        // Demo mode — simulate deployment without factory
-        toast('Factory not deployed. Simulating for demo...', { icon: '🔧' });
-        // Simulate a deployment tx via direct contract deployment
+      // Direct deployment (no factory required — compiles and deploys token on-chain)
+      {
         const deployData = await buildSimpleTokenDeploy(form.name, form.symbol, form.decimals, totalSupplyWei, metadataUri || 'ipfs://placeholder');
-        const gasEst = await provider.request({ method: 'eth_estimateGas', params: [{ from: address, data: deployData }] }).catch(() => '0x7A120');
-        const gasLimit = `0x${Math.ceil(parseInt(gasEst as string, 16) * 1.3).toString(16)}`;
-        const txHash = await provider.request({ method: 'eth_sendTransaction', params: [{ from: address, data: deployData, gas: gasLimit }] }) as string;
+        
+        let gasLimit = '0x7A120'; // 500k default
+        try {
+          const gasEst = await provider.request({ method: 'eth_estimateGas', params: [{ from: address, data: deployData }] }) as string;
+          gasLimit = `0x${Math.ceil(parseInt(gasEst, 16) * 1.3).toString(16)}`;
+        } catch { /* use default */ }
+
+        const txHash = await provider.request({
+          method: 'eth_sendTransaction',
+          params: [{ from: address, data: deployData, gas: gasLimit }],
+        }) as string;
 
         // Poll for receipt
         let contractAddress = '';
         for (let i = 0; i < 40; i++) {
           await new Promise(r => setTimeout(r, 2500));
-          const receipt = await provider.request({ method: 'eth_getTransactionReceipt', params: [txHash] }).catch(() => null) as { contractAddress?: string; status?: string } | null;
+          const receipt = await provider.request({
+            method: 'eth_getTransactionReceipt', params: [txHash],
+          }).catch(() => null) as { contractAddress?: string; status?: string } | null;
           if (receipt) {
-            if (receipt.status === '0x0') throw new Error('Transaction reverted');
+            if (receipt.status === '0x0') throw new Error('Transaction reverted on-chain. Check constructor args.');
             contractAddress = receipt.contractAddress ?? '';
             break;
           }
         }
-        if (!contractAddress) throw new Error('Deploy timeout');
+        if (!contractAddress) throw new Error('Timed out waiting for confirmation. Check ArcScan for TX status.');
 
         const result = { tokenAddress: contractAddress, txHash, pairAddress: '' };
         setDeployResult(result);
 
-        // Save to DB
         await fetch('/api/launchpad', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -337,7 +344,8 @@ export default function LaunchpadPage() {
             txHash, blockNumber: 0,
           }),
         });
-        toast.success('Token deployed on Arc Testnet!');
+
+        toast.success(`${form.symbol} deployed on Arc Testnet!`);
         setStep(5);
         return;
       }
