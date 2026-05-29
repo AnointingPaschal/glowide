@@ -229,15 +229,25 @@ export default function AdminPage() {
       .then(r => r.json()).then(d => { if (d.examples) setTrainingExamples(d.examples); }).catch(() => {}).finally(() => setLoadingTraining(false));
   }, [isAuth, activeTab, adminKey]);
 
-  // Auth
+  // Auth — uses a dedicated endpoint that ONLY validates the key (no DB call)
   const handleAuth = async () => {
-    if (!adminKey.trim()) { toast.error('Enter admin key'); return; }
+    if (!adminKey.trim()) { toast.error('Enter your admin key'); return; }
     setAuthLoading(true);
     try {
-      const res = await fetch('/api/admin/settings', { headers: { authorization: `Bearer ${adminKey}` } });
-      if (res.ok) { setIsAuth(true); toast.success('Access granted'); }
-      else toast.error('Invalid admin key');
-    } catch { toast.error('Connection failed'); }
+      const res = await fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: adminKey }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setIsAuth(true);
+        toast.success('Access granted');
+        if (data.warning) toast(data.warning, { icon: '⚠️' });
+      } else {
+        toast.error(data.error ?? 'Invalid admin key');
+      }
+    } catch { toast.error('Connection failed — check your network'); }
     finally { setAuthLoading(false); }
   };
 
