@@ -1,24 +1,20 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { NETWORKS } from "@/lib/circle-chains";
 
-const ARCSCAN = "https://testnet.arcscan.app";
+const DEFAULT_NET = NETWORKS.find(n => n.id === "arc-testnet")!;
 const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
 
-// ── Blockscout REST API v2 fetch ──────────────────────────────────────────
-async function blockscout(path: string): Promise<unknown> {
-  const res = await fetch(`${ARCSCAN}/api/v2${path}`, {
+async function blockscout(apiBase: string, path: string): Promise<unknown> {
+  const res = await fetch(`${apiBase}${path}`, {
     headers: { "Content-Type": "application/json" },
     signal: AbortSignal.timeout(8000),
     cache: "no-store",
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Blockscout API ${res.status}: ${text.slice(0, 100)}`);
-  }
+  if (!res.ok) throw new Error(`Blockscout ${res.status}`);
   return res.json();
 }
 
-// ── Arc RPC call ──────────────────────────────────────────────────────────
 async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
   const res = await fetch(ARC_RPC, {
     method: "POST",
@@ -32,24 +28,25 @@ async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
   return d.result;
 }
 
-// ── Stats ──────────────────────────────────────────────────────────────────
-async function getStats() {
-  try {
-    return await blockscout("/stats");
-  } catch {
-    return null;
-  }
-}
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const query = (searchParams.get("q") ?? "").trim();
-  const type  = searchParams.get("type") ?? "auto";
+  const query     = (searchParams.get("q") ?? "").trim();
+  const type      = searchParams.get("type") ?? "auto";
+  const networkId = searchParams.get("network") ?? "arc-testnet";
+
+  const network = NETWORKS.find(n => n.id === networkId) ?? DEFAULT_NET;
+  const apiBase = network.explorerApi ?? DEFAULT_NET.explorerApi!;
+  const explorerBase = network.explorer;
+  const isArc = network.id === "arc-testnet";
 
   // Stats-only request
   if (!query && type === "stats") {
-    const stats = await getStats();
-    return NextResponse.json({ type: "stats", data: stats });
+    try {
+      const stats = await blockscout(apiBase, "/stats");
+      return NextResponse.json({ type: "stats", data: stats });
+    } catch {
+      return NextResponse.json({ type: "stats", data: null });
+    }
   }
 
   if (!query) return NextResponse.json({ error: "Query required" }, { status: 400 });
@@ -59,140 +56,97 @@ export async function GET(req: NextRequest) {
   const isBlockNum = /^\d+$/.test(query);
 
   try {
-    // ── Transaction ──────────────────────────────────────────────────────
     if (isTxHash) {
-      const tx = await blockscout(`/transactions/${query}`) as Record<string, unknown>;
-      return NextResponse.json({
-        type: "transaction",
-        data: {
-          hash:          tx.hash,
-          status:        tx.status === "ok" ? "success" : tx.status === "error" ? "failed" : "pending",
-          block:         tx.block,
-          timestamp:     tx.timestamp,
-          from:          (tx.from as Record<string,unknown>)?.hash,
-          to:            (tx.to as Record<string,unknown>)?.hash ?? null,
-          contractCreated: (tx.created_contract as Record<string,unknown>)?.hash ?? null,
-          value:         tx.value,
-          gasUsed:       tx.gas_used,
-          gasLimit:      tx.gas_limit,
-          gasPrice:      tx.gas_price,
-          nonce:         tx.nonce,
-          logs:          tx.decoded_input ?? null,
-          decodedMethod: (tx.decoded_input as Record<string,unknown>)?.method_call ?? null,
-          fee:           tx.fee,
-          revertReason:  tx.revert_reason,
-          explorerUrl:   `${ARCSCAN}/tx/${query}`,
-        },
-      });
+      const tx = await blockscout(apiBase, `/transactions/${query}`) as Record<string,unknown>;
+      return NextResponse.json({ type:"transaction", data:{
+        hash:      tx.hash,
+        status:    tx.status==="ok"?"success":tx.status==="error"?"failed":"pending",
+        block:     tx.block,
+        timestamp: tx.timestamp,
+        from:      (tx.from as Record<string,unknown>)?.hash,
+        to:        (tx.to as Record<string,unknown>)?.hash ?? null,
+        contractCreated: (tx.created_contract as Record<string,unknown>)?.hash ?? null,
+        value:     tx.value,
+        gasUsed:   tx.gas_used,
+        gasLimit:  tx.gas_limit,
+        nonce:     tx.nonce,
+        decodedMethod: (tx.decoded_input as Record<string,unknown>)?.method_call ?? null,
+        revertReason: tx.revert_reason,
+        fee:       tx.fee,
+        explorerUrl: `${explorerBase}/tx/${query}`,
+      }});
     }
 
-    // ── Address ──────────────────────────────────────────────────────────
     if (isAddress) {
-      // Parallel: address info + transactions + token balances
       const [addrData, txsData, tokenData] = await Promise.allSettled([
-        blockscout(`/addresses/${query}`),
-        blockscout(`/addresses/${query}/transactions?limit=10`),
-        blockscout(`/addresses/${query}/token-balances`),
+        blockscout(apiBase, `/addresses/${query}`),
+        blockscout(apiBase, `/addresses/${query}/transactions?limit=10`),
+        blockscout(apiBase, `/addresses/${query}/token-balances`),
       ]);
 
-      const addr  = addrData.status === "fulfilled"  ? addrData.value  as Record<string,unknown> : {};
-      const txs   = txsData.status === "fulfilled"   ? txsData.value   as Record<string,unknown> : {};
-      const tokens = tokenData.status === "fulfilled" ? tokenData.value  as unknown[]             : [];
+      const addr   = addrData.status === "fulfilled"  ? addrData.value  as Record<string,unknown> : {};
+      const txs    = txsData.status === "fulfilled"   ? txsData.value   as Record<string,unknown> : {};
+      const tokens = tokenData.status === "fulfilled"  ? tokenData.value as unknown[]             : [];
 
-      // Native balance from RPC (more reliable)
+      // Native balance
       let nativeBalance = "0";
-      try {
-        const balHex = await rpcCall("eth_getBalance", [query, "latest"]) as string;
-        // Arc Testnet: native USDC uses 18 decimal wei internally
-        nativeBalance = (parseInt(balHex, 16) / 1e18).toFixed(6);
-      } catch { /* use Blockscout balance as fallback */ }
+      if (isArc) {
+        try {
+          const balHex = await rpcCall("eth_getBalance", [query, "latest"]) as string;
+          const raw = BigInt(balHex.startsWith("0x") ? balHex : "0x" + balHex);
+          const whole = raw / 1000000000000000000n;
+          const rem   = (raw % 1000000000000000000n) / 1000000000000n;
+          nativeBalance = whole.toString() + "." + rem.toString().padStart(6, "0");
+        } catch { nativeBalance = "0.000000"; }
+      } else {
+        nativeBalance = addr.coin_balance ? String(parseFloat(String(addr.coin_balance)) / 1e18) : "0";
+      }
 
       const isContract = !!(addr.is_contract);
-
-      return NextResponse.json({
-        type: isContract ? "contract" : "address",
-        data: {
-          address:       query,
-          balance:       nativeBalance,
-          balanceRaw:    addr.coin_balance ?? "0",
-          isContract,
-          txCount:       addr.transactions_count ?? 0,
-          name:          addr.name ?? null,
-          bytecodeSize:  isContract ? (addr.creation_tx_hash ? "—" : "—") : 0,
-          isVerified:    (addr.is_verified as boolean) ?? false,
-          tokenName:     isContract ? (addr.token as Record<string,unknown>)?.name ?? null : null,
-          tokenSymbol:   isContract ? (addr.token as Record<string,unknown>)?.symbol ?? null : null,
-          tokenBalances: Array.isArray(tokens) ? tokens.slice(0, 10).map((t: unknown) => {
-            const tok = t as Record<string, unknown>;
-            const token = tok.token as Record<string, unknown> | undefined;
-            const decimals = parseInt(String(token?.decimals ?? "18"));
-            const rawVal = BigInt(String(tok.value ?? "0"));
-            const displayVal = Number(rawVal) / Math.pow(10, decimals);
-            return {
-              name:     token?.name,
-              symbol:   token?.symbol,
-              address:  token?.address,
-              decimals,
-              balance:  displayVal.toFixed(Math.min(decimals, 6)),
-            };
-          }) : [],
-          recentTxs: Array.isArray((txs as Record<string, unknown>)?.items)
-            ? ((txs as Record<string, unknown>).items as Record<string, unknown>[]).slice(0, 5).map(t => ({
-                hash:      t.hash,
-                from:      (t.from as Record<string,unknown>)?.hash,
-                to:        (t.to as Record<string,unknown>)?.hash,
-                value:     t.value,
-                timestamp: t.timestamp,
-                status:    t.status,
-              }))
-            : [],
-          explorerUrl: `${ARCSCAN}/address/${query}`,
-        },
-      });
+      return NextResponse.json({ type: isContract ? "contract" : "address", data:{
+        address: query, balance: nativeBalance + (isArc ? " USDC" : " ETH"),
+        isContract, txCount: addr.transactions_count ?? 0,
+        name: addr.name ?? null, isVerified: (addr.is_verified as boolean) ?? false,
+        tokenSymbol: isContract ? (addr.token as Record<string,unknown>)?.symbol ?? null : null,
+        tokenBalances: Array.isArray(tokens) ? tokens.slice(0, 10).map((t: unknown) => {
+          const tok = t as Record<string,unknown>;
+          const token = tok.token as Record<string,unknown> | undefined;
+          const dec = parseInt(String(token?.decimals ?? "18"));
+          const raw = BigInt(String(tok.value ?? "0"));
+          const display = Number(raw) / Math.pow(10, dec);
+          return { name:token?.name, symbol:token?.symbol, address:token?.address, decimals:dec, balance:display.toFixed(Math.min(dec,6)) };
+        }) : [],
+        recentTxs: Array.isArray((txs as Record<string,unknown>)?.items)
+          ? ((txs as Record<string,unknown>).items as Record<string,unknown>[]).slice(0,5).map(t=>({hash:t.hash, from:(t.from as Record<string,unknown>)?.hash, to:(t.to as Record<string,unknown>)?.hash, value:t.value, status:t.status}))
+          : [],
+        explorerUrl: `${explorerBase}/address/${query}`,
+      }});
     }
 
-    // ── Block ─────────────────────────────────────────────────────────────
     if (isBlockNum) {
-      const block = await blockscout(`/blocks/${query}`) as Record<string, unknown>;
-      const txsData = await blockscout(`/blocks/${query}/transactions?limit=10`).catch(() => ({ items: [] })) as Record<string, unknown>;
-      return NextResponse.json({
-        type: "block",
-        data: {
-          number:      block.height,
-          hash:        block.hash,
-          parentHash:  block.parent_hash,
-          timestamp:   block.timestamp,
-          miner:       (block.miner as Record<string,unknown>)?.hash ?? null,
-          minerLabel:  (block.miner as Record<string,unknown>)?.ens_domain_name ?? null,
-          gasUsed:     block.gas_used,
-          gasLimit:    block.gas_limit,
-          baseFeePerGas: block.base_fee_per_gas,
-          txCount:     block.tx_count,
-          size:        block.size,
-          rewards:     block.rewards,
-          transactions: Array.isArray((txsData as Record<string, unknown>)?.items)
-            ? ((txsData as Record<string, unknown>).items as Record<string, unknown>[]).slice(0, 5).map(t => ({
-                hash:  t.hash,
-                from:  (t.from as Record<string,unknown>)?.hash,
-                to:    (t.to as Record<string,unknown>)?.hash,
-                value: t.value,
-                status: t.status,
-              }))
-            : [],
-          explorerUrl: `${ARCSCAN}/block/${query}`,
-        },
-      });
+      const [block, blockTxs] = await Promise.allSettled([
+        blockscout(apiBase, `/blocks/${query}`),
+        blockscout(apiBase, `/blocks/${query}/transactions?limit=5`),
+      ]);
+      const b  = block.status === "fulfilled"     ? block.value  as Record<string,unknown> : {};
+      const bt = blockTxs.status === "fulfilled"  ? blockTxs.value as Record<string,unknown> : {};
+      return NextResponse.json({ type:"block", data:{
+        number: b.height, hash: b.hash, parentHash: b.parent_hash,
+        timestamp: b.timestamp, miner: (b.miner as Record<string,unknown>)?.hash ?? null,
+        minerLabel: (b.miner as Record<string,unknown>)?.ens_domain_name ?? null,
+        gasUsed: b.gas_used, gasLimit: b.gas_limit, txCount: b.tx_count, size: b.size,
+        transactions: Array.isArray((bt as Record<string,unknown>)?.items)
+          ? ((bt as Record<string,unknown>).items as Record<string,unknown>[]).slice(0,5).map(t=>({hash:t.hash, from:(t.from as Record<string,unknown>)?.hash, to:(t.to as Record<string,unknown>)?.hash, value:t.value, status:t.status}))
+          : [],
+        explorerUrl: `${explorerBase}/block/${query}`,
+      }});
     }
 
-    // ── Universal search ──────────────────────────────────────────────────
-    const searchResult = await blockscout(`/search?q=${encodeURIComponent(query)}`) as Record<string, unknown>;
-    return NextResponse.json({ type: "search", data: searchResult });
+    // Universal search fallback
+    const searchResult = await blockscout(apiBase, `/search?q=${encodeURIComponent(query)}`);
+    return NextResponse.json({ type:"search", data:searchResult });
 
   } catch (err) {
-    console.error("[explorer]", err);
-    return NextResponse.json({
-      error: `${(err as Error).message}`,
-      hint: "The Blockscout API may be unavailable. Try direct RPC lookup.",
-    }, { status: 502 });
+    return NextResponse.json({ error: String((err as Error).message).slice(0,100) }, { status: 502 });
   }
 }
