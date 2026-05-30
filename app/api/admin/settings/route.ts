@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseREST } from "@/lib/supabase-server";
 
 const ADMIN_WALLET = (process.env.NEXT_PUBLIC_ADMIN_WALLET ?? "").toLowerCase();
 
@@ -15,24 +14,36 @@ function verifyAdmin(req: NextRequest): boolean {
   return auth === `Bearer ${key}`;
 }
 
-export async function GET(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data, error, status } = await supabaseREST(
-    "GET",
-    "system_settings",
-    undefined,
-    "select=key,value,updated_at&order=key"
-  );
-
-  if (error) {
-    console.error("[settings GET]", error);
-    return NextResponse.json({ settings: [], error }, { status: status || 500 });
-  }
-
-  return NextResponse.json({ settings: Array.isArray(data) ? data : [] });
+function getSupabase() {
+  const url  = (process.env.NEXT_PUBLIC_SUPABASE_URL  ?? "").trim();
+  const sKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+  if (!url || !sKey) throw new Error("Supabase env vars missing: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY");
+  return { url, sKey };
 }
 
+// GET — return all settings
+export async function GET(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const { url, sKey } = getSupabase();
+    const res = await fetch(`${url}/rest/v1/system_settings?select=key,value,updated_at&order=key`, {
+      headers: { "apikey": sKey, "Authorization": `Bearer ${sKey}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("[settings GET]", res.status, text.slice(0, 200));
+      return NextResponse.json({ settings: [], error: `DB error ${res.status}: ${text.slice(0,100)}` }, { status: 200 });
+    }
+    const data = await res.json();
+    return NextResponse.json({ settings: Array.isArray(data) ? data : [] });
+  } catch (err) {
+    console.error("[settings GET]", err);
+    return NextResponse.json({ settings: [], error: String(err) });
+  }
+}
+
+// POST — bulk upsert all settings in ONE request (on_conflict=key)
 export async function POST(req: NextRequest) {
   if (!verifyAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -45,75 +56,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Expected { settings: Record<string,string> }" }, { status: 400 });
   }
 
-  const entries = Object.entries(settings).filter(([k, v]) => k && v !== undefined);
+  const entries = Object.entries(settings).filter(([k, v]) => k && v !== undefined && v !== null);
   if (entries.length === 0) return NextResponse.json({ success: true, saved: 0 });
 
-  let saved = 0;
-  const errors: string[] = [];
+  try {
+    const { url, sKey } = getSupabase();
+    const now = new Date().toISOString();
 
-  for (const [key, value] of entries) {
-    const row = {
+    const rows = entries.map(([key, value]) => ({
       key,
-      value: String(value),
+      value: String(value ?? ""),
       is_secret: key === "openrouter_api_key",
-      updated_at: new Date().toISOString(),
-    };
+      updated_at: now,
+    }));
 
-    // Try PATCH (update) first
-    const patchResult = await supabaseREST(
-      "PATCH",
-      "system_settings",
-      { value: String(value), updated_at: new Date().toISOString() },
-      `key=eq.${encodeURIComponent(key)}`
-    );
+    // Single bulk upsert — much more reliable than PATCH-then-POST loop
+    const res = await fetch(`${url}/rest/v1/system_settings?on_conflict=key`, {
+      method: "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "apikey":        sKey,
+        "Authorization": `Bearer ${sKey}`,
+        "Prefer":        "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify(rows),
+      cache: "no-store",
+    });
 
-    if (!patchResult.error) {
-      saved++;
-      continue;
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("[settings POST] upsert failed:", res.status, text.slice(0, 300));
+      return NextResponse.json({
+        success: false, saved: 0,
+        error: `DB upsert failed (${res.status}): ${text.slice(0, 200)}`,
+        hint: "Run this in Supabase SQL Editor: ALTER TABLE system_settings DISABLE ROW LEVEL SECURITY; GRANT ALL ON system_settings TO service_role;",
+      }, { status: 500 });
     }
 
-    // PATCH failed — try POST (insert)
-    const insertResult = await supabaseREST("POST", "system_settings", row);
-    if (!insertResult.error) {
-      saved++;
-      continue;
-    }
+    console.log(`[settings POST] bulk upserted ${rows.length} settings`);
+    return NextResponse.json({ success: true, saved: rows.length });
 
-    // Both failed — upsert via POST with Prefer: resolution=merge-duplicates
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const sKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (url && sKey) {
-      try {
-        const upsertRes = await fetch(`${url}/rest/v1/system_settings?on_conflict=key`, {
-          method: "POST",
-          headers: {
-            "Content-Type":  "application/json",
-            "apikey":        sKey,
-            "Authorization": `Bearer ${sKey}`,
-            "Prefer":        "resolution=merge-duplicates,return=minimal",
-          },
-          body: JSON.stringify(row),
-          cache: "no-store",
-        });
-        if (upsertRes.ok) { saved++; continue; }
-        const errText = await upsertRes.text();
-        errors.push(`${key}: ${errText.slice(0, 120)}`);
-        console.error(`[settings] upsert failed "${key}":`, errText.slice(0, 200));
-      } catch (e) {
-        errors.push(`${key}: ${String(e)}`);
-      }
-    } else {
-      errors.push(`${key}: ${insertResult.error}`);
-    }
+  } catch (err) {
+    console.error("[settings POST]", err);
+    return NextResponse.json({ success: false, saved: 0, error: String(err) }, { status: 500 });
   }
-
-  console.log(`[settings POST] saved=${saved}/${entries.length} errors=${errors.length}`);
-
-  if (saved === 0 && errors.length > 0) {
-    return NextResponse.json({ success: false, saved: 0, errors }, { status: 500 });
-  }
-  if (errors.length > 0) {
-    return NextResponse.json({ success: false, saved, errors }, { status: 207 });
-  }
-  return NextResponse.json({ success: true, saved });
 }
