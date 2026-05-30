@@ -16,11 +16,14 @@ const DEFAULTS: SiteSettings = {
 };
 
 let _cache: SiteSettings | null = null;
+let _cacheTime = 0;
+const CACHE_TTL = 30000; // 30 seconds
 
 export function useSiteSettings() {
   const [s, set] = useState<SiteSettings>(_cache ?? DEFAULTS);
   useEffect(() => {
-    if (_cache) return;
+    const now = Date.now();
+    if (_cache && now - _cacheTime < CACHE_TTL) return;
     fetch("/api/admin/public-settings")
       .then(r => r.json())
       .then(d => {
@@ -36,6 +39,7 @@ export function useSiteSettings() {
           eurcLogoUrl:   d.eurc_logo_url    || DEFAULTS.eurcLogoUrl,
           cirBTCLogoUrl: d.cirbtc_logo_url  || DEFAULTS.cirBTCLogoUrl,
         };
+        _cacheTime = Date.now();
         set(_cache);
       }).catch(() => {});
   }, []);

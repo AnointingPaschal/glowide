@@ -6,7 +6,7 @@ const PUBLIC_KEYS = [
   "deployment_fee","launchpad_fee","fee_recipient","fees_enabled",
   "available_models","default_model","free_deployments",
   "site_name","site_tagline","site_description","logo_url","primary_color",
-  "usdc_logo_url","eurc_logo_url","cirbtc_logo_url",
+  "usdc_logo_url","eurc_logo_url","cirbtc_logo_url","arc_logo_url","usyc_logo_url",
 ];
 
 export async function GET() {

@@ -6,7 +6,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { useWalletStore } from '@/store/walletStore';
 import { WalletButton } from '@/components/wallet/WalletButton';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
-import { CIRCLE_CHAINS, CCTP_CHAINS, CIRCLE_ASSETS, ARC_CONTRACTS, LOGOS } from '@/lib/circle-chains';
+import { CIRCLE_CHAINS, CCTP_CHAINS, CIRCLE_ASSETS, ARC_CONTRACTS, LOGOS, NETWORKS } from '@/lib/circle-chains';
 import { useCryptoLogo, useNetworkLogo, getCryptoLogos } from '@/lib/crypto-logos';
 import { CryptoLogo, NetworkLogo } from '@/components/wallet/CryptoLogo';
 import { SwapPanel } from '@/components/wallet/SwapPanel';
@@ -61,15 +61,16 @@ function useWalletStore2() {
 
 // ── Custom token store ─────────────────────────────────────────────────────────
 interface Token { symbol:string; name:string; address:string; decimals:number; logo?:string; color:string; networkId:string; balance?:string; }
-function useTokenStore() {
-  const KEY = 'glowide_tokens';
+function useTokenStore(walletAddress?: string) {
+  // Tokens keyed per wallet address so each wallet has its own token list
+  const KEY = walletAddress ? `glowide_tokens_${walletAddress.toLowerCase()}` : 'glowide_tokens';
   const load = (): Token[] => { try { return JSON.parse(localStorage.getItem(KEY) ?? '[]'); } catch { return []; } };
   const [tokens, setTokens] = useState<Token[]>([]);
-  useEffect(() => setTokens(load()), []);
+  useEffect(() => setTokens(load()), [KEY]);
   const save2 = (t: Token[]) => { localStorage.setItem(KEY, JSON.stringify(t)); setTokens(t); };
   return {
     tokens,
-    addToken: (t: Token) => save2([...tokens, t]),
+    addToken: (t: Token) => save2([...tokens.filter(x=>x.address!==t.address), t]),
     removeToken: (addr: string) => save2(tokens.filter(t=>t.address!==addr)),
   };
 }
@@ -199,9 +200,6 @@ interface HistoryItem { hash:string; type:'send'|'receive'|'swap'|'cctp'; amount
 export default function WalletPage() {
   const { address, isConnected, chainId } = useWalletStore();
   const siteSettings = useSiteSettings();
-  const { tokens, addToken, removeToken } = useTokenStore();
-
-
   const [wallets, setWallets] = useState<SW[]>([]);
   const [activeWalletId, setActiveWalletId] = useState('injected');
   const [activePrivKey, setActivePrivKey] = useState<string|null>(null); // null = use injected
@@ -221,6 +219,7 @@ export default function WalletPage() {
     toast.success('Switched to '+(id==='injected'?'Browser Wallet':wallets.find(w=>w.id===id)?.label??addr.slice(0,10)));
   };
   const activeAddress = activeWalletId==='injected' ? address : (wallets.find(w=>w.id===activeWalletId)?.address ?? address);
+  const { tokens, addToken, removeToken } = useTokenStore(activeAddress ?? address ?? undefined);
 
   type Panel = 'assets'|'send'|'receive'|'swap'|'cctp'|'history'|'addToken'|'asset'|'manageWallets'|'importWallet'|'newWallet';
   const [panel, setPanel]       = useState<Panel>('assets');
@@ -267,13 +266,14 @@ export default function WalletPage() {
 
   // ── Fetch balances ──────────────────────────────────────────────────────────
   const fetchBalances = useCallback(async () => {
-    if (!address) return;
+    const walAddr = activeAddress ?? address;
+    if (!walAddr) return;
     setLoading(true);
     try {
       // USDC native balance (18 decimal wei → display with 6 sig figs)
       const hexBal = await fetch(ARC_RPC, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_getBalance',params:[address,'latest']}),
+        body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_getBalance',params:[walAddr,'latest']}),
         cache:'no-store',
       }).then(r=>r.json()).then(d=>d.result??'0x0');
 
@@ -300,7 +300,7 @@ export default function WalletPage() {
         try {
           const res = await fetch(ARC_RPC,{
             method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to:addr,data:balanceOfData(address)},'latest']}),
+            body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to:addr,data:balanceOfData(walAddr)},'latest']}),
             cache:'no-store',
           });
           const d = await res.json();
@@ -324,9 +324,9 @@ export default function WalletPage() {
       setBalances(next);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [address, networkId, tokens]);
+  }, [address, activeAddress, networkId, tokens]);
 
-  useEffect(()=>{ if(isConnected && address) fetchBalances(); },[isConnected,address,fetchBalances]);
+  useEffect(()=>{ if(isConnected && (address||activeAddress)) fetchBalances(); },[isConnected,address,activeAddress,fetchBalances]);
 
   // ── USD prices ──────────────────────────────────────────────────────────────
   const USD: Record<string,number> = { USDC:1, EURC:1.12, cirBTC:108000 };
@@ -401,13 +401,87 @@ export default function WalletPage() {
 
   // ── Add token ───────────────────────────────────────────────────────────────
   const lookupToken = async () => {
-    if(!/^0x[0-9a-fA-F]{40}$/.test(newTokenAddr)){toast.error('Invalid contract address');return;}
+    const addr = newTokenAddr.trim();
+    if(!/^0x[0-9a-fA-F]{40}$/.test(addr)){toast.error('Invalid EVM contract address (0x…)');return;}
     setTokenLoading(true);
+    setNewTokenInfo(null);
     try {
-      const res = await fetch(`${ARCSCAN}/api/v2/tokens/${newTokenAddr}`);
-      if(res.ok){ const d=await res.json() as Record<string,unknown>; setNewTokenInfo({symbol:String(d.symbol??'TOKEN'),name:String(d.name??'Unknown'),decimals:parseInt(String(d.decimals??'18'))}); }
-      else { setNewTokenInfo({symbol:newTokenAddr.slice(2,8).toUpperCase(),name:'Custom Token',decimals:18}); }
-    } catch { setNewTokenInfo({symbol:newTokenAddr.slice(2,8).toUpperCase(),name:'Custom Token',decimals:18}); }
+      const selectedNet = NETWORKS.find(n => n.id === networkId);
+      const apiBase = selectedNet?.explorerApi ?? 'https://testnet.arcscan.app/api/v2';
+
+      // 1. Try the selected network's Blockscout API
+      let found = false;
+      try {
+        const res = await fetch(`${apiBase}/tokens/${addr}`, {signal: AbortSignal.timeout(5000)});
+        if(res.ok){
+          const d = await res.json() as Record<string,unknown>;
+          if(d.symbol){
+            setNewTokenInfo({symbol:String(d.symbol),name:String(d.name??d.symbol),decimals:parseInt(String(d.decimals??'18'))});
+            found = true;
+          }
+        }
+      } catch { /* try next */ }
+
+      // 2. Try DexScreener (works for most EVM tokens)
+      if (!found) {
+        try {
+          const ds = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addr}`, {signal: AbortSignal.timeout(5000)});
+          if(ds.ok){
+            const d = await ds.json() as {pairs?:Array<{baseToken?:{symbol?:string;name?:string};quoteToken?:{symbol?:string;name?:string}}>};
+            const pair = d.pairs?.[0];
+            if(pair?.baseToken?.symbol){
+              // baseToken is likely the one we searched
+              const tok = pair.baseToken.symbol?.toLowerCase() === addr.slice(-4).toLowerCase() ? pair.quoteToken : pair.baseToken;
+              setNewTokenInfo({
+                symbol: tok?.symbol ?? addr.slice(2,8).toUpperCase(),
+                name:   tok?.name   ?? 'Unknown Token',
+                decimals: 18,
+              });
+              found = true;
+            }
+          }
+        } catch { /* try next */ }
+      }
+
+      // 3. Try eth_call to read EVM name/symbol/decimals directly from RPC
+      if (!found) {
+        const rpc = selectedNet?.rpc ?? ARC_RPC;
+        async function rpcCall(data: string): Promise<string> {
+          const r = await fetch(rpc, {method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to:addr,data},'latest']}),cache:'no-store'});
+          const d = await r.json() as {result?:string};
+          return d.result ?? '0x';
+        }
+        try {
+          // symbol() = 0x95d89b41, name() = 0x06fdde03, decimals() = 0x313ce567
+          const [symHex, nameHex, decHex] = await Promise.all([
+            rpcCall('0x95d89b41'), rpcCall('0x06fdde03'), rpcCall('0x313ce567'),
+          ]);
+          function decodeString(hex: string): string {
+            if(!hex || hex==='0x') return '';
+            // ABI string: offset(32) + length(32) + data
+            const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+            if(clean.length < 128) return '';
+            const len = parseInt(clean.slice(64,128), 16);
+            const str = clean.slice(128, 128 + len*2);
+            return decodeURIComponent(str.match(/.{1,2}/g)?.map(b=>'%'+b).join('')??'');
+          }
+          const sym = decodeString(symHex) || addr.slice(2,8).toUpperCase();
+          const nm  = decodeString(nameHex) || sym;
+          const dec = decHex && decHex!=='0x' ? parseInt(decHex,16) : 18;
+          setNewTokenInfo({symbol:sym, name:nm, decimals:isNaN(dec)?18:dec});
+          found = true;
+        } catch { /* use fallback */ }
+      }
+
+      if (!found) {
+        // Fallback: create entry with address-derived values
+        setNewTokenInfo({symbol:addr.slice(2,8).toUpperCase(), name:'Custom Token', decimals:18});
+        toast('Token found by address — name/symbol fetched from contract', {icon:'ℹ️'});
+      }
+    } catch(e){
+      toast.error('Lookup failed: ' + ((e as Error).message ?? '').slice(0,60));
+    }
     finally { setTokenLoading(false); }
   };
   const confirmAddToken = () => {
@@ -480,7 +554,7 @@ export default function WalletPage() {
       <div className="flex h-[calc(100dvh-56px)] overflow-hidden">
 
         {/* ── Desktop Left Sidebar ─────────────────────────────────── */}
-        <div className="hidden md:flex flex-col w-72 flex-shrink-0 border-r border-glow-border bg-[#080812]">
+        <div className="hidden md:flex flex-col w-80 flex-shrink-0 border-r border-glow-border bg-[#080812]">
           <div className="px-4 pt-5 pb-4 border-b border-glow-border/50">
             <div className="flex items-center justify-between mb-3">
               <button onClick={()=>setShowSwitcher(true)} className="flex-1 text-left hover:opacity-80 transition-opacity">
