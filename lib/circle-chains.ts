@@ -1,182 +1,81 @@
-// ── Circle CCTP Supported Networks ─────────────────────────────────────────
-// Source: https://developers.circle.com/stablecoins/usdc-contract-addresses
-// CCTP supported: https://developers.circle.com/cctp/cctp-supported-blockchains
-
-export type ChainEcosystem = "EVM" | "Solana" | "Aptos" | "Starknet" | "SUI" | "Stellar" | "XRPL";
-
-export interface ChainConfig {
-  id: string;
-  name: string;
-  ecosystem: ChainEcosystem;
-  chainId?: number;           // EVM chain ID
-  testnet: boolean;
-  usdc: string;               // USDC contract/address
-  eurc?: string;              // EURC contract/address
-  cirBTC?: string;            // cirBTC (Arc Testnet native)
-  rpc?: string;
-  explorer: string;
-  nativeCurrency: { symbol: string; decimals: number };
-  cctpDomain?: number;        // CCTP domain ID
-  cctpSupported: boolean;
-  color: string;
-  logoUrl: string;
-}
-
-export const CIRCLE_CHAINS: ChainConfig[] = [
-  // ── Arc Testnet (primary — USDC is gas token) ──────────────────────────
-  {
-    id: "arc-testnet", name: "Arc Testnet", ecosystem: "EVM", chainId: 5042002, testnet: true,
-    usdc: "0x3600000000000000000000000000000000000000",
-    eurc: "0x3700000000000000000000000000000000000000",
-    cirBTC: "0x3800000000000000000000000000000000000000",
-    rpc: "https://rpc.testnet.arc.network",
-    explorer: "https://testnet.arcscan.app",
-    nativeCurrency: { symbol: "USDC", decimals: 6 },
-    cctpDomain: 9, cctpSupported: true,
-    color: "#7c3aed", logoUrl: "https://testnet.arcscan.app/images/arc-logo.png",
-  },
-  // ── EVM Testnets with CCTP ─────────────────────────────────────────────
-  {
-    id: "eth-sepolia", name: "Ethereum Sepolia", ecosystem: "EVM", chainId: 11155111, testnet: true,
-    usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-    rpc: "https://rpc.sepolia.org", explorer: "https://sepolia.etherscan.io",
-    nativeCurrency: { symbol: "ETH", decimals: 18 },
-    cctpDomain: 0, cctpSupported: true,
-    color: "#627EEA", logoUrl: "https://cryptologos.cc/logos/ethereum-eth-logo.svg",
-  },
-  {
-    id: "base-sepolia", name: "Base Sepolia", ecosystem: "EVM", chainId: 84532, testnet: true,
-    usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-    rpc: "https://sepolia.base.org", explorer: "https://base-sepolia.blockscout.com",
-    nativeCurrency: { symbol: "ETH", decimals: 18 },
-    cctpDomain: 6, cctpSupported: true,
-    color: "#0052FF", logoUrl: "https://cryptologos.cc/logos/base-base-logo.svg",
-  },
-  {
-    id: "arbitrum-sepolia", name: "Arbitrum Sepolia", ecosystem: "EVM", chainId: 421614, testnet: true,
-    usdc: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
-    rpc: "https://sepolia-rollup.arbitrum.io/rpc", explorer: "https://sepolia.arbiscan.io",
-    nativeCurrency: { symbol: "ETH", decimals: 18 },
-    cctpDomain: 3, cctpSupported: true,
-    color: "#28A0F0", logoUrl: "https://cryptologos.cc/logos/arbitrum-arb-logo.svg",
-  },
-  {
-    id: "op-sepolia", name: "OP Sepolia", ecosystem: "EVM", chainId: 11155420, testnet: true,
-    usdc: "0x5fd84259d66Cd46123540766Be93DFE6D43130D7",
-    rpc: "https://sepolia.optimism.io", explorer: "https://sepolia-optimism.etherscan.io",
-    nativeCurrency: { symbol: "ETH", decimals: 18 },
-    cctpDomain: 2, cctpSupported: true,
-    color: "#FF0420", logoUrl: "https://cryptologos.cc/logos/optimism-ethereum-op-logo.svg",
-  },
-  {
-    id: "avax-fuji", name: "Avalanche Fuji", ecosystem: "EVM", chainId: 43113, testnet: true,
-    usdc: "0x5425890298aed601595a70AB815c96711a31Bc65",
-    rpc: "https://api.avax-test.network/ext/bc/C/rpc", explorer: "https://testnet.snowtrace.io",
-    nativeCurrency: { symbol: "AVAX", decimals: 18 },
-    cctpDomain: 1, cctpSupported: true,
-    color: "#E84142", logoUrl: "https://cryptologos.cc/logos/avalanche-avax-logo.svg",
-  },
-  {
-    id: "polygon-amoy", name: "Polygon Amoy", ecosystem: "EVM", chainId: 80002, testnet: true,
-    usdc: "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
-    rpc: "https://rpc-amoy.polygon.technology", explorer: "https://amoy.polygonscan.com",
-    nativeCurrency: { symbol: "MATIC", decimals: 18 },
-    cctpDomain: 7, cctpSupported: true,
-    color: "#8247E5", logoUrl: "https://cryptologos.cc/logos/polygon-matic-logo.svg",
-  },
-  // ── Non-EVM Testnets ───────────────────────────────────────────────────
-  {
-    id: "solana-devnet", name: "Solana Devnet", ecosystem: "Solana", testnet: true,
-    usdc: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-    explorer: "https://explorer.solana.com/?cluster=devnet",
-    nativeCurrency: { symbol: "SOL", decimals: 9 },
-    cctpDomain: 5, cctpSupported: true,
-    color: "#9945FF", logoUrl: "https://cryptologos.cc/logos/solana-sol-logo.svg",
-  },
-  {
-    id: "aptos-testnet", name: "Aptos Testnet", ecosystem: "Aptos", testnet: true,
-    usdc: "0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832",
-    explorer: "https://explorer.aptoslabs.com/?network=testnet",
-    nativeCurrency: { symbol: "APT", decimals: 8 },
-    cctpSupported: false,
-    color: "#00D4A8", logoUrl: "https://cryptologos.cc/logos/aptos-apt-logo.svg",
-  },
-  {
-    id: "starknet-sepolia", name: "Starknet Sepolia", ecosystem: "Starknet", testnet: true,
-    usdc: "0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343",
-    explorer: "https://sepolia.voyager.online",
-    nativeCurrency: { symbol: "ETH", decimals: 18 },
-    cctpSupported: false,
-    color: "#EC796B", logoUrl: "https://cryptologos.cc/logos/starknet-strk-logo.svg",
-  },
-  {
-    id: "sui-testnet", name: "SUI Testnet", ecosystem: "SUI", testnet: true,
-    usdc: "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC",
-    explorer: "https://suiscan.xyz/testnet",
-    nativeCurrency: { symbol: "SUI", decimals: 9 },
-    cctpSupported: false,
-    color: "#4DA2FF", logoUrl: "https://cryptologos.cc/logos/sui-sui-logo.svg",
-  },
-  {
-    id: "stellar-testnet", name: "Stellar Testnet", ecosystem: "Stellar", testnet: true,
-    usdc: "USDC-GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
-    explorer: "https://stellar.expert/explorer/testnet",
-    nativeCurrency: { symbol: "XLM", decimals: 7 },
-    cctpDomain: 4, cctpSupported: true,
-    color: "#3E1BDB", logoUrl: "https://cryptologos.cc/logos/stellar-xlm-logo.svg",
-  },
-  {
-    id: "xrpl-testnet", name: "XRPL Testnet", ecosystem: "XRPL", testnet: true,
-    usdc: "5553444300000000000000000000000000000000.rHuGNhqTG32mfmAvWA8hUyWRLV3tCSwKQt",
-    explorer: "https://testnet.xrpl.org",
-    nativeCurrency: { symbol: "XRP", decimals: 6 },
-    cctpSupported: false,
-    color: "#00AAE4", logoUrl: "https://cryptologos.cc/logos/xrp-xrp-logo.svg",
-  },
-];
-
-// CCTP supported chains only
-export const CCTP_CHAINS = CIRCLE_CHAINS.filter(c => c.cctpSupported);
-
-// EVM chains only
-export const EVM_CHAINS = CIRCLE_CHAINS.filter(c => c.ecosystem === "EVM");
-
-// Get chain by ID
-export function getChain(id: string): ChainConfig | undefined {
-  return CIRCLE_CHAINS.find(c => c.id === id);
-}
-
-// CCTP domain map for cross-chain transfers
-export const CCTP_DOMAIN_MAP: Record<number, string> = {
-  0: "Ethereum", 1: "Avalanche", 2: "OP Mainnet", 3: "Arbitrum",
-  4: "Stellar", 5: "Solana", 6: "Base", 7: "Polygon", 9: "Arc Testnet",
+// ── Arc Testnet Contract Addresses (from docs.arc.io/arc/references/contract-addresses) ──
+export const ARC_CONTRACTS = {
+  USDC_ERC20:          '0x3600000000000000000000000000000000000000', // 6 decimals ERC-20
+  EURC:                '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a', // 6 decimals
+  USYC:                '0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C',
+  TOKEN_MESSENGER_V2:  '0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA',
+  MESSAGE_TRANSMITTER: '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275',
+  GATEWAY_WALLET:      '0x0077777d7EBA4688BDeF3E311b846F25870A19B9',
+  ARC_CCTP_DOMAIN:     26,  // Arc Testnet domain (not 9)
 };
 
-// Circle official asset logos
-// Inline SVG data URIs — always load, no CORS, no external dependency
-const USDC_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%232775CA'/%3E%3Cpath fill='white' d='M16 5.2c-5.99 0-10.8 4.81-10.8 10.8S10.01 26.8 16 26.8 26.8 21.99 26.8 16 21.99 5.2 16 5.2zm1.44 14.4v1.44c0 .72-.36 1.08-1.08 1.08h-.72c-.72 0-1.08-.36-1.08-1.08v-1.44c-2.16-.36-3.6-1.8-3.6-3.6 0-.72.36-1.08 1.08-1.08h1.08c.72 0 1.08.36 1.08 1.08 0 .72.72 1.44 1.8 1.44s1.8-.36 1.8-1.08c0-.72-.36-1.08-1.8-1.44-2.16-.72-3.6-1.44-3.6-3.6 0-1.8 1.44-3.24 3.24-3.6V9.08c0-.72.36-1.08 1.08-1.08h.72c.72 0 1.08.36 1.08 1.08v1.44c1.8.36 3.24 1.8 3.24 3.24 0 .72-.36 1.08-1.08 1.08h-.72c-.72 0-1.08-.36-1.08-1.08 0-.72-.72-1.44-1.8-1.44-.72 0-1.8.36-1.8 1.08 0 .72.72 1.08 1.8 1.44 2.52.72 3.6 1.8 3.6 3.6 0 1.8-1.44 3.24-3.24 3.6z'/%3E%3C/svg%3E";
+// ── Inline SVG data URIs — no CORS, always loads ─────────────────────────────
+const SVG = (content: string) =>
+  `data:image/svg+xml,${encodeURIComponent(content)}`;
 
-const EURC_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%231A56DB'/%3E%3Ctext x='16' y='21' font-size='16' font-weight='bold' text-anchor='middle' fill='white' font-family='Arial'%3E€%3C/text%3E%3C/svg%3E";
+const LOGOS = {
+  arc:      SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#7C3AED"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">ARC</text></svg>'),
+  eth:      SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#627EEA"/><text x="16" y="22" font-size="16" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">Ξ</text></svg>'),
+  avax:     SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#E84142"/><text x="16" y="22" font-size="14" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">A</text></svg>'),
+  op:       SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#FF0420"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">OP</text></svg>'),
+  arb:      SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#2D374B"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">ARB</text></svg>'),
+  base:     SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#0052FF"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">BASE</text></svg>'),
+  polygon:  SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#8247E5"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">POL</text></svg>'),
+  solana:   SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#9945FF"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">SOL</text></svg>'),
+  stellar:  SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#3E1BDB"/><text x="16" y="21" font-size="16" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">✦</text></svg>'),
+  sui:      SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#4CA2FF"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">SUI</text></svg>'),
+  aptos:    SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#00BFD8"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">APT</text></svg>'),
+  linea:    SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#121212"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">LIN</text></svg>'),
+  usdc:     SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#2775CA"/><text x="16" y="22" font-size="12" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">USDC</text></svg>'),
+  eurc:     SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#1A56DB"/><text x="16" y="22" font-size="18" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">€</text></svg>'),
+  btc:      SVG('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#F7931A"/><text x="16" y="22" font-size="16" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">₿</text></svg>'),
+};
 
-const BTC_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23F7931A'/%3E%3Ctext x='16' y='22' font-size='18' font-weight='bold' text-anchor='middle' fill='white' font-family='Arial'%3E₿%3C/text%3E%3C/svg%3E";
+export interface CircleChain {
+  id: string; name: string; shortName: string; ecosystem: string;
+  cctpDomain: number; cctpSupported: boolean;
+  color: string; logo: string;
+  chainId?: number; testnet?: boolean;
+}
 
+export const CIRCLE_CHAINS: CircleChain[] = [
+  { id:'arc-testnet',    name:'Arc Testnet',        shortName:'Arc',      ecosystem:'EVM',     cctpDomain:26, cctpSupported:true,  color:'#7C3AED', logo:LOGOS.arc,     chainId:5042002, testnet:true  },
+  { id:'eth-sepolia',    name:'Ethereum Sepolia',   shortName:'Ethereum', ecosystem:'EVM',     cctpDomain:0,  cctpSupported:true,  color:'#627EEA', logo:LOGOS.eth                                     },
+  { id:'avax-fuji',      name:'Avalanche Fuji',     shortName:'Avalanche',ecosystem:'EVM',     cctpDomain:1,  cctpSupported:true,  color:'#E84142', logo:LOGOS.avax                                    },
+  { id:'op-sepolia',     name:'OP Sepolia',         shortName:'Optimism', ecosystem:'EVM',     cctpDomain:2,  cctpSupported:true,  color:'#FF0420', logo:LOGOS.op                                      },
+  { id:'arb-sepolia',    name:'Arbitrum Sepolia',   shortName:'Arbitrum', ecosystem:'EVM',     cctpDomain:3,  cctpSupported:true,  color:'#2D374B', logo:LOGOS.arb                                     },
+  { id:'base-sepolia',   name:'Base Sepolia',       shortName:'Base',     ecosystem:'EVM',     cctpDomain:6,  cctpSupported:true,  color:'#0052FF', logo:LOGOS.base                                    },
+  { id:'polygon-amoy',   name:'Polygon Amoy',       shortName:'Polygon',  ecosystem:'EVM',     cctpDomain:7,  cctpSupported:true,  color:'#8247E5', logo:LOGOS.polygon                                 },
+  { id:'linea-sepolia',  name:'Linea Sepolia',      shortName:'Linea',    ecosystem:'EVM',     cctpDomain:11, cctpSupported:true,  color:'#121212', logo:LOGOS.linea                                   },
+  { id:'solana-devnet',  name:'Solana Devnet',      shortName:'Solana',   ecosystem:'Solana',  cctpDomain:5,  cctpSupported:true,  color:'#9945FF', logo:LOGOS.solana                                  },
+  { id:'stellar-testnet',name:'Stellar Testnet',    shortName:'Stellar',  ecosystem:'Stellar', cctpDomain:4,  cctpSupported:true,  color:'#3E1BDB', logo:LOGOS.stellar                                 },
+  { id:'sui-testnet',    name:'SUI Testnet',        shortName:'SUI',      ecosystem:'SUI',     cctpDomain:8,  cctpSupported:false, color:'#4CA2FF', logo:LOGOS.sui                                     },
+  { id:'aptos-testnet',  name:'Aptos Testnet',      shortName:'Aptos',    ecosystem:'Aptos',   cctpDomain:9,  cctpSupported:false, color:'#00BFD8', logo:LOGOS.aptos                                   },
+];
+
+export const CCTP_CHAINS = CIRCLE_CHAINS.filter(c => c.cctpSupported);
+
+// ── Circle assets with real Arc Testnet addresses ─────────────────────────────
 export const CIRCLE_ASSETS = {
   USDC: {
     name: "USD Coin", symbol: "USDC", decimals: 6,
-    logo: USDC_SVG,
-    color: "#2775CA",
-    description: "Digital dollar by Circle — gas token on Arc Testnet",
+    address: ARC_CONTRACTS.USDC_ERC20,
+    nativeDecimals: 18, // native gas uses 18 decimals
+    logo: LOGOS.usdc, color: "#2775CA",
+    description: "Native gas token on Arc Testnet (18 dec native, 6 dec ERC-20)",
   },
   EURC: {
     name: "Euro Coin", symbol: "EURC", decimals: 6,
-    logo: EURC_SVG,
-    color: "#1A56DB",
-    description: "MiCA-compliant Euro stablecoin by Circle",
+    address: ARC_CONTRACTS.EURC,
+    nativeDecimals: 6,
+    logo: LOGOS.eurc, color: "#1A56DB",
+    description: "Euro stablecoin — 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
   },
   cirBTC: {
-    name: "Circle Bitcoin", symbol: "cirBTC", decimals: 8,
-    logo: BTC_SVG,
-    color: "#F7931A",
-    description: "Bitcoin wrapped by Circle on Arc Testnet",
+    name: "cirBTC (coming soon)", symbol: "cirBTC", decimals: 8,
+    address: null, // Not yet deployed on Arc Testnet
+    nativeDecimals: 8,
+    logo: LOGOS.btc, color: "#F7931A",
+    description: "Not yet deployed on Arc Testnet",
   },
 };
