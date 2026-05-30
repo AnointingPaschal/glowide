@@ -9,6 +9,7 @@ import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { CIRCLE_CHAINS, CCTP_CHAINS, CIRCLE_ASSETS, ARC_CONTRACTS, LOGOS } from '@/lib/circle-chains';
 import { useCryptoLogo, useNetworkLogo, getCryptoLogos } from '@/lib/crypto-logos';
 import { CryptoLogo, NetworkLogo } from '@/components/wallet/CryptoLogo';
+import { SwapPanel } from '@/components/wallet/SwapPanel';
 
 // Helper: use LOGOS inline SVG as fallback (never fails)
 function circleLogo(sym: string, _color: string): string {
@@ -95,9 +96,10 @@ function NetLogo({ src, name, networkId, size=24 }: { src:string; name:string; n
 }
 
 // ── CCTP Destination Dropdown ─────────────────────────────────────────────────
-function CCTPNetworkDropdown({ value, onChange }: { value:string; onChange:(id:string)=>void }) {
+function CCTPNetworkDropdown({ value, onChange, arcLogoUrl='' }: { value:string; onChange:(id:string)=>void; arcLogoUrl?:string }) {
   const [open, setOpen] = useState(false);
-  const selected = CCTP_CHAINS.find(c=>c.id===value) ?? CCTP_CHAINS[1];
+  const chains = CCTP_CHAINS.map(c => c.id==='arc-testnet' && arcLogoUrl ? {...c,logo:arcLogoUrl} : c);
+  const selected = chains.find(c=>c.id===value) ?? chains[1];
   return (
     <div className="relative">
       <button onClick={()=>setOpen(!open)}
@@ -114,7 +116,7 @@ function CCTPNetworkDropdown({ value, onChange }: { value:string; onChange:(id:s
           <div className="fixed inset-0 z-30" onClick={()=>setOpen(false)}/>
           <div className="absolute left-0 right-0 top-full mt-2 bg-[#0e0e1a] border border-glow-border rounded-2xl shadow-2xl z-40 max-h-72 overflow-y-auto animate-fade-in">
             <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-widest px-4 py-2.5 border-b border-glow-border/50">Select Destination Network</p>
-            {CCTP_CHAINS.filter(c=>c.id!=='arc-testnet').map(c=>(
+            {chains.filter(c=>c.id!=='arc-testnet').map(c=>(
               <button key={c.id} onClick={()=>{onChange(c.id);setOpen(false);}}
                 className={cn("w-full flex items-center gap-3 px-4 py-3 hover:bg-glow-card/60 transition-colors",
                   value===c.id && "bg-glow-accent/10")}>
@@ -134,9 +136,10 @@ function CCTPNetworkDropdown({ value, onChange }: { value:string; onChange:(id:s
 }
 
 // ── Network selection dropdown (MetaMask-style) ───────────────────────────────
-function NetworkDropdown({ selected, onChange }: { selected:string; onChange:(id:string)=>void }) {
+function NetworkDropdown({ selected, onChange, arcLogoUrl='' }: { selected:string; onChange:(id:string)=>void; arcLogoUrl?:string }) {
   const [open, setOpen] = useState(false);
-  const chain = CIRCLE_CHAINS.find(c=>c.id===selected) ?? CIRCLE_CHAINS[0];
+  const chains = CIRCLE_CHAINS.map(c => c.id==='arc-testnet' && arcLogoUrl ? {...c,logo:arcLogoUrl} : c);
+  const chain = chains.find(c=>c.id===selected) ?? chains[0];
   return (
     <div className="relative">
       <button onClick={()=>setOpen(!open)}
@@ -152,7 +155,7 @@ function NetworkDropdown({ selected, onChange }: { selected:string; onChange:(id
             <div className="sticky top-0 bg-[#0e0e1a] px-3 py-2 border-b border-glow-border">
               <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider">Select Network</p>
             </div>
-            {CIRCLE_CHAINS.map(c=>(
+            {chains.map(c=>(
               <button key={c.id} onClick={()=>{onChange(c.id);setOpen(false);}}
                 className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-glow-card/60 transition-colors text-left", selected===c.id && "bg-glow-accent/10")}>
                 <NetLogo src={c.logo} name={c.name} networkId={c.id} size={32}/>
@@ -195,6 +198,8 @@ export default function WalletPage() {
   const { address, isConnected, chainId } = useWalletStore();
   const siteSettings = useSiteSettings();
   const { tokens, addToken, removeToken } = useTokenStore();
+
+
   const { wallets, activeId, setActiveId, addWallet, removeWallet } = useWalletStore2();
 
   type Panel = 'assets'|'send'|'receive'|'swap'|'cctp'|'history'|'addToken'|'asset'|'manageWallets'|'importWallet'|'newWallet';
@@ -470,7 +475,7 @@ export default function WalletPage() {
                 </button>
               </div>
             </div>
-            <NetworkDropdown selected={networkId} onChange={setNetworkId}/>
+            <NetworkDropdown selected={networkId} onChange={setNetworkId} arcLogoUrl={siteSettings.arcLogoUrl}/>
           </div>
           <div className="px-4 py-4 border-b border-glow-border/30">
             <p className="text-[11px] text-glow-muted mb-1">Total Portfolio</p>
@@ -514,7 +519,7 @@ export default function WalletPage() {
               <p className="text-[10px] text-glow-muted uppercase tracking-widest">{siteSettings.siteName}</p>
               <p className="text-xs font-mono text-glow-text/70">{truncateAddress(address!,6)}</p>
             </div>
-            <NetworkDropdown selected={networkId} onChange={setNetworkId}/>
+            <NetworkDropdown selected={networkId} onChange={setNetworkId} arcLogoUrl={siteSettings.arcLogoUrl}/>
             <button onClick={()=>setPanel('manageWallets')} className="w-9 h-9 rounded-xl bg-white/8 flex items-center justify-center border border-white/10 text-white/60"><Key className="w-3.5 h-3.5"/></button>
             <button onClick={fetchBalances} className={cn("w-9 h-9 rounded-xl bg-white/8 flex items-center justify-center border border-white/10",loading&&"opacity-60")}>
               <RefreshCw className={cn("w-4 h-4 text-white/70",loading&&"animate-spin")}/>
@@ -673,57 +678,21 @@ export default function WalletPage() {
               </div>
             )}
 
-            {/* SWAP */}
+            {/* SWAP — Arc native currency swap using ERC-20 transfers + price oracle */}
             {panel==='swap' && (
-              <div className="p-4 space-y-4 max-w-md mx-auto">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel('assets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <h2 className="text-base font-bold text-glow-text">Swap</h2>
-                  <div className="ml-auto flex items-center gap-2">
-                    <span className="text-xs text-glow-muted">Cross-chain</span>
-                    <button onClick={()=>setCrossChain(!crossChain)} className={cn("w-10 h-5 rounded-full transition-all relative",crossChain?"bg-glow-accent":"bg-glow-border")}>
-                      <span className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform",crossChain?"translate-x-5.5 left-0.5":"translate-x-0.5 left-0")}/>
-                    </button>
-                  </div>
-                </div>
-                <div className="bg-glow-card border border-glow-border rounded-2xl p-4 space-y-3">
-                  <div>
-                    <p className="text-xs text-glow-muted mb-1.5">From</p>
-                    <div className="flex gap-2">
-                      <select value={swapFrom} onChange={e=>setSwapFrom(e.target.value)} className="bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-sm text-glow-text focus:outline-none focus:border-glow-accent/50">
-                        {allAssets.filter(a=>a.symbol!=='cirBTC').map(a=><option key={a.symbol} value={a.symbol}>{a.symbol}</option>)}
-                      </select>
-                      <input value={swapAmt} onChange={e=>setSwapAmt(e.target.value)} type="number" placeholder="0.00" className="flex-1 bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-lg font-bold text-glow-text focus:outline-none focus:border-glow-accent/50"/>
-                    </div>
-                    <p className="text-xs text-glow-muted mt-1">Balance: {parseFloat(balances[swapFrom]||'0').toFixed(4)} {swapFrom}</p>
-                  </div>
-                  <div className="flex justify-center">
-                    <button onClick={()=>{const t=swapFrom;setSwapFrom(swapTo2);setSwapTo2(t);}} className="w-8 h-8 rounded-full bg-glow-accent/20 border border-glow-accent/30 flex items-center justify-center hover:bg-glow-accent/30">
-                      <ArrowLeftRight className="w-4 h-4 text-glow-accent"/>
-                    </button>
-                  </div>
-                  <div>
-                    <p className="text-xs text-glow-muted mb-1.5">To</p>
-                    <select value={swapTo2} onChange={e=>setSwapTo2(e.target.value)} className="w-full bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-sm text-glow-text focus:outline-none focus:border-glow-accent/50">
-                      {allAssets.filter(a=>a.symbol!==swapFrom&&a.symbol!=='cirBTC').map(a=><option key={a.symbol} value={a.symbol}>{a.symbol}</option>)}
-                    </select>
-                  </div>
-                  {crossChain && (
-                    <div>
-                      <p className="text-xs text-glow-muted mb-1.5">Destination</p>
-                      <CCTPNetworkDropdown value={destChainId} onChange={setDestChainId}/>
-                    </div>
-                  )}
-                </div>
-                {swapAmt && <div className="p-3 bg-glow-accent/5 border border-glow-accent/15 rounded-xl text-sm text-center">
-                  <p className="text-glow-muted">Est. receive</p>
-                  <p className="text-lg font-bold text-glow-text">{(parseFloat(swapAmt)*(swapFrom==='EURC'?1.12:1)/(swapTo2==='EURC'?1.12:1)).toFixed(6)} {swapTo2}</p>
-                </div>}
-                <button onClick={()=>toast('DEX swap coming soon — use CCTP for USDC cross-chain',{icon:'💡'})}
-                  className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-xl flex items-center justify-center gap-2">
-                  <ArrowLeftRight className="w-4 h-4"/>{crossChain?'Swap & Bridge':'Swap'} {swapFrom} → {swapTo2}
-                </button>
-              </div>
+              <SwapPanel
+                allAssets={allAssets}
+                balances={balances}
+                address={address!}
+                swapFrom={swapFrom} setSwapFrom={setSwapFrom}
+                swapTo={swapTo2}   setSwapTo={setSwapTo2}
+                onBack={()=>setPanel(activeAsset?'asset':'assets')}
+                onSuccess={(hash,fromSym,toSym,amt)=>{
+                  setHistory(h=>[{hash,type:'swap',amount:amt,symbol:fromSym+' → '+toSym,timestamp:Date.now(),status:'success'},...h]);
+                  setTimeout(fetchBalances,4000);
+                  setPanel('assets');
+                }}
+              />
             )}
 
             {/* CCTP — with dropdown */}
@@ -743,7 +712,7 @@ export default function WalletPage() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-2">Destination Network</label>
-                    <CCTPNetworkDropdown value={cctpDest} onChange={setCctpDest}/>
+                    <CCTPNetworkDropdown value={cctpDest} onChange={setCctpDest} arcLogoUrl={siteSettings.arcLogoUrl}/>
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Recipient Address</label>

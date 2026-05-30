@@ -211,7 +211,7 @@ export default function AdminPage() {
   });
   const [siteSettings, setSiteSettings] = useState({
     siteName:'GlowIDE', siteTagline:'AI-Powered Web3 IDE', siteDescription:'Build smarter on Web3',
-    logoUrl:'', primaryColor:'#7c3aed',
+    logoUrl:'', primaryColor:'#7c3aed', arcLogoUrl:'',
     usdcLogoUrl:DEFAULT_USDC_LOGO,
     eurcLogoUrl:DEFAULT_EURC_LOGO,
     cirBTCLogoUrl:DEFAULT_CIRBTC_LOGO,
@@ -252,6 +252,7 @@ export default function AdminPage() {
         if (m.site_tagline)     setSiteSettings(p => ({...p, siteTagline:    m.site_tagline}));
         if (m.site_description) setSiteSettings(p => ({...p, siteDescription:m.site_description}));
         if (m.logo_url)         setSiteSettings(p => ({...p, logoUrl:        m.logo_url}));
+        if (m.arc_logo_url)     setSiteSettings(p => ({...p, arcLogoUrl:     m.arc_logo_url}));
         if (m.primary_color)    setSiteSettings(p => ({...p, primaryColor:   m.primary_color}));
         if (m.usdc_logo_url)    setSiteSettings(p => ({...p, usdcLogoUrl:    m.usdc_logo_url}));
         if (m.eurc_logo_url)    setSiteSettings(p => ({...p, eurcLogoUrl:    m.eurc_logo_url}));
@@ -310,6 +311,7 @@ export default function AdminPage() {
         site_tagline:            siteSettings.siteTagline,
         site_description:        siteSettings.siteDescription,
         logo_url:                siteSettings.logoUrl,
+        arc_logo_url:            siteSettings.arcLogoUrl,
         usdc_logo_url:           siteSettings.usdcLogoUrl,
         eurc_logo_url:           siteSettings.eurcLogoUrl,
         cirbtc_logo_url:         siteSettings.cirBTCLogoUrl,
@@ -1276,6 +1278,7 @@ export default function AdminPage() {
                   { key:'usdc_logo_url',  label:'USDC Token Logo',   stateKey:'usdcLogoUrl'  as const, accept:'image/*' },
                   { key:'eurc_logo_url',  label:'EURC Token Logo',   stateKey:'eurcLogoUrl'  as const, accept:'image/*' },
                   { key:'cirbtc_logo_url',label:'cirBTC Token Logo', stateKey:'cirBTCLogoUrl' as const, accept:'image/*' },
+                  { key:'arc_logo_url',    label:'Arc Network Logo',  stateKey:'arcLogoUrl'    as const, accept:'image/*' },
                 ].map(({key, label, stateKey}) => {
                   const currentUrl = siteSettings[stateKey];
                   return (
