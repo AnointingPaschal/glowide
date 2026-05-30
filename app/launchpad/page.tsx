@@ -254,22 +254,33 @@ export default function LaunchpadPage() {
   };
 
   // ── Step 3: Generate + upload metadata JSON ────────────────────────────
-  const metadata = useMemo(() => ({
-    name:        form.name,
-    symbol:      form.symbol,
-    description: form.description,
-    image:       imageUrl,
-    external_url: form.website,
-    attributes: [
-      { trait_type: "Total Supply", value: form.totalSupply },
-      { trait_type: "Decimals",     value: form.decimals },
-      { trait_type: "Network",      value: "Arc Testnet" },
-      { trait_type: "Chain ID",     value: 5042002 },
-      { trait_type: "LP Lock Days", value: form.lockDurationDays },
-    ],
-    social: { twitter: form.twitter, website: form.website },
-    launchpad: { platform: "GlowIDE Launchpad", network: "Arc Testnet", chainId: 5042002 },
-  }), [form, imageUrl]);
+  const metadata = useMemo(() => {
+    // If imageUrl is a data URI (base64 embedded), use a short placeholder in the JSON
+    // so the tokenURI JSON stays small enough to be stored in the contract if needed.
+    // The actual image is stored separately in the DB.
+    const imageRef = imageUrl && !imageUrl.startsWith('data:')
+      ? imageUrl           // IPFS URL — safe to include, stays small
+      : imageUrl           // data URI — we include it in metadata JSON but NOT in contract
+        ? imageUrl.slice(0, 100) + '…[stored in DB]'
+        : '';
+    
+    return {
+      name:        form.name,
+      symbol:      form.symbol,
+      description: form.description,
+      image:       imageRef,
+      external_url: form.website,
+      attributes: [
+        { trait_type: "Total Supply", value: form.totalSupply },
+        { trait_type: "Decimals",     value: form.decimals },
+        { trait_type: "Network",      value: "Arc Testnet" },
+        { trait_type: "Chain ID",     value: 5042002 },
+        { trait_type: "LP Lock Days", value: form.lockDurationDays },
+      ],
+      social: { twitter: form.twitter, website: form.website },
+      launchpad: { platform: "GlowIDE Launchpad", network: "Arc Testnet", chainId: 5042002 },
+    };
+  }, [form, imageUrl]);
 
   const uploadMetadata = async () => {
     setUploading(true);
@@ -300,7 +311,7 @@ export default function LaunchpadPage() {
 
       // Direct deployment (no factory required — compiles and deploys token on-chain)
       {
-        const deployData = await buildSimpleTokenDeploy(form.name, form.symbol, form.decimals, totalSupplyWei, metadataUri || 'ipfs://placeholder');
+        const deployData = await buildSimpleTokenDeploy(form.name, form.symbol, form.decimals, totalSupplyWei);
         
         let gasLimit = '0x7A120'; // 500k default
         try {
@@ -800,24 +811,28 @@ function LaunchField({ label, hint, children, className='' }: { label: string; h
 // ── Build token deployment bytecode — pure Solidity (no OZ imports = small bytecode) ──
 // EIP-3860: max initcode = 49152 bytes. OZ ERC20 compiled can exceed this.
 // Pure Solidity ERC20 compiles to ~3-5KB bytecode, well within limits.
-async function buildSimpleTokenDeploy(name: string, symbol: string, decimals: number, supply: bigint, tokenURI: string): Promise<string> {
+async function buildSimpleTokenDeploy(name: string, symbol: string, decimals: number, supply: bigint): Promise<string> {
   // Pure Solidity ERC20 — no imports, no inheritance from external libraries
   // Compiles to ~3KB bytecode vs ~50KB with OZ imports
+  // NOTE: tokenURI is NOT stored in the contract bytecode.
+  // A 42KB base64 data URI as a constructor arg would make initcode >> 49152 byte EIP-3860 limit.
+  // Instead: store tokenURI in DB only; call setTokenURI() separately after deploy if needed.
   const src = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 /**
  * @title LaunchedToken
- * @notice Minimal ERC-20 deployed via GlowIDE Launchpad on Arc Testnet.
- * @dev Pure Solidity (no external imports) to stay under EIP-3860 initcode limit.
+ * @notice Minimal pure-Solidity ERC-20 for GlowIDE Launchpad on Arc Testnet.
+ * @dev No imports, no tokenURI in constructor — keeps initcode < 49152 bytes (EIP-3860).
+ *      tokenURI is stored off-chain (DB + IPFS). Call setTokenURI() after deploy if needed.
  */
 contract LaunchedToken {
     string  public name;
     string  public symbol;
     uint8   public decimals;
     uint256 public totalSupply;
-    string  public tokenURI;
     address public owner;
+    string  private _tokenURI;
 
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
@@ -825,15 +840,11 @@ contract LaunchedToken {
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
-    constructor(
-        string memory _name, string memory _symbol,
-        uint8 _decimals, uint256 _supply, string memory _tokenURI
-    ) {
-        name      = _name;
-        symbol    = _symbol;
-        decimals  = _decimals;
-        tokenURI  = _tokenURI;
-        owner     = msg.sender;
+    constructor(string memory _name, string memory _symbol, uint8 _dec, uint256 _supply) {
+        name        = _name;
+        symbol      = _symbol;
+        decimals    = _dec;
+        owner       = msg.sender;
         totalSupply = _supply;
         balanceOf[msg.sender] = _supply;
         emit Transfer(address(0), msg.sender, _supply);
@@ -863,9 +874,11 @@ contract LaunchedToken {
         return true;
     }
 
+    function tokenURI() external view returns (string memory) { return _tokenURI; }
+
     function setTokenURI(string calldata uri) external {
         require(msg.sender == owner, "Not owner");
-        tokenURI = uri;
+        _tokenURI = uri;
     }
 }`;
 
@@ -876,5 +889,43 @@ contract LaunchedToken {
   });
   const d = await res.json();
   if (!d.success || !d.bytecode) throw new Error(d.errors?.[0]?.message ?? 'Compile failed');
-  return d.bytecode;
+
+  // ABI-encode constructor args: (string name, string symbol, uint8 decimals, uint256 supply)
+  // Layout: offset_name (32) | offset_symbol (32) | decimals (32) | supply (32) | str_data...
+  // ABI encoding for (string, string, uint8, uint256):
+  //   slot0: offset to name string data   = 0x80 (4*32 = 128 bytes)
+  //   slot1: offset to symbol string data = 0x80 + name_total_len
+  //   slot2: decimals (uint8 padded to 32)
+  //   slot3: supply (uint256)
+  //   slot4+: name length + name data (padded to 32)
+  //   slot5+: symbol length + symbol data (padded to 32)
+
+  function abiEncodeStr(str: string): string {
+    const bytes = new TextEncoder().encode(str);
+    const lenHex = bytes.length.toString(16).padStart(64, '0');
+    let dataHex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    // Pad to multiple of 32 bytes
+    const padLen = Math.ceil(dataHex.length / 64) * 64;
+    dataHex = dataHex.padEnd(padLen, '0');
+    return lenHex + dataHex;
+  }
+
+  const nameEnc   = abiEncodeStr(name);
+  const symbolEnc = abiEncodeStr(symbol);
+
+  // Static slots: 4 slots × 32 bytes = 128 bytes = 0x80
+  const nameOffset   = BigInt(128); // 0x80
+  const symbolOffset = nameOffset + BigInt(nameEnc.length / 2);
+  const decimalsHex  = decimals.toString(16).padStart(64, '0');
+  const supplyHex    = supply.toString(16).padStart(64, '0');
+
+  const constructorArgs =
+    nameOffset.toString(16).padStart(64, '0') +
+    symbolOffset.toString(16).padStart(64, '0') +
+    decimalsHex +
+    supplyHex +
+    nameEnc +
+    symbolEnc;
+
+  return d.bytecode + constructorArgs;
 }
