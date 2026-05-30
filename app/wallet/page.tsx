@@ -55,14 +55,23 @@ function useTokenStore() {
 // ── Logo img with fallback ────────────────────────────────────────────────
 function TokenLogo({ src, symbol, color, size = 48 }: { src?: string; symbol: string; color: string; size?: number }) {
   const [err, setErr] = useState(false);
-  const classes = `rounded-full flex items-center justify-center text-white font-bold flex-shrink-0`;
-  if (!src || err) return (
-    <div className={classes} style={{ width: size, height: size, background: color, fontSize: size * 0.28 }}>
-      {symbol.slice(0, 2)}
-    </div>
-  );
+  // Data URIs are inline and never fail — skip onError for them
+  const isDataUri = src?.startsWith('data:');
+  if (!src || (err && !isDataUri)) {
+    return (
+      <div className="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
+        style={{ width: size, height: size, background: color, fontSize: size * 0.28 }}>
+        {symbol.slice(0, 2)}
+      </div>
+    );
+  }
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={symbol} width={size} height={size} className="rounded-full object-contain bg-white/5 p-0.5 flex-shrink-0" onError={() => setErr(true)} />;
+  return <img
+    src={src} alt={symbol} width={size} height={size}
+    className="rounded-full object-contain flex-shrink-0"
+    style={{ background: isDataUri ? 'transparent' : 'rgba(255,255,255,0.05)', padding: isDataUri ? 0 : 2 }}
+    onError={() => !isDataUri && setErr(true)}
+  />;
 }
 
 // ── Network dropdown ──────────────────────────────────────────────────────
@@ -180,8 +189,18 @@ export default function WalletPage() {
         cache: 'no-store',
       }).then(r => r.json()).then(d => d.result ?? '0x0');
 
-      // Divide by 1e18 (Arc Testnet internal precision) → USDC amount
-      const usdcBal = (parseInt(balHex, 16) / 1e18).toFixed(6);
+      // Arc Testnet: native balance in wei (1e18), USDC has 6 decimals on-chain
+      // Use BigInt to avoid floating point precision issues
+      let usdcBal = '0.000000';
+      try {
+        const hex = balHex ?? '0x0';
+        if (hex && hex !== '0x' && hex.length > 2) {
+          const raw = BigInt(hex.startsWith('0x') ? hex : '0x' + hex);
+          const whole = raw / BigInt(1e18);
+          const rem   = (raw % BigInt(1e18)) / BigInt(1e12); // 6 decimal places
+          usdcBal = whole.toString() + '.' + rem.toString().padStart(6, '0');
+        }
+      } catch { usdcBal = '0.000000'; }
 
       // ERC-20 balances for EURC + cirBTC + custom tokens
       const tokenContracts = [
@@ -191,14 +210,28 @@ export default function WalletPage() {
       ];
 
       const erc20Results = await Promise.allSettled(tokenContracts.map(async ({ addr, dec }) => {
-        const res = await fetch(ARC_RPC, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: addr, data: makeBalanceOfCall(address) }, 'latest'] }),
-          cache: 'no-store',
-        });
-        const d = await res.json();
-        const raw = parseInt(d.result ?? '0x0', 16);
-        return (raw / Math.pow(10, dec)).toFixed(Math.min(dec, 8));
+        try {
+          const res = await fetch(ARC_RPC, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: addr, data: makeBalanceOfCall(address) }, 'latest'] }),
+            cache: 'no-store',
+          });
+          const d = await res.json();
+          // eth_call returns '0x' for non-existent contracts — treat as 0
+          const hex = d.result ?? '0x0';
+          if (!hex || hex === '0x' || hex === '0x0' || hex.length <= 2) return '0.000000';
+          // Pad to 32 bytes if needed (some RPCs return short hex)
+          const padded = hex.startsWith('0x') ? hex : '0x' + hex;
+          const raw = BigInt(padded);
+          if (raw === 0n) return '0.000000';
+          const divisor = BigInt(10 ** Math.min(dec, 18));
+          const whole = raw / divisor;
+          const remainder = raw % divisor;
+          const fracStr = remainder.toString().padStart(Math.min(dec, 6), '0').slice(0, 6);
+          return whole.toString() + '.' + fracStr;
+        } catch {
+          return '0.000000';
+        }
       }));
 
       const next: Record<string, string> = { USDC: usdcBal };

@@ -153,25 +153,29 @@ export const CCTP_DOMAIN_MAP: Record<number, string> = {
 };
 
 // Circle official asset logos
+// Inline SVG data URIs — always load, no CORS, no external dependency
+const USDC_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%232775CA'/%3E%3Cpath fill='white' d='M16 5.2c-5.99 0-10.8 4.81-10.8 10.8S10.01 26.8 16 26.8 26.8 21.99 26.8 16 21.99 5.2 16 5.2zm1.44 14.4v1.44c0 .72-.36 1.08-1.08 1.08h-.72c-.72 0-1.08-.36-1.08-1.08v-1.44c-2.16-.36-3.6-1.8-3.6-3.6 0-.72.36-1.08 1.08-1.08h1.08c.72 0 1.08.36 1.08 1.08 0 .72.72 1.44 1.8 1.44s1.8-.36 1.8-1.08c0-.72-.36-1.08-1.8-1.44-2.16-.72-3.6-1.44-3.6-3.6 0-1.8 1.44-3.24 3.24-3.6V9.08c0-.72.36-1.08 1.08-1.08h.72c.72 0 1.08.36 1.08 1.08v1.44c1.8.36 3.24 1.8 3.24 3.24 0 .72-.36 1.08-1.08 1.08h-.72c-.72 0-1.08-.36-1.08-1.08 0-.72-.72-1.44-1.8-1.44-.72 0-1.8.36-1.8 1.08 0 .72.72 1.08 1.8 1.44 2.52.72 3.6 1.8 3.6 3.6 0 1.8-1.44 3.24-3.24 3.6z'/%3E%3C/svg%3E";
+
+const EURC_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%231A56DB'/%3E%3Ctext x='16' y='21' font-size='16' font-weight='bold' text-anchor='middle' fill='white' font-family='Arial'%3E€%3C/text%3E%3C/svg%3E";
+
+const BTC_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23F7931A'/%3E%3Ctext x='16' y='22' font-size='18' font-weight='bold' text-anchor='middle' fill='white' font-family='Arial'%3E₿%3C/text%3E%3C/svg%3E";
+
 export const CIRCLE_ASSETS = {
   USDC: {
     name: "USD Coin", symbol: "USDC", decimals: 6,
-    logo: "https://www.circle.com/hubfs/USDC/USDC_icon_1.svg",
-    fallbackLogo: "https://cryptologos.cc/logos/usd-coin-usdc-logo.svg",
+    logo: USDC_SVG,
     color: "#2775CA",
     description: "Digital dollar by Circle — gas token on Arc Testnet",
   },
   EURC: {
     name: "Euro Coin", symbol: "EURC", decimals: 6,
-    logo: "https://www.circle.com/hubfs/EURC/EURC_icon.svg",
-    fallbackLogo: "https://cryptologos.cc/logos/euro-coin-eurc-logo.svg",
+    logo: EURC_SVG,
     color: "#1A56DB",
     description: "MiCA-compliant Euro stablecoin by Circle",
   },
   cirBTC: {
     name: "Circle Bitcoin", symbol: "cirBTC", decimals: 8,
-    logo: "https://cryptologos.cc/logos/bitcoin-btc-logo.svg",
-    fallbackLogo: "https://cryptologos.cc/logos/bitcoin-btc-logo.svg",
+    logo: BTC_SVG,
     color: "#F7931A",
     description: "Bitcoin wrapped by Circle on Arc Testnet",
   },

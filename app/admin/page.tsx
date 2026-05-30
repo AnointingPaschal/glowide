@@ -15,6 +15,12 @@ import toast from 'react-hot-toast';
 import { ContractArgInputs } from '@/components/admin/ContractArgInputs';
 import type { PublicModel } from '@/app/api/models/route';
 
+// ── Default token logo data URIs ─────────────────────────────────────────────
+const DEFAULT_USDC_LOGO   = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#2775CA"/><text x="16" y="22" font-size="13" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">USDC</text></svg>');
+const DEFAULT_EURC_LOGO   = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#1A56DB"/><text x="16" y="22" font-size="18" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">€</text></svg>');
+const DEFAULT_CIRBTC_LOGO = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#F7931A"/><text x="16" y="22" font-size="16" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial">cBTC</text></svg>');
+
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ADMIN_WALLET = (process.env.NEXT_PUBLIC_ADMIN_WALLET ?? '').toLowerCase();
 
@@ -206,9 +212,9 @@ export default function AdminPage() {
   const [siteSettings, setSiteSettings] = useState({
     siteName:'GlowIDE', siteTagline:'AI-Powered Web3 IDE', siteDescription:'Build smarter on Web3',
     logoUrl:'', primaryColor:'#7c3aed',
-    usdcLogoUrl:'https://www.circle.com/hubfs/USDC/USDC_icon_1.svg',
-    eurcLogoUrl:'https://www.circle.com/hubfs/EURC/EURC_icon.svg',
-    cirBTCLogoUrl:'https://cryptologos.cc/logos/bitcoin-btc-logo.svg',
+    usdcLogoUrl:DEFAULT_USDC_LOGO,
+    eurcLogoUrl:DEFAULT_EURC_LOGO,
+    cirBTCLogoUrl:DEFAULT_CIRBTC_LOGO,
   });
 
   // Auth header for API calls
