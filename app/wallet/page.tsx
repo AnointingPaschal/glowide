@@ -10,6 +10,8 @@ import { CIRCLE_CHAINS, CCTP_CHAINS, CIRCLE_ASSETS, ARC_CONTRACTS, LOGOS } from 
 import { useCryptoLogo, useNetworkLogo, getCryptoLogos } from '@/lib/crypto-logos';
 import { CryptoLogo, NetworkLogo } from '@/components/wallet/CryptoLogo';
 import { SwapPanel } from '@/components/wallet/SwapPanel';
+import { WalletSwitcher, type StoredWallet as SW, loadWallets, saveWallets, getActiveId, setActiveId } from '@/components/wallet/WalletSwitcher';
+import { useCircleLogos } from '@/hooks/useCircleLogos';
 
 // Helper: use LOGOS inline SVG as fallback (never fails)
 function circleLogo(sym: string, _color: string): string {
@@ -200,7 +202,25 @@ export default function WalletPage() {
   const { tokens, addToken, removeToken } = useTokenStore();
 
 
-  const { wallets, activeId, setActiveId, addWallet, removeWallet } = useWalletStore2();
+  const [wallets, setWallets] = useState<SW[]>([]);
+  const [activeWalletId, setActiveWalletId] = useState('injected');
+  const [activePrivKey, setActivePrivKey] = useState<string|null>(null); // null = use injected
+  const [showSwitcher, setShowSwitcher] = useState(false);
+  const [showAddWallet, setShowAddWallet] = useState(false);
+
+  useEffect(()=>{
+    setWallets(loadWallets());
+    setActiveWalletId(getActiveId());
+  }, []);
+
+  const addWallet = (w: SW) => { const next=[...wallets.filter(x=>x.id!==w.id),w]; setWallets(next); saveWallets(next); };
+  const removeWallet = (id: string) => { const next=wallets.filter(w=>w.id!==id); setWallets(next); saveWallets(next); if(activeWalletId===id){setActiveWalletId('injected');setActiveId('injected');setActivePrivKey(null);} };
+  const switchWallet = (id: string, addr: string, pk: string|null) => {
+    setActiveWalletId(id); setActiveId(id); setActivePrivKey(pk);
+    setShowSwitcher(false);
+    toast.success('Switched to '+(id==='injected'?'Browser Wallet':wallets.find(w=>w.id===id)?.label??addr.slice(0,10)));
+  };
+  const activeAddress = activeWalletId==='injected' ? address : (wallets.find(w=>w.id===activeWalletId)?.address ?? address);
 
   type Panel = 'assets'|'send'|'receive'|'swap'|'cctp'|'history'|'addToken'|'asset'|'manageWallets'|'importWallet'|'newWallet';
   const [panel, setPanel]       = useState<Panel>('assets');
@@ -315,11 +335,12 @@ export default function WalletPage() {
     .reduce((s,sym)=> s + (parseFloat(balances[sym]||'0')||0)*(USD[sym]??0), 0);
 
   // ── Assets list ─────────────────────────────────────────────────────────────
+  const cl = useCircleLogos();
   const nativeAssets = [
-    { symbol:'USDC',   name:'USD Coin',     logo:siteSettings.usdcLogoUrl||CIRCLE_ASSETS.USDC.logo,   color:CIRCLE_ASSETS.USDC.color,   isGas:true  },
-    { symbol:'EURC',   name:'Euro Coin',    logo:siteSettings.eurcLogoUrl||CIRCLE_ASSETS.EURC.logo,   color:CIRCLE_ASSETS.EURC.color,   isGas:false },
-    { symbol:'cirBTC', name:'Circle Bitcoin', logo:siteSettings.cirBTCLogoUrl||CIRCLE_ASSETS.cirBTC.logo, color:CIRCLE_ASSETS.cirBTC.color, isGas:false },
-    { symbol:'USYC',   name:'USYC (Hashnote)', logo:ARC_CONTRACTS.USYC ? circleLogo('USYC','#047857') : '', color:'#047857', isGas:false },
+    { symbol:'USDC',   name:'USD Coin',      logo:cl.USDC,   color:CIRCLE_ASSETS.USDC.color,   isGas:true  },
+    { symbol:'EURC',   name:'Euro Coin',     logo:cl.EURC,   color:CIRCLE_ASSETS.EURC.color,   isGas:false },
+    { symbol:'cirBTC', name:'Circle Bitcoin', logo:cl.cirBTC, color:CIRCLE_ASSETS.cirBTC.color, isGas:false },
+    { symbol:'USYC',   name:'USYC (Hashnote)', logo:cl.USYC,  color:'#047857', isGas:false },
   ];
   const customAssets = tokens.filter(t=>t.networkId===networkId);
   const allAssets = [...nativeAssets, ...customAssets.map(t=>({symbol:t.symbol,name:t.name,logo:t.logo,color:t.color,isGas:false}))];
@@ -462,12 +483,15 @@ export default function WalletPage() {
         <div className="hidden md:flex flex-col w-72 flex-shrink-0 border-r border-glow-border bg-[#080812]">
           <div className="px-4 pt-5 pb-4 border-b border-glow-border/50">
             <div className="flex items-center justify-between mb-3">
-              <div>
+              <button onClick={()=>setShowSwitcher(true)} className="flex-1 text-left hover:opacity-80 transition-opacity">
                 <p className="text-[10px] text-glow-muted font-semibold uppercase tracking-widest">{siteSettings.siteName} Wallet</p>
-                <p className="text-xs font-mono text-glow-text/70 mt-0.5">{truncateAddress(address!,8)}</p>
-              </div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <p className="text-xs font-mono text-glow-text/70">{truncateAddress(activeAddress??address??'',8)}</p>
+                  {activeWalletId!=='injected' && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded-full">{wallets.find(w=>w.id===activeWalletId)?.label?.slice(0,10)}</span>}
+                </div>
+              </button>
               <div className="flex items-center gap-1.5">
-                <button onClick={()=>setPanel('manageWallets')} className="w-8 h-8 rounded-xl bg-white/8 flex items-center justify-center border border-white/10 text-white/60 hover:text-white transition-colors" title="Manage Wallets">
+                <button onClick={()=>setPanel('manageWallets')} className="w-8 h-8 rounded-xl bg-white/8 flex items-center justify-center border border-white/10 text-white/60 hover:text-white transition-colors" title="Wallet Settings">
                   <Key className="w-3.5 h-3.5"/>
                 </button>
                 <button onClick={fetchBalances} className={cn("w-8 h-8 rounded-xl bg-white/8 flex items-center justify-center border border-white/10",loading&&"opacity-60")}>
@@ -515,10 +539,13 @@ export default function WalletPage() {
         <div className="flex-1 flex flex-col overflow-hidden bg-glow-surface">
           {/* Mobile header */}
           <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-glow-border bg-[#080812] flex-shrink-0">
-            <div className="flex-1">
+            <button onClick={()=>setShowSwitcher(true)} className="flex-1 text-left">
               <p className="text-[10px] text-glow-muted uppercase tracking-widest">{siteSettings.siteName}</p>
-              <p className="text-xs font-mono text-glow-text/70">{truncateAddress(address!,6)}</p>
-            </div>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-mono text-glow-text/70">{truncateAddress(activeAddress??address??'',6)}</p>
+                {activeWalletId!=='injected' && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded-full">{wallets.find(w=>w.id===activeWalletId)?.label?.slice(0,8)}</span>}
+              </div>
+            </button>
             <NetworkDropdown selected={networkId} onChange={setNetworkId} arcLogoUrl={siteSettings.arcLogoUrl}/>
             <button onClick={()=>setPanel('manageWallets')} className="w-9 h-9 rounded-xl bg-white/8 flex items-center justify-center border border-white/10 text-white/60"><Key className="w-3.5 h-3.5"/></button>
             <button onClick={fetchBalances} className={cn("w-9 h-9 rounded-xl bg-white/8 flex items-center justify-center border border-white/10",loading&&"opacity-60")}>
@@ -827,18 +854,18 @@ export default function WalletPage() {
                   <h2 className="text-base font-bold text-glow-text">Wallets</h2>
                 </div>
                 {/* Connected injected wallet */}
-                <div className={cn("flex items-center gap-3 p-4 bg-glow-card border rounded-2xl",activeId==='injected'?"border-glow-accent/40 bg-glow-accent/5":"border-glow-border")}>
+                <div className={cn("flex items-center gap-3 p-4 bg-glow-card border rounded-2xl",activeWalletId==='injected'?"border-glow-accent/40 bg-glow-accent/5":"border-glow-border")}>
                   <div className="w-10 h-10 rounded-xl bg-glow-accent/20 flex items-center justify-center flex-shrink-0"><Wallet className="w-5 h-5 text-glow-accent"/></div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-glow-text">Connected Wallet</p>
                     <p className="text-xs font-mono text-glow-muted truncate">{address}</p>
                     <p className="text-[10px] text-glow-muted">MetaMask / Browser Wallet</p>
                   </div>
-                  {activeId==='injected' && <span className="text-[10px] text-glow-accent bg-glow-accent/15 border border-glow-accent/30 px-2 py-0.5 rounded-full">Active</span>}
+                  {activeWalletId==='injected' && <span className="text-[10px] text-glow-accent bg-glow-accent/15 border border-glow-accent/30 px-2 py-0.5 rounded-full">Active</span>}
                 </div>
                 {/* Stored wallets */}
                 {wallets.map(w=>(
-                  <div key={w.id} className={cn("flex items-center gap-3 p-4 bg-glow-card border rounded-2xl",activeId===w.id?"border-glow-accent/40 bg-glow-accent/5":"border-glow-border")}>
+                  <div key={w.id} className={cn("flex items-center gap-3 p-4 bg-glow-card border rounded-2xl",activeWalletId===w.id?"border-glow-accent/40 bg-glow-accent/5":"border-glow-border")}>
                     <div className="w-10 h-10 rounded-xl bg-glow-surface flex items-center justify-center flex-shrink-0">
                       {w.source==='generated'?<Shield className="w-5 h-5 text-emerald-400"/>:<Key className="w-5 h-5 text-amber-400"/>}
                     </div>
@@ -848,7 +875,7 @@ export default function WalletPage() {
                       <p className="text-[10px] text-glow-muted capitalize">{w.source}</p>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {activeId===w.id && <span className="text-[10px] text-glow-accent bg-glow-accent/15 border border-glow-accent/30 px-2 py-0.5 rounded-full">Active</span>}
+                      {activeWalletId===w.id && <span className="text-[10px] text-glow-accent bg-glow-accent/15 border border-glow-accent/30 px-2 py-0.5 rounded-full">Active</span>}
                       <button onClick={()=>navigator.clipboard.writeText(w.address)} className="p-1.5 text-glow-muted hover:text-glow-text"><Copy className="w-3.5 h-3.5"/></button>
                       <button onClick={()=>removeWallet(w.id)} className="p-1.5 text-glow-muted hover:text-red-400"><Trash2 className="w-3.5 h-3.5"/></button>
                     </div>
@@ -955,6 +982,18 @@ export default function WalletPage() {
           </div>
         </div>
       </div>
+    {/* Wallet Switcher Modal */}
+    {showSwitcher && (
+      <WalletSwitcher
+        injectedAddress={address}
+        wallets={wallets}
+        activeId={activeWalletId}
+        onSwitch={switchWallet}
+        onAdd={()=>{setShowSwitcher(false);setPanel('manageWallets');setShowAddWallet(true);}}
+        onDelete={removeWallet}
+        onClose={()=>setShowSwitcher(false)}
+      />
+    )}
     </AppLayout>
   );
 }

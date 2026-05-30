@@ -5,6 +5,7 @@ import { getCryptoLogo } from '@/lib/crypto-logos';
 interface Props {
   symbol: string;
   fallbackLogo?: string;
+  resolvedLogo?: string; // Admin-uploaded logo — highest priority, skips CryptoCompare
   color?: string;
   size?: number;
   className?: string;
@@ -16,21 +17,22 @@ interface Props {
  * - In background, fetches real logo from CryptoCompare
  * - Falls back to colored circle with symbol initials if all else fails
  */
-export function CryptoLogo({ symbol, fallbackLogo, color = '#7c3aed', size = 32, className = '' }: Props) {
-  const [logo, setLogo] = useState<string>(fallbackLogo ?? '');
+export function CryptoLogo({ symbol, fallbackLogo, resolvedLogo, color = '#7c3aed', size = 32, className = '' }: Props) {
+  const [logo, setLogo] = useState<string>(resolvedLogo || fallbackLogo || '');
   const [err, setErr]   = useState(false);
 
   useEffect(() => {
     if (!symbol) return;
-    // Reset error on symbol change
     setErr(false);
+    // Priority 1: admin-uploaded logo
+    if (resolvedLogo) { setLogo(resolvedLogo); return; }
+    // Priority 2: inline SVG fallback
     if (fallbackLogo) setLogo(fallbackLogo);
-
-    // Fetch from CryptoCompare
+    // Priority 3: CryptoCompare (background fetch, non-blocking)
     getCryptoLogo(symbol.toUpperCase()).then(url => {
-      if (url) { setLogo(url); setErr(false); }
+      if (url && !resolvedLogo) { setLogo(url); setErr(false); }
     }).catch(() => {});
-  }, [symbol, fallbackLogo]);
+  }, [symbol, fallbackLogo, resolvedLogo]);
 
   const isDataUri = logo?.startsWith('data:');
 
