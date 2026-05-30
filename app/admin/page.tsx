@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useWalletStore } from '@/store/walletStore';
 import {
-  Shield, Brain, Save, Eye, EyeOff, CheckCircle, Sliders, FileText,
+  Shield, Brain, Save, ImageIcon, Upload, Eye, EyeOff, CheckCircle, Sliders, FileText,
   Plus, Trash2, Edit2, X, Loader2, DollarSign, Percent, Zap,
   ToggleLeft, ToggleRight, RefreshCw, Copy, AlertTriangle,
   Activity, Server, Globe, Lock, Users, BookOpen, CreditCard,
@@ -670,7 +670,12 @@ export default function AdminPage() {
               {(['premium','fast','coding'] as const).map(tier=>{
                 const tm=models.filter(m=>m.tier===tier); if(!tm.length) return null;
                 const tc={premium:{label:'⭐ Premium',color:'#a855f7'},fast:{label:'⚡ Fast',color:'#06b6d4'},coding:{label:'💻 Coding',color:'#f59e0b'}}[tier];
-                return <div key={tier} className="space-y-2"><p className="text-xs font-semibold uppercase tracking-wider px-1" style={{color:tc.color}}>{tc.label}</p>{tm.map(m=><ModelRow key={m.id} model={m} onToggle={()=>setModels(ms=>ms.map(x=>x.id===m.id?{...x,enabled:!x.enabled}:x))} onEdit={()=>setEditingModel(m)} onDelete={()=>{setModels(ms=>ms.filter(x=>x.id!==m.id));toast.success('Removed');}}/>)}</div>;
+                return <div key={tier} className="space-y-2"><p className="text-xs font-semibold uppercase tracking-wider px-1" style={{color:tc.color}}>{tc.label}</p>{tm.map(m=><ModelRow key={m.id} model={m} onToggle={async ()=>{
+                  const updated = models.map(x=>x.id===m.id?{...x,enabled:!x.enabled}:x);
+                  setModels(updated);
+                  await fetch('/api/models', {method:'POST', headers:{'Content-Type':'application/json',authorization:`Wallet ${address}`}, body:JSON.stringify({models:updated})}).catch(()=>{});
+                  toast.success('Model ' + (models.find(x=>x.id===m.id)?.enabled ? 'disabled' : 'enabled'));
+                }} onEdit={()=>setEditingModel(m)} onDelete={()=>{setModels(ms=>ms.filter(x=>x.id!==m.id));toast.success('Removed');}}/>)}</div>;
               })}
             </div>
           )}
@@ -997,59 +1002,75 @@ export default function AdminPage() {
           {/* WEBSITE */}
           {activeTab === 'website' && (
             <div className="space-y-5 animate-fade-in">
-              <div><h2 className="text-base font-semibold text-glow-text">Website Settings</h2><p className="text-xs text-glow-muted mt-0.5">Customize branding and appearance</p></div>
+              <div><h2 className="text-base font-semibold text-glow-text">Website Settings</h2><p className="text-xs text-glow-muted mt-0.5">Customize branding — logos are saved directly to database</p></div>
+
+              {/* Site info */}
               <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
-                <div className="flex items-center gap-2 mb-1"><Globe className="w-4 h-4 text-glow-accent"/><span className="text-sm font-semibold text-glow-text">Branding</span></div>
+                <div className="flex items-center gap-2 mb-1"><Globe className="w-4 h-4 text-glow-accent"/><span className="text-sm font-semibold text-glow-text">Site Information</span></div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field><Label hint="Browser tab + header">Site Name</Label><input value={siteSettings.siteName} onChange={e=>setSiteSettings(p=>({...p,siteName:e.target.value}))} className={inputCls} placeholder="GlowIDE"/></Field>
+                  <Field><Label hint="Shown in browser tab and header">Site Name</Label><input value={siteSettings.siteName} onChange={e=>setSiteSettings(p=>({...p,siteName:e.target.value}))} className={inputCls} placeholder="GlowIDE"/></Field>
                   <Field><Label>Tagline</Label><input value={siteSettings.siteTagline} onChange={e=>setSiteSettings(p=>({...p,siteTagline:e.target.value}))} className={inputCls} placeholder="AI-Powered Web3 IDE"/></Field>
-                  <Field className="sm:col-span-2"><Label hint="Used in SEO meta tags">Description</Label><textarea value={siteSettings.siteDescription} onChange={e=>setSiteSettings(p=>({...p,siteDescription:e.target.value}))} rows={2} className={`${inputCls} resize-none`} placeholder="Build smarter on Web3"/></Field>
-                  <Field><Label hint="Full URL to your site logo image">Site Logo URL</Label>
-                    <div className="space-y-2">
-                      <input value={siteSettings.logoUrl} onChange={e=>setSiteSettings(p=>({...p,logoUrl:e.target.value}))} className={inputCls} placeholder="https://…/logo.png"/>
-                      {siteSettings.logoUrl && <div className="flex items-center gap-2 p-2 bg-glow-surface rounded-xl border border-glow-border"><img src={siteSettings.logoUrl} alt="logo" className="w-8 h-8 rounded-lg object-contain" onError={e=>((e.target as HTMLImageElement).style.display='none')}/><span className="text-xs text-glow-muted">Preview</span></div>}
-                    </div>
-                  </Field>
-                  <Field><Label hint="USDC token logo URL (Circle asset)">USDC Logo URL</Label>
-                    <div className="space-y-2">
-                      <input value={siteSettings.usdcLogoUrl} onChange={e=>setSiteSettings(p=>({...p,usdcLogoUrl:e.target.value}))} className={inputCls} placeholder="https://…/usdc.svg"/>
-                      {siteSettings.usdcLogoUrl && <div className="flex items-center gap-2 p-2 bg-glow-surface rounded-xl border border-glow-border"><img src={siteSettings.usdcLogoUrl} alt="USDC" className="w-6 h-6 rounded-full"/><span className="text-xs text-glow-muted">USDC Logo Preview</span></div>}
-                    </div>
-                  </Field>
-                  <Field><Label hint="EURC token logo URL (Circle asset)">EURC Logo URL</Label>
-                    <div className="space-y-2">
-                      <input value={siteSettings.eurcLogoUrl} onChange={e=>setSiteSettings(p=>({...p,eurcLogoUrl:e.target.value}))} className={inputCls} placeholder="https://…/eurc.svg"/>
-                      {siteSettings.eurcLogoUrl && <div className="flex items-center gap-2 p-2 bg-glow-surface rounded-xl border border-glow-border"><img src={siteSettings.eurcLogoUrl} alt="EURC" className="w-6 h-6 rounded-full"/><span className="text-xs text-glow-muted">EURC Logo Preview</span></div>}
-                    </div>
-                  </Field>
-                  <Field><Label hint="cirBTC token logo URL">cirBTC Logo URL</Label>
-                    <div className="space-y-2">
-                      <input value={siteSettings.cirBTCLogoUrl} onChange={e=>setSiteSettings(p=>({...p,cirBTCLogoUrl:e.target.value}))} className={inputCls} placeholder="https://…/cirbtc.svg"/>
-                      {siteSettings.cirBTCLogoUrl && <div className="flex items-center gap-2 p-2 bg-glow-surface rounded-xl border border-glow-border"><img src={siteSettings.cirBTCLogoUrl} alt="cirBTC" className="w-6 h-6 rounded-full"/><span className="text-xs text-glow-muted">cirBTC Logo Preview</span></div>}
-                    </div>
-                  </Field>
-                  <Field><Label>Primary Color</Label>
-                    <div className="flex gap-2 items-center">
-                      <input type="color" value={siteSettings.primaryColor} onChange={e=>setSiteSettings(p=>({...p,primaryColor:e.target.value}))} className="w-10 h-10 rounded-xl border border-glow-border cursor-pointer bg-transparent flex-shrink-0"/>
-                      <input value={siteSettings.primaryColor} onChange={e=>setSiteSettings(p=>({...p,primaryColor:e.target.value}))} className={`${inputCls} font-mono flex-1`} placeholder="#7c3aed"/>
-                    </div>
-                  </Field>
+                  <Field className="sm:col-span-2"><Label>Description</Label><textarea rows={2} value={siteSettings.siteDescription} onChange={e=>setSiteSettings(p=>({...p,siteDescription:e.target.value}))} className={`${inputCls} resize-none`} placeholder="Build smarter on Web3"/></Field>
                 </div>
               </div>
-              <div className="bg-glow-card border border-glow-border rounded-2xl p-4">
-                <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider mb-3">Preview</p>
-                <div className="flex items-center gap-3 p-3 bg-glow-surface rounded-xl border border-glow-border">
-                  {siteSettings.logoUrl
-                    // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={siteSettings.logoUrl} alt="logo" className="w-8 h-8 rounded-lg object-contain" onError={e=>((e.target as HTMLImageElement).style.display='none')}/>
-                    : <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style={{background:siteSettings.primaryColor}}>{siteSettings.siteName?.[0]??'G'}</div>
-                  }
-                  <div><p className="text-sm font-bold" style={{color:siteSettings.primaryColor}}>{siteSettings.siteName||'GlowIDE'}</p><p className="text-xs text-glow-muted">{siteSettings.siteTagline||'AI-Powered Web3 IDE'}</p></div>
-                </div>
+
+              {/* Logo uploads */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-5">
+                <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">Logos (click to upload — auto-saved to database)</p>
+                {[
+                  { key:'logo_url',       label:'Site Logo',         stateKey:'logoUrl'      as const, accept:'image/*' },
+                  { key:'usdc_logo_url',  label:'USDC Token Logo',   stateKey:'usdcLogoUrl'  as const, accept:'image/*' },
+                  { key:'eurc_logo_url',  label:'EURC Token Logo',   stateKey:'eurcLogoUrl'  as const, accept:'image/*' },
+                  { key:'cirbtc_logo_url',label:'cirBTC Token Logo', stateKey:'cirBTCLogoUrl' as const, accept:'image/*' },
+                ].map(({key, label, stateKey}) => {
+                  const currentUrl = siteSettings[stateKey];
+                  return (
+                    <div key={key} className="flex items-center gap-4">
+                      {/* Preview */}
+                      <div className="w-14 h-14 rounded-2xl bg-glow-surface border border-glow-border flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {currentUrl
+                          ? <img src={currentUrl} alt={label} className="w-full h-full object-contain p-1" onError={e=>((e.target as HTMLImageElement).src='')}/>
+                          : <ImageIcon className="w-6 h-6 text-glow-muted/30"/>}
+                      </div>
+                      <div className="flex-1 space-y-1.5">
+                        <p className="text-xs font-semibold text-glow-text">{label}</p>
+                        {/* File upload */}
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <span className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light text-xs font-medium rounded-lg hover:bg-glow-accent/25 transition-colors">
+                            <Upload className="w-3.5 h-3.5"/>Upload Image
+                          </span>
+                          <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            if (file.size > 5*1024*1024) { toast.error('File too large (max 5MB)'); return; }
+                            const fd = new FormData();
+                            fd.append('file', file);
+                            fd.append('setting', key);
+                            toast.loading('Uploading…', {id:'logo-upload'});
+                            try {
+                              const res = await fetch('/api/admin/upload', { method:'POST', headers:{authorization:`Wallet ${address}`}, body:fd });
+                              const d = await res.json();
+                              if (!res.ok) throw new Error(d.error ?? 'Upload failed');
+                              setSiteSettings(p => ({...p, [stateKey]: d.url}));
+                              toast.success('Logo uploaded + saved!', {id:'logo-upload'});
+                            } catch(err) { toast.error((err as Error).message.slice(0,60), {id:'logo-upload'}); }
+                          }}/>
+                        </label>
+                        {/* URL override */}
+                        <input value={currentUrl} onChange={e=>setSiteSettings(p=>({...p,[stateKey]:e.target.value}))}
+                          placeholder="or paste URL directly"
+                          className="w-full bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-xs text-glow-text font-mono placeholder-glow-muted/40 focus:outline-none focus:border-glow-accent/40"/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="p-3 bg-glow-accent/5 border border-glow-accent/15 rounded-xl">
+                <p className="text-xs text-glow-muted">💡 Click <strong className="text-glow-text">Save All</strong> in the top bar to persist site name, tagline, and description to the database. Logos are saved immediately when uploaded.</p>
               </div>
             </div>
           )}
-
         </div>
       </div>
     </AppLayout>

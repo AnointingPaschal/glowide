@@ -110,6 +110,7 @@ export async function POST(req: NextRequest) {
         outputSelection: { "*": { "*": ["abi","evm.bytecode","evm.deployedBytecode"] } },
         optimizer: optimizer ?? { enabled:true, runs:200 },
         evmVersion: "paris",
+        viaIR: true,   // fixes "stack too deep" for complex contracts (GlowLaunchpad etc.)
       },
     };
 
