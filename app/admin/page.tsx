@@ -247,6 +247,9 @@ export default function AdminPage() {
         if (m.site_description) setSiteSettings(p => ({...p, siteDescription:m.site_description}));
         if (m.logo_url)         setSiteSettings(p => ({...p, logoUrl:        m.logo_url}));
         if (m.primary_color)    setSiteSettings(p => ({...p, primaryColor:   m.primary_color}));
+        if (m.usdc_logo_url)    setSiteSettings(p => ({...p, usdcLogoUrl:    m.usdc_logo_url}));
+        if (m.eurc_logo_url)    setSiteSettings(p => ({...p, eurcLogoUrl:    m.eurc_logo_url}));
+        if (m.cirbtc_logo_url)  setSiteSettings(p => ({...p, cirBTCLogoUrl:  m.cirbtc_logo_url}));
         if (m.available_models) try { setModels(JSON.parse(m.available_models)); } catch { /* use defaults */ }
       }).catch(err => console.error('Failed to load settings:', err));
   }, [isAuth, address]);
@@ -301,6 +304,9 @@ export default function AdminPage() {
         site_tagline:            siteSettings.siteTagline,
         site_description:        siteSettings.siteDescription,
         logo_url:                siteSettings.logoUrl,
+        usdc_logo_url:           siteSettings.usdcLogoUrl,
+        eurc_logo_url:           siteSettings.eurcLogoUrl,
+        cirbtc_logo_url:         siteSettings.cirBTCLogoUrl,
         primary_color:           siteSettings.primaryColor,
       };
 
@@ -1176,7 +1182,11 @@ export default function AdminPage() {
                               const d = await res.json();
                               if (!res.ok) throw new Error(d.error ?? 'Upload failed');
                               setSiteSettings(p => ({...p, [stateKey]: d.url}));
-                              toast.success('Logo uploaded + saved!', {id:'logo-upload'});
+                              if (d.dbSaved) {
+                                toast.success('Logo uploaded + saved to database ✓', {id:'logo-upload'});
+                              } else {
+                                toast.error('Uploaded but DB save failed — check Supabase connection in Overview tab', {id:'logo-upload'});
+                              }
                             } catch(err) { toast.error((err as Error).message.slice(0,60), {id:'logo-upload'}); }
                           }}/>
                         </label>
