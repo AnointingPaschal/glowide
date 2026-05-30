@@ -52,7 +52,7 @@ function PreviewModal({ code, lang, onClose }: { code: string; lang: string; onC
           </div>
         </div>
         {/* Preview iframe */}
-        <div className="flex-1 bg-white">
+        <div className="flex-1 bg-[#1a1a2e]">
           <iframe
             srcDoc={lang === "html" ? code : `<!DOCTYPE html><html><head><style>body{font-family:sans-serif;padding:16px;background:#fff}</style><\/head><body><script>${code}<\/script><\/body><\/html>`}
             className="w-full h-full border-0"
@@ -101,7 +101,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 hover:bg-amber-400 transition-colors cursor-default"/>
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 hover:bg-emerald-400 transition-colors cursor-default"/>
             </div>
-            <div className="flex items-center gap-1.5 ml-1.5 px-2 py-0.5 rounded-md bg-white/5">
+            <div className="flex items-center gap-1.5 ml-1.5 px-2 py-0.5 rounded-md bg-glow-surface">
               <Terminal className="w-3 h-3 text-glow-muted/60"/>
               <span className="text-[11px] text-glow-muted/80 font-mono">{label}</span>
             </div>
@@ -238,7 +238,7 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
             "prose-headings:text-glow-text prose-headings:font-bold",
             "prose-ul:my-2 prose-li:my-0.5 prose-li:text-glow-text",
             "prose-ol:my-2",
-            "prose-strong:text-white prose-strong:font-semibold",
+            "prose-strong:text-glow-text prose-strong:font-semibold",
             "prose-a:text-glow-cyan hover:prose-a:underline",
             "prose-blockquote:border-l-glow-accent/50 prose-blockquote:text-glow-muted",
             "prose-hr:border-glow-border",

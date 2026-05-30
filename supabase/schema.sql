@@ -524,3 +524,29 @@ CREATE INDEX IF NOT EXISTS idx_launchpad_symbol   ON launchpad_tokens(symbol);
 -- DISABLE RLS so service role can always write
 ALTER TABLE launchpad_tokens DISABLE ROW LEVEL SECURITY;
 GRANT ALL ON launchpad_tokens TO service_role;
+
+-- ── Chat tables ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_address TEXT NOT NULL,
+  title          TEXT DEFAULT 'New Chat',
+  model          TEXT DEFAULT '',
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_wallet ON chat_sessions(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at DESC);
+ALTER TABLE chat_sessions DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON chat_sessions TO service_role;
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL CHECK (role IN ('user','assistant','system')),
+  content    TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at);
+ALTER TABLE chat_messages DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON chat_messages TO service_role;

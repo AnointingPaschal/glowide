@@ -56,12 +56,43 @@ export default function ChatPage() {
   const messages      = activeSession?.messages ?? [];
   const selectedModel = models.find(m => m.id === model) ?? models[0];
 
-  // Fetch models
+  // Fetch models + default model from admin settings
   useEffect(() => {
-    fetch('/api/models').then(r => r.json())
-      .then(d => { if (d.models?.length) setModels(d.models); })
-      .catch(() => {});
-  }, []);
+    Promise.all([
+      fetch('/api/models').then(r=>r.json()).catch(()=>({models:[]})),
+      fetch('/api/admin/public-settings').then(r=>r.json()).catch(()=>({})),
+    ]).then(([modelsData, settings]) => {
+      if (modelsData.models?.length) setModels(modelsData.models);
+      // Only set default model if user hasn't already selected one
+      const currentModel = useChatStore.getState().model;
+      const defaultFallback = 'anthropic/claude-3.5-sonnet';
+      if (!currentModel || currentModel === defaultFallback) {
+        const adminDefault = settings.default_model;
+        if (adminDefault) setModel(adminDefault);
+      }
+    });
+  }, [setModel]);
+
+  // Load chat sessions from DB when wallet connects
+  useEffect(() => {
+    if (!isConnected || !address) return;
+    fetch(`/api/chat/sessions?wallet=${address}`)
+      .then(r => r.json())
+      .then(({ sessions: dbSessions }) => {
+        if (!dbSessions?.length) return;
+        // Merge DB sessions into local store (DB takes priority)
+        const store = useChatStore.getState();
+        const existingIds = new Set(store.sessions.map((s: {id:string}) => s.id));
+        const newSessions = dbSessions.filter((s: {id:string}) => !existingIds.has(s.id));
+        if (newSessions.length) {
+          useChatStore.setState(state => ({
+            sessions: [...newSessions, ...state.sessions].sort((a,b) =>
+              new Date(b.updated_at||0).getTime() - new Date(a.updated_at||0).getTime()
+            ),
+          }));
+        }
+      }).catch(() => {});
+  }, [isConnected, address]);
 
   // Smart scroll: only auto-scroll if user hasn't manually scrolled up
   useEffect(() => {
@@ -163,12 +194,16 @@ export default function ChatPage() {
       }
       useChatStore.getState().finalizeStream(sessionId!);
 
+      // Save session to DB after AI responds
       if (isConnected && address) {
-        fetch('/api/chat/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, wallet: address }),
-        }).catch(() => {});
+        const savedSession = useChatStore.getState().sessions.find(s => s.id === sessionId);
+        if (savedSession) {
+          fetch('/api/chat/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session: savedSession, wallet: address }),
+          }).catch(() => {});
+        }
       }
     } catch (err) {
       if ((err as Error).name === 'AbortError') { useChatStore.getState().finalizeStream(sessionId!); return; }
