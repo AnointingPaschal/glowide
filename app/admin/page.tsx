@@ -716,26 +716,144 @@ export default function AdminPage() {
           {/* FEES */}
           {activeTab === 'fees' && (
             <div className="space-y-5 animate-fade-in">
+
+              {/* Master toggle */}
               <div className="bg-glow-card border border-glow-border rounded-2xl p-5">
-                <div className="flex items-center justify-between"><div><h3 className="text-sm font-semibold text-glow-text">Enable Deployment Fees</h3><p className="text-xs text-glow-muted mt-0.5">Charge users USDC when deploying contracts</p></div><Toggle value={settings.feesEnabled} onChange={v=>setSettings(p=>({...p,feesEnabled:v}))}/></div>
-                {settings.feesEnabled && <div className="mt-3 p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center gap-2"><CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0"/><p className="text-xs text-emerald-300">Fees are active.</p></div>}
-              </div>
-              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
-                <div className="flex items-center gap-2 mb-1"><DollarSign className="w-4 h-4 text-glow-accent"/><span className="text-sm font-semibold text-glow-text">Fee Structure</span></div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field><Label hint="Fixed USDC per deployment">Deployment Fee (USDC)</Label><div className="relative"><span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-glow-muted">$</span><input type="number" min="0" step="0.01" value={settings.deploymentFee} onChange={e=>setSettings(p=>({...p,deploymentFee:e.target.value}))} className={`${inputCls} pl-7`} placeholder="0.00"/></div></Field>
-                  <Field><Label>Gas Fee Surcharge (%)</Label><div className="relative"><Percent className="absolute right-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-glow-muted"/><input type="number" min="0" max="100" step="0.1" value={settings.deploymentFeePercent} onChange={e=>setSettings(p=>({...p,deploymentFeePercent:e.target.value}))} className={`${inputCls} pr-9`} placeholder="0"/></div></Field>
-                  <Field><Label hint="Free deployments before charging">Free Tier (deploys/user)</Label><input type="number" min="0" value={settings.freeDeployments} onChange={e=>setSettings(p=>({...p,freeDeployments:e.target.value}))} className={inputCls}/></Field>
-                  <Field><Label>Verification Fee (USDC)</Label><div className="relative"><span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-glow-muted">$</span><input type="number" min="0" step="0.01" value={settings.verificationFee} onChange={e=>setSettings(p=>({...p,verificationFee:e.target.value}))} className={`${inputCls} pl-7`} placeholder="0.00"/></div></Field>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-glow-text">Enable Platform Fees</h3>
+                    <p className="text-xs text-glow-muted mt-0.5">When disabled, all actions are free for users</p>
+                  </div>
+                  <Toggle value={settings.feesEnabled} onChange={v=>setSettings(p=>({...p,feesEnabled:v}))}/>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+                {/* Smart Contract Deployment Fee */}
+                <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-glow-cyan/15 flex items-center justify-center flex-shrink-0">
+                      <Code2 className="w-4 h-4 text-glow-cyan"/>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-glow-text">Smart Contract Deployment</p>
+                      <p className="text-xs text-glow-muted">Charged when users deploy contracts from the Editor</p>
+                    </div>
+                  </div>
+                  <Field>
+                    <Label hint="Fixed USDC fee per contract deployment">Deployment Fee (USDC)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-glow-muted">$</span>
+                      <input type="number" min="0" step="0.01" value={settings.deploymentFee}
+                        onChange={e=>setSettings(p=>({...p,deploymentFee:e.target.value}))}
+                        className={`${inputCls} pl-7`} placeholder="0.00"/>
+                    </div>
+                  </Field>
+                  <Field>
+                    <Label hint="Additional % on top of gas cost">Gas Surcharge (%)</Label>
+                    <div className="relative">
+                      <Percent className="absolute right-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-glow-muted"/>
+                      <input type="number" min="0" max="100" step="0.1" value={settings.deploymentFeePercent}
+                        onChange={e=>setSettings(p=>({...p,deploymentFeePercent:e.target.value}))}
+                        className={`${inputCls} pr-9`} placeholder="0"/>
+                    </div>
+                  </Field>
+                  <Field>
+                    <Label hint="Free deployments before charging starts">Free Deployments (per user)</Label>
+                    <input type="number" min="0" value={settings.freeDeployments}
+                      onChange={e=>setSettings(p=>({...p,freeDeployments:e.target.value}))}
+                      className={inputCls} placeholder="3"/>
+                  </Field>
+                  <div className="p-3 bg-glow-cyan/8 border border-glow-cyan/20 rounded-xl">
+                    <p className="text-xs text-glow-cyan font-semibold">
+                      {parseFloat(settings.deploymentFee) > 0 && settings.feesEnabled
+                        ? `${settings.deploymentFee} USDC per deploy + ${settings.deploymentFeePercent||0}% gas surcharge · ${settings.freeDeployments||0} free`
+                        : 'Free deployments (fee disabled)'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Token Launchpad Fee */}
+                <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-glow-accent/15 flex items-center justify-center flex-shrink-0">
+                      <Zap className="w-4 h-4 text-glow-accent"/>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-glow-text">Token Launchpad</p>
+                      <p className="text-xs text-glow-muted">Charged when users launch a token on the Launchpad</p>
+                    </div>
+                  </div>
+                  <Field>
+                    <Label hint="One-time USDC fee to launch a token">Launch Fee (USDC)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-glow-muted">$</span>
+                      <input type="number" min="0" step="0.01" value={settings.launchpadFee||'0'}
+                        onChange={e=>setSettings(p=>({...p,launchpadFee:e.target.value}))}
+                        className={`${inputCls} pl-7`} placeholder="0.00"/>
+                    </div>
+                  </Field>
+                  <Field>
+                    <Label hint="Contract verification fee">Verification Fee (USDC)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-glow-muted">$</span>
+                      <input type="number" min="0" step="0.01" value={settings.verificationFee}
+                        onChange={e=>setSettings(p=>({...p,verificationFee:e.target.value}))}
+                        className={`${inputCls} pl-7`} placeholder="0.00"/>
+                    </div>
+                  </Field>
+                  <div className="p-3 bg-glow-accent/8 border border-glow-accent/20 rounded-xl">
+                    <p className="text-xs text-glow-accent-light font-semibold">
+                      {parseFloat(settings.launchpadFee||'0') > 0 && settings.feesEnabled
+                        ? `${settings.launchpadFee} USDC per token launch`
+                        : 'Free token launches (fee disabled)'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fee Recipient */}
               <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
-                <Field><Label hint="All fees sent to this address (can be treasury contract)">Fee Recipient Address</Label><input type="text" value={settings.feeRecipient} onChange={e=>setSettings(p=>({...p,feeRecipient:e.target.value}))} placeholder="0x…" className={`${inputCls} font-mono`}/>{settings.feeRecipient && !/^0x[0-9a-fA-F]{40}$/.test(settings.feeRecipient) && <p className="text-xs text-amber-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/>Invalid address</p>}</Field>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-glow-accent"/>
+                    <span className="text-sm font-semibold text-glow-text">Fee Recipient</span>
+                  </div>
+                  <button
+                    onClick={()=>setSettings(p=>({...p, feeRecipient: p.adminWallet || p.treasuryAddress || ''}))}
+                    className="text-xs px-3 py-1.5 bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light rounded-lg hover:bg-glow-accent/25 transition-colors">
+                    Use Admin Wallet
+                  </button>
+                </div>
+                <Field>
+                  <Label hint="All fees — deployment, launchpad, verification — are sent here">Recipient Address</Label>
+                  <input value={settings.feeRecipient} onChange={e=>setSettings(p=>({...p,feeRecipient:e.target.value}))}
+                    placeholder="0x… (admin wallet or treasury contract)"
+                    className={`${inputCls} font-mono`}/>
+                  {settings.feeRecipient && !/^0x[0-9a-fA-F]{40}$/.test(settings.feeRecipient) && (
+                    <p className="text-xs text-amber-400 flex items-center gap-1 mt-1">
+                      <AlertTriangle className="w-3 h-3"/>Invalid address format
+                    </p>
+                  )}
+                </Field>
+                <div className="grid grid-cols-3 gap-2 text-xs text-center">
+                  {[
+                    ['Deployment', settings.feesEnabled && parseFloat(settings.deploymentFee) > 0 ? settings.deploymentFee+' USDC' : 'Free', '#06b6d4'],
+                    ['Launchpad',  settings.feesEnabled && parseFloat(settings.launchpadFee||'0') > 0 ? settings.launchpadFee+' USDC' : 'Free', '#7c3aed'],
+                    ['Verification', settings.feesEnabled && parseFloat(settings.verificationFee) > 0 ? settings.verificationFee+' USDC' : 'Free', '#10b981'],
+                  ].map(([label, val, color])=>(
+                    <div key={label as string} className="bg-glow-surface border border-glow-border rounded-xl p-2.5">
+                      <p className="text-glow-muted mb-1">{label as string}</p>
+                      <p className="font-bold" style={{color:color as string}}>{val as string}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
-          {/* TREASURY */}
+                    {/* TREASURY */}
           {/* ── DEPLOY ──────────────────────────────────────────────── */}
           {activeTab === 'deploy' && (
             <div className="space-y-5 animate-fade-in">
