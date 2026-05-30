@@ -1,107 +1,113 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
-
-
-// Circle Agent Stack context injected into system prompt
-const CIRCLE_AGENT_CONTEXT = `
-You have access to Circle's full stack for Web3 development:
-
-CIRCLE ASSETS on Arc Testnet:
-- USDC: 0x3600000000000000000000000000000000000000 (native gas, 6 decimals)
-- EURC: 0x3700000000000000000000000000000000000000 (Euro stablecoin, 6 decimals)
-- cirBTC: 0x3800000000000000000000000000000000000000 (Circle Bitcoin, 8 decimals)
-
-CCTP (Cross-Chain Transfer Protocol):
-- Burns USDC on source chain, mints natively on destination
-- Supported chains: Ethereum, Avalanche, OP, Arbitrum, Base, Polygon, Solana, Stellar, Arc Testnet
-- CCTP domains: ETH=0, AVAX=1, OP=2, ARB=3, Stellar=4, SOL=5, Base=6, Polygon=7, Arc=9
-- For transfers: depositForBurn() on source, receiveMessage() on destination
-- Fast Transfer: sub-second finality
-- Smart contracts: TokenMessenger (source), MessageTransmitter (relay)
-
-CIRCLE AGENT STACK (developers.circle.com/agent-stack):
-- Circle's programmable wallets for AI agents
-- Nanopayments: sub-cent USDC payments, gas-free, batched settlement
-- Gateway unified balance: one USDC balance across all chains
-- EIP-4337 smart account support for gasless UX
-- Webhook events for payment confirmation
-
-PAYMENTS API:
-- Accept USDC/EURC payments via Circle Payments API
-- On-chain settlement, payment intents, webhooks
-
-When helping with Web3 code on Arc Testnet:
-1. Always use USDC for gas calculations (6 decimals, not 18)
-2. Reference correct contract addresses above
-3. For cross-chain: always use CCTP, not bridges
-4. Smart accounts: use EIP-4337 for gasless transactions
-`;
 
 export const runtime = "edge";
 export const maxDuration = 60;
 
+const CIRCLE_CONTEXT = `
+Arc Testnet (Chain 5042002) — Circle assets:
+- USDC: 0x3600000000000000000000000000000000000000 (native gas, 18 dec internal / 6 dec ERC-20)
+- EURC: 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a (6 dec)
+- cirBTC: 0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF (8 dec)
+- USYC: 0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C (6 dec)
+- TokenMessengerV2 CCTP: 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA (domain 26)
+- CCTP domains: ETH=0, AVAX=1, OP=2, ARB=3, Stellar=4, SOL=5, Base=6, Polygon=7, Arc=26
+Always use USDC for gas. Use CCTP for cross-chain, not bridges.
+`;
+
+async function fetchDB(supabaseUrl: string, sKey: string, path: string) {
+  const res = await fetch(`${supabaseUrl}/rest/v1${path}`, {
+    headers: { "apikey": sKey, "Authorization": `Bearer ${sKey}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { messages, model, sessionId, temperature, maxTokens } = await req.json();
+    void sessionId;
 
-    // Fetch API key and settings from Supabase (admin-configured)
-    let apiKey = process.env.OPENROUTER_API_KEY || "";
-    let defaultModel = model || process.env.OPENROUTER_DEFAULT_MODEL || "anthropic/claude-3.5-sonnet";
-    let systemPrompt = `You are GlowIDE's AI coding assistant — a senior full-stack Web3 engineer with deep expertise in JavaScript, TypeScript, React, Next.js, Solidity smart contracts, Arc Testnet (Chain ID: 5042002), USDC/Circle integrations, and modern Web3 development. Write production-ready, secure, well-typed code with clear explanations.`;
+    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+    const sKey        = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
-    try {
-      const supabase = createServerSupabaseClient();
-      const { data: settings } = await supabase
-        .from("system_settings")
-        .select("key, value")
-        .in("key", ["openrouter_api_key", "default_model", "system_prompt", "temperature", "max_tokens"]);
+    // Defaults
+    let apiKey     = process.env.OPENROUTER_API_KEY ?? "";
+    let useModel   = model ?? process.env.OPENROUTER_DEFAULT_MODEL ?? "anthropic/claude-3.5-sonnet";
+    let systemPrompt = `You are GlowIDE AI — a senior full-stack Web3 engineer. Write production-ready, secure, well-typed code with clear explanations.\n${CIRCLE_CONTEXT}`;
+    let temp       = temperature ?? 0.7;
+    let maxTok     = maxTokens ?? 4096;
+    let trainingMessages: Array<{role:string;content:string}> = [];
 
-      if (settings) {
-        const settingsMap = Object.fromEntries(settings.map((s: { key: string; value: string }) => [s.key, s.value]));
-        if (settingsMap.openrouter_api_key) apiKey = settingsMap.openrouter_api_key;
-        if (settingsMap.default_model) defaultModel = model || settingsMap.default_model;
-        if (settingsMap.system_prompt) systemPrompt = settingsMap.system_prompt;
+    // Load settings + training from DB in parallel
+    if (supabaseUrl && sKey) {
+      const [settings, training] = await Promise.allSettled([
+        fetchDB(supabaseUrl, sKey, "/system_settings?select=key,value&key=in.(openrouter_api_key,default_model,system_prompt,temperature,max_tokens)"),
+        fetchDB(supabaseUrl, sKey, "/ai_training_examples?select=user_message,assistant_response,enabled&enabled=eq.true&limit=20"),
+      ]);
+
+      if (settings.status === "fulfilled" && Array.isArray(settings.value)) {
+        const map = Object.fromEntries((settings.value as Array<{key:string;value:string}>).map(s => [s.key, s.value]));
+        if (map.openrouter_api_key) apiKey   = map.openrouter_api_key;
+        if (map.default_model)      useModel = model ?? map.default_model;
+        if (map.system_prompt)      systemPrompt = map.system_prompt + "\n\n" + CIRCLE_CONTEXT;
+        if (map.temperature)        temp     = parseFloat(map.temperature) || 0.7;
+        if (map.max_tokens)         maxTok   = parseInt(map.max_tokens) || 4096;
       }
-    } catch {
-      // Use env defaults if DB fails
+
+      if (training.status === "fulfilled" && Array.isArray(training.value)) {
+        // Inject training examples as few-shot pairs before the conversation
+        for (const ex of training.value as Array<{user_message:string;assistant_response:string}>) {
+          if (ex.user_message && ex.assistant_response) {
+            trainingMessages.push({ role: "user",      content: ex.user_message });
+            trainingMessages.push({ role: "assistant", content: ex.assistant_response });
+          }
+        }
+      }
     }
 
     if (!apiKey) {
-      return NextResponse.json({ error: "OpenRouter API key not configured. Visit Admin → Settings to configure." }, { status: 503 });
+      return NextResponse.json({ error: "OpenRouter API key not configured. Visit Admin → AI Config." }, { status: 503 });
     }
+
+    // Build message array: system + few-shot training + conversation
+    const allMessages = [
+      { role: "system", content: systemPrompt },
+      ...trainingMessages,
+      ...messages,
+    ];
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://glowide.app",
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "https://glowide.app",
         "X-Title": "GlowIDE",
       },
       body: JSON.stringify({
-        model: defaultModel,
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
-        temperature: temperature ?? 0.7,
-        max_tokens: maxTokens ?? 4096,
+        model: useModel,
+        messages: allMessages,
+        temperature: temp,
+        max_tokens: maxTok,
         stream: true,
       }),
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-      return NextResponse.json({ error: err.error?.message || "AI service error" }, { status: response.status });
+      const err = await response.json().catch(() => ({ error: { message: "AI service error" } }));
+      return NextResponse.json({ error: err.error?.message ?? "AI service error" }, { status: response.status });
     }
 
-    // Stream the response
     return new Response(response.body, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        "Connection": "keep-alive",
       },
     });
   } catch (err) {
-    console.error("Chat API error:", err);
+    console.error("[ai/chat]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

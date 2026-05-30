@@ -1,42 +1,45 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
-import fs from "fs";
-import path from "path";
 
-function verifyAdmin(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  const key = process.env.ADMIN_SECRET_KEY;
-  if (!key) return true;
-  return auth === `Bearer ${key}`;
+const ADMIN_WALLET = (process.env.NEXT_PUBLIC_ADMIN_WALLET ?? "").toLowerCase();
+
+function verifyAdmin(req: NextRequest): boolean {
+  const auth = req.headers.get("authorization") ?? "";
+  if (auth.startsWith("Wallet ")) {
+    const w = auth.slice(7).toLowerCase();
+    return ADMIN_WALLET ? w === ADMIN_WALLET : true;
+  }
+  return !process.env.ADMIN_SECRET_KEY;
 }
 
-const TRAINING_PATH = path.join(process.cwd(), "ai-training", "glowide-training.jsonl");
+function getSupabase() {
+  const url  = (process.env.NEXT_PUBLIC_SUPABASE_URL  ?? "").trim();
+  const sKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+  if (!url || !sKey) throw new Error("Supabase env vars missing");
+  return { url, sKey };
+}
+function hdrs(sKey: string, extra: Record<string,string> = {}) {
+  return { "Content-Type":"application/json", "apikey":sKey, "Authorization":`Bearer ${sKey}`, ...extra };
+}
 
 export async function GET(req: NextRequest) {
   if (!verifyAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    // Try DB first
-    const supabase = createServerSupabaseClient();
-    const { data } = await supabase.from("ai_training_examples").select("*").order("created_at", { ascending: false });
-    if (data && data.length > 0) return NextResponse.json({ examples: data });
-
-    // Fall back to file
-    const content = fs.existsSync(TRAINING_PATH) ? fs.readFileSync(TRAINING_PATH, "utf-8") : "";
-    const examples = content.trim().split("\n").filter(Boolean).map((line, i) => {
-      const obj = JSON.parse(line);
-      return {
-        id: `file-${i}`,
-        user_message: obj.messages[1].content,
-        assistant_response: obj.messages[2].content,
-        category: "general",
-        enabled: true,
-        created_at: new Date().toISOString(),
-      };
-    });
-    return NextResponse.json({ examples });
+    const { url, sKey } = getSupabase();
+    const res = await fetch(
+      `${url}/rest/v1/ai_training_examples?select=*&order=created_at.desc`,
+      { headers: hdrs(sKey), cache: "no-store" }
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("[training GET]", res.status, text.slice(0,200));
+      return NextResponse.json({ examples: [], error: `DB error ${res.status}` });
+    }
+    const data = await res.json();
+    return NextResponse.json({ examples: Array.isArray(data) ? data : [] });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[training GET]", err);
+    return NextResponse.json({ examples: [], error: String(err) });
   }
 }
 
@@ -44,28 +47,48 @@ export async function POST(req: NextRequest) {
   if (!verifyAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const { examples } = await req.json();
-    const supabase = createServerSupabaseClient();
+    if (!Array.isArray(examples)) return NextResponse.json({ error: "examples must be array" }, { status: 400 });
+    const { url, sKey } = getSupabase();
 
-    // Save to DB
-    await supabase.from("ai_training_examples").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    const inserts = examples.map((ex: { user_message: string; assistant_response: string; category?: string; enabled?: boolean }) => ({
-      user_message: ex.user_message,
-      assistant_response: ex.assistant_response,
-      category: ex.category ?? "general",
-      enabled: ex.enabled ?? true,
-      updated_at: new Date().toISOString(),
+    // Delete all existing training examples first
+    await fetch(`${url}/rest/v1/ai_training_examples?id=not.is.null`, {
+      method: "DELETE",
+      headers: hdrs(sKey),
+      cache: "no-store",
+    });
+
+    if (!examples.length) return NextResponse.json({ success: true, count: 0 });
+
+    // Insert all new ones
+    const rows = examples.map((ex: { user_message:string; assistant_response:string; category?:string; enabled?:boolean }) => ({
+      user_message:       ex.user_message ?? "",
+      assistant_response: ex.assistant_response ?? "",
+      category:           ex.category ?? "general",
+      enabled:            ex.enabled !== false,
+      created_at:         new Date().toISOString(),
+      updated_at:         new Date().toISOString(),
     }));
-    await supabase.from("ai_training_examples").insert(inserts);
 
-    // Also write JSONL file
-    const SYS = "You are GlowIDE AI — a senior full-stack Web3 engineer and coding expert.";
-    const jsonl = examples.map((ex: { user_message: string; assistant_response: string }) =>
-      JSON.stringify({ messages: [{ role: "system", content: SYS }, { role: "user", content: ex.user_message }, { role: "assistant", content: ex.assistant_response }] })
-    ).join("\n");
-    fs.writeFileSync(TRAINING_PATH, jsonl);
+    const insertRes = await fetch(`${url}/rest/v1/ai_training_examples`, {
+      method: "POST",
+      headers: hdrs(sKey, { "Prefer": "return=minimal" }),
+      body: JSON.stringify(rows),
+      cache: "no-store",
+    });
 
-    return NextResponse.json({ success: true, count: inserts.length });
+    if (!insertRes.ok) {
+      const text = await insertRes.text();
+      console.error("[training POST insert]", insertRes.status, text.slice(0,300));
+      return NextResponse.json({
+        error: `Insert failed: ${text.slice(0,150)}`,
+        hint: "Run: CREATE TABLE ai_training_examples (...); ALTER TABLE ai_training_examples DISABLE ROW LEVEL SECURITY; GRANT ALL ON ai_training_examples TO service_role;",
+      }, { status: 500 });
+    }
+
+    console.log(`[training POST] saved ${rows.length} examples`);
+    return NextResponse.json({ success: true, count: rows.length });
   } catch (err) {
+    console.error("[training POST]", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

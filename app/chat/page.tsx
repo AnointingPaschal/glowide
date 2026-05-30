@@ -331,13 +331,13 @@ export default function ChatPage() {
             {messages.length === 0 ? (
               <div className="flex flex-col h-full items-center justify-center px-4 text-center">
                 <div className="relative mb-5">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-glow-accent to-purple-600 flex items-center justify-center shadow-glow-lg">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-glow-accent to-purple-600 flex items-center justify-center shadow-glow-lg">
                     <Cpu className="w-8 h-8 text-white"/>
                   </div>
                   <div className="absolute inset-0 rounded-2xl bg-glow-accent/20 animate-ping"/>
                 </div>
-                <h2 className="text-xl font-bold text-glow-text mb-1.5">GlowIDE AI</h2>
-                <p className="text-sm text-glow-muted max-w-sm mb-8 leading-relaxed">
+                <h2 className="text-lg font-bold text-glow-text mb-1">GlowIDE AI</h2>
+                <p className="text-sm text-glow-muted max-w-sm mb-6 leading-relaxed">
                   Your intelligent Web3 development partner. Write contracts, debug code, optimize gas, and ship faster.
                 </p>
                 <div className="grid grid-cols-2 gap-2 max-w-sm w-full">
@@ -385,7 +385,7 @@ export default function ChatPage() {
           )}
 
           {/* ── Input area ──────────────────────────────────────────── */}
-          <div className="border-t border-glow-border/50 bg-[#080812] flex-shrink-0 px-3 py-3 space-y-2">
+          <div className="border-t border-glow-border/50 bg-[#080812] flex-shrink-0 px-3 py-2 space-y-1.5">
             {/* Model selector */}
             {models.length > 0 && (
               <div className="relative flex items-center gap-2">

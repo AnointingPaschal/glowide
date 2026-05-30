@@ -550,3 +550,16 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id
 CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at);
 ALTER TABLE chat_messages DISABLE ROW LEVEL SECURITY;
 GRANT ALL ON chat_messages TO service_role;
+
+-- ── AI Training Examples ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ai_training_examples (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_message       TEXT NOT NULL DEFAULT '',
+  assistant_response TEXT NOT NULL DEFAULT '',
+  category           TEXT DEFAULT 'general',
+  enabled            BOOLEAN DEFAULT TRUE,
+  created_at         TIMESTAMPTZ DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ai_training_examples DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON ai_training_examples TO service_role;

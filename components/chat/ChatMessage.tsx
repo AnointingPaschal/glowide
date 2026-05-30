@@ -89,7 +89,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
 
   return (
     <>
-      <div className="my-3 rounded-xl overflow-hidden border border-glow-border/60 shadow-lg group/block"
+      <div className="my-2 rounded-xl overflow-hidden border border-glow-border/60 shadow-md group/block"
         style={{ background: "linear-gradient(135deg,#0d0d18 0%,#0a0a14 100%)" }}>
         {/* Terminal bar */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-glow-border/40"
@@ -172,7 +172,7 @@ function AIAvatar({ isStreaming }: { isStreaming?: boolean }) {
       "bg-gradient-to-br from-glow-accent to-purple-600",
       isStreaming && "animate-pulse"
     )}>
-      <Code2 className="w-4 h-4 text-white"/>
+      <Code2 className="w-3.5 h-3.5 text-white"/>
       {isStreaming && (
         <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#080812] animate-pulse"/>
       )}
@@ -227,7 +227,7 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
 
   // ── AI message ────────────────────────────────────────────────────────────
   return (
-    <div className={cn("px-4 py-2 group", isStreaming ? "animate-fade-in" : "animate-slide-in-left")}>
+    <div className={cn("px-3 py-1.5 group", isStreaming ? "animate-fade-in" : "animate-slide-in-left")}>
       <div className="flex items-start gap-3">
         <AIAvatar isStreaming={isStreaming}/>
 
