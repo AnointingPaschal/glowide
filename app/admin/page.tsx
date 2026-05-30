@@ -194,7 +194,7 @@ export default function AdminPage() {
     rateLimitPerUser:100, deploymentFee:'0', feeRecipient:'',
     deploymentFeePercent:'0', freeDeployments:'3',
     verificationFee:'0', feesEnabled:false,
-    treasuryAddress:'', adminWallet: address ?? '',
+    treasuryAddress:'', launchpadFactory:'', adminWallet: address ?? '',
   });
   const [siteSettings, setSiteSettings] = useState({
     siteName:'GlowIDE', siteTagline:'AI-Powered Web3 IDE', siteDescription:'Build smarter on Web3',
@@ -231,6 +231,7 @@ export default function AdminPage() {
           ...(m.verification_fee          && {verificationFee:     m.verification_fee}),
           ...(m.fees_enabled              && {feesEnabled:         m.fees_enabled==='true'}),
           ...(m.treasury_address          && {treasuryAddress:     m.treasury_address}),
+          ...(m.launchpad_factory         && {launchpadFactory:    m.launchpad_factory}),
           ...(m.admin_wallet              && {adminWallet:         m.admin_wallet}),
         }));
         if (m.site_name)        setSiteSettings(p => ({...p, siteName:       m.site_name}));
@@ -281,7 +282,10 @@ export default function AdminPage() {
         free_deployments:        settings.freeDeployments,
         verification_fee:        settings.verificationFee,
         fees_enabled:            String(settings.feesEnabled),
-        treasury_address:        settings.treasuryAddress,
+        treasury_address:         settings.treasuryAddress,
+        launchpad_factory:        settings.launchpadFactory || '',
+        // treasury_address already set above
+        //         settings.treasuryAddress,
         admin_wallet:            settings.adminWallet || address || '',
         rate_limit_per_user:     String(settings.rateLimitPerUser),
         site_name:               siteSettings.siteName,
@@ -712,14 +716,84 @@ export default function AdminPage() {
           )}
 
           {/* TREASURY */}
-          {activeTab === 'treasury' && (
+          {/* ── DEPLOY ──────────────────────────────────────────────── */}
+          {activeTab === 'deploy' && (
+            <div className="space-y-5 animate-fade-in">
+              <div>
+                <h2 className="text-base font-semibold text-glow-text">Deploy Platform Contracts</h2>
+                <p className="text-xs text-glow-muted mt-0.5">Compile and deploy directly — addresses auto-saved to database</p>
+              </div>
+
+              {!isConnected && (
+                <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0"/>
+                  <p className="text-xs text-amber-400">Connect your admin wallet to deploy contracts</p>
+                </div>
+              )}
+
+              <ContractArgInputs
+                cid="GlowIDETreasury"
+                title="GlowIDE Treasury"
+                description="Collects all platform fees. Admin-only withdrawal on Arc Testnet."
+                color="#10b981"
+                labels={['admin_ (your wallet address)']}
+                defaults={[address ?? '']}
+                currentAddress={settings.treasuryAddress}
+                onDeploy={deployContract}
+                deployingId={deployingContract}
+                status={contractBuildStatus['GlowIDETreasury'] ?? {}}
+                isConnected={isConnected}
+                onSaveAddress={(val) => setSettings(p => ({...p, treasuryAddress: val}))}
+              />
+
+              <ContractArgInputs
+                cid="GlowLaunchpad"
+                title="GlowIDE Launchpad Factory"
+                description="Token launch factory with LP locking. Powers the Launchpad page."
+                color="#7c3aed"
+                labels={['admin_ (your wallet)','dexRouter_ (0x00…0 if no DEX)','launchFee_ (wei, 0=free)','feeRecipient_']}
+                defaults={[address ?? '', '0x0000000000000000000000000000000000000000', '0', address ?? '']}
+                currentAddress={settings.launchpadFactory ?? ''}
+                onDeploy={deployContract}
+                deployingId={deployingContract}
+                status={contractBuildStatus['GlowLaunchpad'] ?? {}}
+                isConnected={isConnected}
+                onSaveAddress={(val) => setSettings(p => ({...p, launchpadFactory: val}))}
+              />
+            </div>
+          )}
+
+                    {activeTab === 'treasury' && (
             <div className="space-y-5 animate-fade-in">
               <div><h2 className="text-base font-semibold text-glow-text">Treasury</h2><p className="text-xs text-glow-muted mt-0.5">Platform fee collection — GlowIDETreasury.sol on Arc Testnet</p></div>
 
-              {/* Contract address */}
+              {/* Contract addresses */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  {label:'Treasury Contract', key:'treasuryAddress' as const, val:settings.treasuryAddress, color:'#10b981', desc:'Collects platform fees'},
+                  {label:'Launchpad Factory',  key:'launchpadFactory' as const, val:settings.launchpadFactory||'', color:'#7c3aed', desc:'Token launch factory'},
+                ].map(c=>(
+                  <div key={c.key} className="bg-glow-card border border-glow-border rounded-xl p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-glow-text">{c.label}</p>
+                      {c.val
+                        ? <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">✓ Live</span>
+                        : <button onClick={()=>setActiveTab('deploy')} className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">Deploy →</button>}
+                    </div>
+                    {c.val ? (
+                      <div className="flex items-center gap-1.5">
+                        <code className="text-xs font-mono text-glow-text truncate flex-1">{c.val}</code>
+                        <button onClick={()=>navigator.clipboard.writeText(c.val)} className="p-1 text-glow-muted hover:text-glow-text"><Copy className="w-3 h-3"/></button>
+                        <a href={'https://testnet.arcscan.app/address/'+c.val} target="_blank" rel="noopener noreferrer" className="p-1 text-glow-muted hover:text-glow-cyan"><ExternalLink className="w-3 h-3"/></a>
+                      </div>
+                    ) : <p className="text-xs text-glow-muted/60">{c.desc}</p>}
+                    <input value={c.val} onChange={e=>setSettings(p=>({...p,[c.key]:e.target.value}))} placeholder="0x… paste if deployed" className={`${inputCls} font-mono text-xs mt-1`}/>
+                  </div>
+                ))}
+              </div>
               <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
-                <div className="flex items-center gap-2 mb-1"><Settings className="w-4 h-4 text-glow-accent"/><span className="text-sm font-semibold text-glow-text">Treasury Contract</span></div>
-                <Field><Label hint="Deploy GlowIDETreasury.sol and paste the address here">Contract Address</Label><input type="text" value={settings.treasuryAddress} onChange={e=>setSettings(p=>({...p,treasuryAddress:e.target.value}))} placeholder="0x…" className={`${inputCls} font-mono`}/></Field>
+                <div className="flex items-center gap-2 mb-1"><Settings className="w-4 h-4 text-glow-accent"/><span className="text-sm font-semibold text-glow-text">Treasury Settings</span></div>
+                <Field><Label hint="Deploy GlowIDETreasury.sol and paste the address here">Treasury Address</Label><input type="text" value={settings.treasuryAddress} onChange={e=>setSettings(p=>({...p,treasuryAddress:e.target.value}))} placeholder="0x…" className={`${inputCls} font-mono`}/></Field>
                 <Field><Label hint="The wallet authorized to withdraw from the treasury">Admin Wallet</Label><input type="text" value={settings.adminWallet} onChange={e=>setSettings(p=>({...p,adminWallet:e.target.value}))} placeholder="0x…" className={`${inputCls} font-mono`}/></Field>
                 {settings.treasuryAddress && (
                   <div className="flex items-center gap-3">
@@ -848,16 +922,71 @@ export default function AdminPage() {
           {/* PLANS */}
           {activeTab === 'plans' && (
             <div className="space-y-5 animate-fade-in">
-              <div><h2 className="text-base font-semibold text-glow-text">Subscription Plans</h2><p className="text-xs text-glow-muted mt-0.5">Configure plan tiers and pricing</p></div>
+              <div className="flex items-center justify-between">
+                <div><h2 className="text-base font-semibold text-glow-text">Subscription Plans</h2><p className="text-xs text-glow-muted mt-0.5">Configure plan tiers and pricing</p></div>
+              </div>
+
+              {/* Edit form */}
+              {editingPlan && (
+                <div className="bg-glow-card border border-glow-accent/30 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-glow-text">Editing: {editingPlan.name}</span>
+                    <button onClick={()=>setEditingPlan(null)} className="p-1 text-glow-muted hover:text-glow-text"><X className="w-4 h-4"/></button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field><Label>Plan Name</Label><input value={editingPlan.name} onChange={e=>setEditingPlan(p=>p?{...p,name:e.target.value}:p)} className={inputCls}/></Field>
+                    <Field><Label>Price Display</Label><input value={editingPlan.price} onChange={e=>setEditingPlan(p=>p?{...p,price:e.target.value}:p)} placeholder="10 USDC/mo" className={inputCls}/></Field>
+                    <Field><Label>AI Tokens / month</Label><input type="number" value={editingPlan.tokens} onChange={e=>setEditingPlan(p=>p?{...p,tokens:parseInt(e.target.value)||0}:p)} className={inputCls}/></Field>
+                    <Field><Label>Storage (MB)</Label><input type="number" value={editingPlan.storage} onChange={e=>setEditingPlan(p=>p?{...p,storage:parseInt(e.target.value)||0}:p)} className={inputCls}/></Field>
+                    <Field><Label>Deployments</Label><input type="number" value={editingPlan.deploys} onChange={e=>setEditingPlan(p=>p?{...p,deploys:parseInt(e.target.value)||0}:p)} className={inputCls}/></Field>
+                    <Field><Label>AI Requests / day</Label><input type="number" value={editingPlan.ai} onChange={e=>setEditingPlan(p=>p?{...p,ai:parseInt(e.target.value)||0}:p)} className={inputCls}/></Field>
+                    <Field className="col-span-2"><Label>Features (one per line)</Label><textarea rows={3} value={editingPlan.features} onChange={e=>setEditingPlan(p=>p?{...p,features:e.target.value}:p)} className={`${inputCls} resize-none`} placeholder="Unlimited deployments&#10;5GB storage&#10;Priority support"/></Field>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={()=>setEditingPlan(null)} className="px-4 py-2 text-sm border border-glow-border text-glow-muted rounded-lg hover:bg-glow-card">Cancel</button>
+                    <button onClick={()=>{toast.success('Plan saved — click Save All to persist');setEditingPlan(null);}} className="px-4 py-2 text-sm bg-glow-accent text-white font-medium rounded-lg hover:bg-glow-accent/90">
+                      <CheckCircle className="w-3.5 h-3.5 inline mr-1"/>Save Plan
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {[{name:'Free',tier:'free',price:'0 USDC',tokens:'50,000',storage:'50 MB',deployments:'3',color:'#6b7280',desc:'Perfect for exploring'},{name:'Pro',tier:'pro',price:'10 USDC/mo',tokens:'500,000',storage:'500 MB',deployments:'50',color:'#7c3aed',desc:'For serious developers'},{name:'Enterprise',tier:'enterprise',price:'Custom',tokens:'5,000,000',storage:'5 GB',deployments:'500',color:'#f59e0b',desc:'For teams & businesses'}].map(plan=>(
-                  <div key={plan.tier} className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
-                    <div className="flex items-center justify-between mb-1"><span className="font-bold text-glow-text">{plan.name}</span><span className="text-sm font-semibold" style={{color:plan.color}}>{plan.price}</span></div>
+                {[
+                  {id:'free',       name:'Free',       price:'0 USDC',      tokens:'50,000',     storage:'50 MB',  deployments:'3',   color:'#6b7280', desc:'Perfect for exploring'},
+                  {id:'pro',        name:'Pro',         price:'10 USDC/mo',  tokens:'500,000',    storage:'500 MB', deployments:'50',  color:'#7c3aed', desc:'For serious developers'},
+                  {id:'enterprise', name:'Enterprise',  price:'Custom',      tokens:'5,000,000',  storage:'5 GB',   deployments:'500', color:'#f59e0b', desc:'For teams & businesses'},
+                ].map(plan=>(
+                  <div key={plan.id} className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-3 flex flex-col">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-glow-text">{plan.name}</span>
+                      <span className="text-sm font-semibold" style={{color:plan.color}}>{plan.price}</span>
+                    </div>
                     <p className="text-xs text-glow-muted">{plan.desc}</p>
-                    <div className="space-y-2 text-xs">{[['AI Tokens',plan.tokens],['Storage',plan.storage],['Deploys',plan.deployments]].map(([k,v])=><div key={k} className="flex justify-between"><span className="text-glow-muted">{k}</span><span className="text-glow-text font-medium">{v}</span></div>)}</div>
+                    <div className="space-y-2 text-xs flex-1">
+                      {[['AI Tokens',plan.tokens],['Storage',plan.storage],['Deploys',plan.deployments]].map(([k,v])=>(
+                        <div key={k} className="flex justify-between">
+                          <span className="text-glow-muted">{k}</span>
+                          <span className="text-glow-text font-medium">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 pt-2 border-t border-glow-border">
+                      <button
+                        onClick={()=>setEditingPlan({id:plan.id,name:plan.name,price:plan.price,tokens:parseInt(plan.tokens.replace(/,/g,''))||0,storage:parseInt(plan.storage)||0,deploys:parseInt(plan.deployments)||0,ai:100,features:'',color:plan.color})}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs border border-glow-border text-glow-muted rounded-lg hover:bg-glow-surface hover:text-glow-text transition-colors">
+                        <Edit2 className="w-3 h-3"/>Edit
+                      </button>
+                      <button
+                        onClick={()=>toast('Default plans are protected. Add custom plans via Save All.', {icon:'ℹ️'})}
+                        className="px-3 py-2 border border-red-500/20 text-red-400/60 rounded-lg text-xs hover:border-red-500/40 hover:text-red-400 transition-colors">
+                        <Trash2 className="w-3 h-3"/>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
+
               <div className="p-4 bg-glow-accent/5 border border-glow-accent/15 rounded-2xl space-y-3">
                 <p className="text-xs text-glow-text font-medium">Subscription payments go to your treasury or fee recipient address.</p>
                 <Field><Label>Fee Recipient / Treasury Address</Label><input value={settings.feeRecipient} onChange={e=>setSettings(p=>({...p,feeRecipient:e.target.value}))} placeholder="0x…" className={`${inputCls} font-mono`}/></Field>
