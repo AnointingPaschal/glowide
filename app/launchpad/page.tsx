@@ -797,29 +797,82 @@ function LaunchField({ label, hint, children, className='' }: { label: string; h
   );
 }
 
-// ── Build simple LaunchedToken deployment bytecode ─────────────────────────
-// This builds a real on-chain deployment for demo mode (no factory needed)
+// ── Build token deployment bytecode — pure Solidity (no OZ imports = small bytecode) ──
+// EIP-3860: max initcode = 49152 bytes. OZ ERC20 compiled can exceed this.
+// Pure Solidity ERC20 compiles to ~3-5KB bytecode, well within limits.
 async function buildSimpleTokenDeploy(name: string, symbol: string, decimals: number, supply: bigint, tokenURI: string): Promise<string> {
-  // Call the compile API to get real bytecode for LaunchedToken
+  // Pure Solidity ERC20 — no imports, no inheritance from external libraries
+  // Compiles to ~3KB bytecode vs ~50KB with OZ imports
   const src = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-contract ${symbol.replace(/[^a-zA-Z0-9]/g,'') || 'Token'} is ERC20 {
-    string private _uri;
-    uint8 private _dec;
-    constructor() ERC20("${name}", "${symbol}") {
-        _uri = "${tokenURI}";
-        _dec = ${decimals};
-        _mint(msg.sender, ${supply.toString()});
+
+/**
+ * @title LaunchedToken
+ * @notice Minimal ERC-20 deployed via GlowIDE Launchpad on Arc Testnet.
+ * @dev Pure Solidity (no external imports) to stay under EIP-3860 initcode limit.
+ */
+contract LaunchedToken {
+    string  public name;
+    string  public symbol;
+    uint8   public decimals;
+    uint256 public totalSupply;
+    string  public tokenURI;
+    address public owner;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    constructor(
+        string memory _name, string memory _symbol,
+        uint8 _decimals, uint256 _supply, string memory _tokenURI
+    ) {
+        name      = _name;
+        symbol    = _symbol;
+        decimals  = _decimals;
+        tokenURI  = _tokenURI;
+        owner     = msg.sender;
+        totalSupply = _supply;
+        balanceOf[msg.sender] = _supply;
+        emit Transfer(address(0), msg.sender, _supply);
     }
-    function decimals() public view override returns (uint8) { return _dec; }
-    function tokenURI() external view returns (string memory) { return _uri; }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "Insufficient balance");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to]         += amount;
+        emit Transfer(msg.sender, to, amount);
+        return true;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(balanceOf[from] >= amount, "Insufficient balance");
+        require(allowance[from][msg.sender] >= amount, "Insufficient allowance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from]             -= amount;
+        balanceOf[to]               += amount;
+        emit Transfer(from, to, amount);
+        return true;
+    }
+
+    function setTokenURI(string calldata uri) external {
+        require(msg.sender == owner, "Not owner");
+        tokenURI = uri;
+    }
 }`;
 
   const res = await fetch('/api/contracts/compile', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sourceCode: src, contractName: symbol.replace(/[^a-zA-Z0-9]/g,'') || 'Token' }),
+    body: JSON.stringify({ sourceCode: src, contractName: 'LaunchedToken' }),
   });
   const d = await res.json();
   if (!d.success || !d.bytecode) throw new Error(d.errors?.[0]?.message ?? 'Compile failed');

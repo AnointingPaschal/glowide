@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { supabaseREST } from "@/lib/supabase-server";
 
 const PUBLIC_KEYS = [
-  "deployment_fee","fee_recipient","fees_enabled",
+  "deployment_fee","launchpad_fee","fee_recipient","fees_enabled",
   "available_models","default_model","free_deployments",
   "site_name","site_tagline","site_description","logo_url","primary_color",
   "usdc_logo_url","eurc_logo_url","cirbtc_logo_url",

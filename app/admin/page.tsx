@@ -172,7 +172,14 @@ export default function AdminPage() {
   const [editingModel, setEditingModel] = useState<PublicModel|null>(null);
   const [showNewForm, setShowNewForm]   = useState(false);
   const [newModel, setNewModel] = useState<{id:string;name:string;provider:string;tier:PublicModel['tier'];context_length:number;description:string}>({id:'',name:'',provider:'',tier:'fast',context_length:128000,description:''});
-  const [usersData, setUsersData] = useState<{users:UserPlan[];activity:Record<string,{actions:number;lastSeen:string;actions_list:string[]}>;stats:{totalUsers:number;totalDeployments:number;proUsers:number}}|null>(null);
+  const [usersData, setUsersData] = useState<{
+    users:UserPlan[];
+    activity:Record<string,{actions:number;lastSeen:string;actions_list:string[]}>;
+    transactions:Record<string,unknown>[];
+    walletBalances:Record<string,unknown>[];
+    walletConnections:Record<string,unknown>[];
+    stats:{totalUsers:number;totalDeployments:number;proUsers:number;totalConnections:number;totalTransactions:number};
+  }|null>(null);
   const [trainingExamples, setTrainingExamples] = useState<TrainingExample[]>([]);
   const [loadingUsers, setLoadingUsers]         = useState(false);
   const [loadingTraining, setLoadingTraining]   = useState(false);
@@ -193,7 +200,7 @@ export default function AdminPage() {
     temperature:0.7, maxTokens:4096, systemPrompt:DEFAULT_SYSTEM_PROMPT,
     rateLimitPerUser:100, deploymentFee:'0', feeRecipient:'',
     deploymentFeePercent:'0', freeDeployments:'3',
-    verificationFee:'0', feesEnabled:false,
+    verificationFee:'0', launchpadFee:'0', feesEnabled:false,
     treasuryAddress:'', launchpadFactory:'', adminWallet: address ?? '',
   });
   const [siteSettings, setSiteSettings] = useState({
@@ -229,6 +236,7 @@ export default function AdminPage() {
           ...(m.deployment_fee_percent    && {deploymentFeePercent:m.deployment_fee_percent}),
           ...(m.free_deployments          && {freeDeployments:     m.free_deployments}),
           ...(m.verification_fee          && {verificationFee:     m.verification_fee}),
+          ...(m.launchpad_fee              && {launchpadFee:         m.launchpad_fee}),
           ...(m.fees_enabled              && {feesEnabled:         m.fees_enabled==='true'}),
           ...(m.treasury_address          && {treasuryAddress:     m.treasury_address}),
           ...(m.launchpad_factory         && {launchpadFactory:    m.launchpad_factory}),
@@ -280,6 +288,7 @@ export default function AdminPage() {
         fee_recipient:           settings.feeRecipient,
         deployment_fee_percent:  settings.deploymentFeePercent,
         free_deployments:        settings.freeDeployments,
+        launchpad_fee:           settings.launchpadFee,
         verification_fee:        settings.verificationFee,
         fees_enabled:            String(settings.feesEnabled),
         treasury_address:         settings.treasuryAddress,
@@ -841,53 +850,168 @@ export default function AdminPage() {
           {/* USERS */}
           {activeTab === 'users' && (
             <div className="space-y-5 animate-fade-in">
-              {loadingUsers ? <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-glow-accent"/></div>
-              : usersData ? (
+              {loadingUsers ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-glow-accent"/></div>
+              ) : !usersData ? (
+                <div className="text-center py-12 space-y-3">
+                  <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto"/>
+                  <p className="text-glow-muted text-sm">Failed to load users data</p>
+                  <button onClick={()=>setLoadingUsers(true)} className="px-4 py-2 bg-glow-accent text-white text-sm rounded-xl">Retry</button>
+                </div>
+              ) : (
                 <>
-                  <div className="grid grid-cols-3 gap-3">
-                    <StatCard icon={Users}   label="Total Users"  value={usersData.stats.totalUsers}       color="#7c3aed"/>
-                    <StatCard icon={CreditCard} label="Pro Users" value={usersData.stats.proUsers}         sub="paid plans" color="#10b981"/>
-                    <StatCard icon={Rocket}  label="Deployments"  value={usersData.stats.totalDeployments} color="#06b6d4"/>
+                  {/* Stats */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    <StatCard icon={Users}     label="Users"         value={usersData.stats.totalUsers}        color="#7c3aed"/>
+                    <StatCard icon={CreditCard} label="Pro Users"    value={usersData.stats.proUsers}          color="#10b981"/>
+                    <StatCard icon={Rocket}     label="Deployments"  value={usersData.stats.totalDeployments}  color="#06b6d4"/>
+                    <StatCard icon={Activity}   label="Connections"  value={usersData.stats.totalConnections||0}  color="#f59e0b"/>
+                    <StatCard icon={Activity}   label="Transactions" value={usersData.stats.totalTransactions||0} color="#ec4899"/>
                   </div>
+
+                  {/* User Plans */}
                   <div className="bg-glow-card border border-glow-border rounded-2xl overflow-hidden">
-                    <div className="px-4 py-3 border-b border-glow-border flex items-center justify-between">
-                      <span className="text-sm font-semibold text-glow-text">All Users</span>
-                      <span className="text-xs text-glow-muted">{usersData.users.length} total</span>
+                    <div className="px-4 py-3 border-b border-glow-border bg-glow-surface/50 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-glow-text">User Plans</span>
+                      <span className="text-xs text-glow-muted">{usersData.users.length} users</span>
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead><tr className="border-b border-glow-border bg-glow-surface/50">
-                          {['Wallet','Plan','Tokens','Deploys','Storage','Activity','Since'].map(h=><th key={h} className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">{h}</th>)}
-                        </tr></thead>
-                        <tbody>
-                          {usersData.users.length === 0
-                            ? <tr><td colSpan={7} className="px-4 py-8 text-center text-glow-muted">No users yet</td></tr>
-                            : usersData.users.map(u => {
-                              const act = usersData.activity?.[u.wallet_address];
+                    {usersData.users.length === 0 ? (
+                      <p className="py-8 text-center text-xs text-glow-muted">No users yet</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead><tr className="border-b border-glow-border bg-glow-surface/50">
+                            {['Wallet','Plan','Tokens Used','Deploys','Storage','Activity','Since'].map(h=><th key={h} className="text-left px-4 py-2.5 text-xs text-glow-muted font-medium">{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {usersData.users.map((u,i)=>{
+                              const act=usersData.activity?.[(u.wallet_address||'')];
                               return (
-                                <tr key={u.id} className="border-b border-glow-border/50 hover:bg-glow-surface/30 transition-colors">
-                                  <td className="px-4 py-2.5 font-mono text-xs text-glow-text">{(u.wallet_address||'').slice(0,10)}…{(u.wallet_address||'').slice(-6)}</td>
-                                  <td className="px-4 py-2.5"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${u.plan==='free'?'text-gray-400 border-gray-700 bg-gray-800/50':u.plan==='pro'?'text-purple-400 border-purple-500/30 bg-purple-500/10':'text-amber-400 border-amber-500/30 bg-amber-500/10'}`}>{(u.plan||'free').toUpperCase()}</span></td>
-                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{(u.tokens_used??0).toLocaleString()} / {(u.tokens_limit??0).toLocaleString()}</td>
-                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{u.deployments_used??0} / {u.deployments_limit}</td>
-                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{((u.storage_used_bytes??0)/1024/1024).toFixed(1)} MB</td>
-                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{act?.actions??0} actions</td>
-                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                                <tr key={u.id||i} className="border-b border-glow-border/50 hover:bg-glow-surface/30">
+                                  <td className="px-4 py-2.5 font-mono text-xs text-glow-text">{(u.wallet_address||'—').slice(0,10)}…</td>
+                                  <td className="px-4 py-2.5"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${(u.plan||'free')==='free'?'text-gray-400 border-gray-700 bg-gray-800/50':(u.plan||'free')==='pro'?'text-purple-400 border-purple-500/30 bg-purple-500/10':'text-amber-400 border-amber-500/30 bg-amber-500/10'}`}>{(u.plan||'free').toUpperCase()}</span></td>
+                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{(u.tokens_used||0).toLocaleString()} / {(u.tokens_limit||0).toLocaleString()}</td>
+                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{u.deployments_used||0} / {u.deployments_limit||0}</td>
+                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{((u.storage_used_bytes||0)/1024/1024).toFixed(1)} MB</td>
+                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{act?.actions||0} actions</td>
+                                  <td className="px-4 py-2.5 text-xs text-glow-muted">{u.created_at?new Date(u.created_at).toLocaleDateString():'—'}</td>
                                 </tr>
                               );
-                            })
-                          }
-                        </tbody>
-                      </table>
-                    </div>
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Wallet Connections */}
+                  {(usersData.walletConnections?.length > 0) && (
+                    <div className="bg-glow-card border border-glow-border rounded-2xl overflow-hidden">
+                      <div className="px-4 py-3 border-b border-glow-border bg-glow-surface/50 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-glow-text">Wallet Connections</span>
+                        <span className="text-xs text-glow-muted">{usersData.walletConnections.length} records</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead><tr className="border-b border-glow-border bg-glow-surface/50">
+                            {['Wallet','Chain ID','Connected At','Last Seen'].map(h=><th key={h} className="text-left px-4 py-2 text-glow-muted font-medium">{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {usersData.walletConnections.slice(0,20).map((c,i)=>{
+                              const conn = c as Record<string,unknown>;
+                              return (
+                                <tr key={i} className="border-b border-glow-border/30 hover:bg-glow-surface/20">
+                                  <td className="px-4 py-2 font-mono">{String(conn.wallet_address||conn.address||'—').slice(0,14)}…</td>
+                                  <td className="px-4 py-2 text-glow-muted">{String(conn.chain_id||'—')}</td>
+                                  <td className="px-4 py-2 text-glow-muted">{conn.connected_at?new Date(String(conn.connected_at)).toLocaleString():'—'}</td>
+                                  <td className="px-4 py-2 text-glow-muted">{conn.last_seen?new Date(String(conn.last_seen)).toLocaleString():'—'}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Wallet Balances */}
+                  {(usersData.walletBalances?.length > 0) && (
+                    <div className="bg-glow-card border border-glow-border rounded-2xl overflow-hidden">
+                      <div className="px-4 py-3 border-b border-glow-border bg-glow-surface/50 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-glow-text">Wallet Balances</span>
+                        <span className="text-xs text-glow-muted">{usersData.walletBalances.length} records</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead><tr className="border-b border-glow-border bg-glow-surface/50">
+                            {['Wallet','USDC','EURC','cirBTC','Updated'].map(h=><th key={h} className="text-left px-4 py-2 text-glow-muted font-medium">{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {usersData.walletBalances.slice(0,20).map((b,i)=>{
+                              const bal = b as Record<string,unknown>;
+                              return (
+                                <tr key={i} className="border-b border-glow-border/30 hover:bg-glow-surface/20">
+                                  <td className="px-4 py-2 font-mono">{String(bal.wallet_address||bal.address||'—').slice(0,14)}…</td>
+                                  <td className="px-4 py-2 text-glow-cyan">{String(bal.usdc_balance||bal.usdc||'—')}</td>
+                                  <td className="px-4 py-2 text-glow-muted">{String(bal.eurc_balance||bal.eurc||'—')}</td>
+                                  <td className="px-4 py-2 text-glow-muted">{String(bal.cirbtc_balance||bal.cirbtc||'—')}</td>
+                                  <td className="px-4 py-2 text-glow-muted">{bal.updated_at?new Date(String(bal.updated_at)).toLocaleDateString():'—'}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Transactions */}
+                  {(usersData.transactions?.length > 0) && (
+                    <div className="bg-glow-card border border-glow-border rounded-2xl overflow-hidden">
+                      <div className="px-4 py-3 border-b border-glow-border bg-glow-surface/50 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-glow-text">Transactions</span>
+                        <span className="text-xs text-glow-muted">{usersData.transactions.length} records</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead><tr className="border-b border-glow-border bg-glow-surface/50">
+                            {['Hash','From','To','Amount','Type','Date'].map(h=><th key={h} className="text-left px-4 py-2 text-glow-muted font-medium">{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {usersData.transactions.slice(0,20).map((t,i)=>{
+                              const tx = t as Record<string,unknown>;
+                              const hash = String(tx.hash||tx.tx_hash||'—');
+                              return (
+                                <tr key={i} className="border-b border-glow-border/30 hover:bg-glow-surface/20">
+                                  <td className="px-4 py-2 font-mono">
+                                    {hash !== '—' ? <a href={'https://testnet.arcscan.app/tx/'+hash} target="_blank" rel="noopener noreferrer" className="text-glow-cyan hover:underline">{hash.slice(0,12)}…</a> : '—'}
+                                  </td>
+                                  <td className="px-4 py-2 font-mono text-glow-muted">{String(tx.from_address||tx.from||'—').slice(0,10)}…</td>
+                                  <td className="px-4 py-2 font-mono text-glow-muted">{String(tx.to_address||tx.to||'—').slice(0,10)}…</td>
+                                  <td className="px-4 py-2 text-glow-cyan">{String(tx.amount||tx.value||'—')}</td>
+                                  <td className="px-4 py-2 text-glow-muted">{String(tx.type||tx.tx_type||'—')}</td>
+                                  <td className="px-4 py-2 text-glow-muted">{tx.created_at?new Date(String(tx.created_at)).toLocaleDateString():'—'}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Show message if extra tables are empty */}
+                  {!usersData.walletConnections?.length && !usersData.walletBalances?.length && !usersData.transactions?.length && (
+                    <div className="p-4 bg-glow-surface border border-glow-border/50 rounded-xl">
+                      <p className="text-xs text-glow-muted">Wallet connections, balances, and transactions will appear here as users interact with GlowIDE.</p>
+                    </div>
+                  )}
                 </>
-              ) : <div className="text-center py-16 text-glow-muted">Failed to load users data</div>}
+              )}
             </div>
           )}
 
-          {/* TRAINING */}
-          {activeTab === 'training' && (
+                    {activeTab === 'training' && (
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center justify-between">
                 <div><h2 className="text-base font-semibold text-glow-text">AI Training Data</h2><p className="text-xs text-glow-muted mt-0.5">{trainingExamples.length} examples · shapes AI behaviour</p></div>
