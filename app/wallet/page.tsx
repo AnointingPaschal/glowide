@@ -6,7 +6,14 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { useWalletStore } from '@/store/walletStore';
 import { WalletButton } from '@/components/wallet/WalletButton';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
-import { CIRCLE_CHAINS, CCTP_CHAINS, CIRCLE_ASSETS, ARC_CONTRACTS } from '@/lib/circle-chains';
+import { CIRCLE_CHAINS, CCTP_CHAINS, CIRCLE_ASSETS, ARC_CONTRACTS, LOGOS } from '@/lib/circle-chains';
+import { useCryptoLogo, useNetworkLogo, getCryptoLogos } from '@/lib/crypto-logos';
+import { CryptoLogo, NetworkLogo } from '@/components/wallet/CryptoLogo';
+
+// Helper: use LOGOS inline SVG as fallback (never fails)
+function circleLogo(sym: string, _color: string): string {
+  return LOGOS[sym.toLowerCase()] ?? '';
+}
 import {
   Send, QrCode, ArrowLeftRight, History, Zap, RefreshCw, Copy,
   CheckCircle, ExternalLink, Loader2, ChevronDown, ArrowRight,
@@ -82,8 +89,9 @@ function QRCode({ address }: { address: string }) {
 }
 
 // ── Network logo img ──────────────────────────────────────────────────────────
-function NetLogo({ src, name, size=24 }: { src:string; name:string; size?:number }) {
-  return <img src={src} alt={name} width={size} height={size} className="rounded-full flex-shrink-0 object-contain" style={{background:'transparent'}}/>;
+function NetLogo({ src, name, networkId, size=24 }: { src:string; name:string; networkId?:string; size?:number }) {
+  if (networkId) return <NetworkLogo networkId={networkId} fallbackLogo={src} size={size}/>;
+  return <CryptoLogo symbol={name.split(' ')[0]} fallbackLogo={src} size={size}/>;
 }
 
 // ── CCTP Destination Dropdown ─────────────────────────────────────────────────
@@ -94,7 +102,7 @@ function CCTPNetworkDropdown({ value, onChange }: { value:string; onChange:(id:s
     <div className="relative">
       <button onClick={()=>setOpen(!open)}
         className="w-full flex items-center gap-2.5 px-4 py-3 bg-glow-bg border border-glow-border rounded-xl hover:border-glow-accent/40 transition-colors text-left">
-        <NetLogo src={selected.logo} name={selected.name} size={28}/>
+        <NetLogo src={selected.logo} name={selected.name} networkId={selected.id} size={28}/>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-glow-text">{selected.shortName}</p>
           <p className="text-[10px] text-glow-muted">{selected.name}</p>
@@ -110,7 +118,7 @@ function CCTPNetworkDropdown({ value, onChange }: { value:string; onChange:(id:s
               <button key={c.id} onClick={()=>{onChange(c.id);setOpen(false);}}
                 className={cn("w-full flex items-center gap-3 px-4 py-3 hover:bg-glow-card/60 transition-colors",
                   value===c.id && "bg-glow-accent/10")}>
-                <NetLogo src={c.logo} name={c.name} size={36}/>
+                <NetLogo src={c.logo} name={c.name} networkId={c.id} size={36}/>
                 <div className="flex-1 text-left">
                   <p className="text-sm font-semibold text-glow-text">{c.name}</p>
                   <p className="text-[10px] text-glow-muted">{c.ecosystem}</p>
@@ -133,7 +141,7 @@ function NetworkDropdown({ selected, onChange }: { selected:string; onChange:(id
     <div className="relative">
       <button onClick={()=>setOpen(!open)}
         className="flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 bg-glow-card/80 border border-glow-border rounded-xl text-xs text-glow-text hover:border-glow-accent/40 transition-colors">
-        <NetLogo src={chain.logo} name={chain.name} size={20}/>
+        <NetLogo src={chain.logo} name={chain.name} networkId={chain.id} size={20}/>
         <span className="hidden sm:block truncate max-w-[90px] font-medium">{chain.shortName}</span>
         <ChevronDown className={cn("w-3.5 h-3.5 text-glow-muted flex-shrink-0 transition-transform", open && "rotate-180")}/>
       </button>
@@ -147,7 +155,7 @@ function NetworkDropdown({ selected, onChange }: { selected:string; onChange:(id
             {CIRCLE_CHAINS.map(c=>(
               <button key={c.id} onClick={()=>{onChange(c.id);setOpen(false);}}
                 className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-glow-card/60 transition-colors text-left", selected===c.id && "bg-glow-accent/10")}>
-                <NetLogo src={c.logo} name={c.name} size={32}/>
+                <NetLogo src={c.logo} name={c.name} networkId={c.id} size={32}/>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-glow-text truncate">{c.name}</p>
                   <p className="text-[10px] text-glow-muted">{c.ecosystem}{c.cctpSupported?' · CCTP':''}</p>
@@ -255,9 +263,11 @@ export default function WalletPage() {
         }
       } catch { usdcBal='0.000000'; }
 
-      // ERC-20 tokens: EURC (real address) + custom tokens
+      // ERC-20 tokens: EURC + cirBTC (real Arc addresses) + USYC + custom tokens
       const erc20s = [
-        { key:'EURC', addr: CIRCLE_ASSETS.EURC.address!, dec: CIRCLE_ASSETS.EURC.decimals },
+        { key:'EURC',   addr: CIRCLE_ASSETS.EURC.address!,   dec: CIRCLE_ASSETS.EURC.decimals   },
+        { key:'cirBTC', addr: CIRCLE_ASSETS.cirBTC.address!,  dec: CIRCLE_ASSETS.cirBTC.decimals  },
+        { key:'USYC',   addr: ARC_CONTRACTS.USYC,             dec: 6                              },
         ...tokens.filter(t=>t.networkId===networkId).map(t=>({key:t.symbol,addr:t.address,dec:t.decimals})),
       ];
 
@@ -285,8 +295,7 @@ export default function WalletPage() {
         const r = results[i];
         next[key] = r.status==='fulfilled' ? r.value : '0.000000';
       });
-      // cirBTC not deployed on Arc Testnet yet
-      next['cirBTC'] = '0.000000';
+      // balances already populated above for cirBTC, EURC, USYC
       setBalances(next);
     } catch { /* silent */ }
     finally { setLoading(false); }
@@ -302,9 +311,10 @@ export default function WalletPage() {
 
   // ── Assets list ─────────────────────────────────────────────────────────────
   const nativeAssets = [
-    { symbol:'USDC',   name:'USD Coin',            logo:siteSettings.usdcLogoUrl||CIRCLE_ASSETS.USDC.logo,   color:CIRCLE_ASSETS.USDC.color,   isGas:true  },
-    { symbol:'EURC',   name:'Euro Coin',            logo:siteSettings.eurcLogoUrl||CIRCLE_ASSETS.EURC.logo,   color:CIRCLE_ASSETS.EURC.color,   isGas:false },
-    { symbol:'cirBTC', name:'cirBTC (coming soon)', logo:siteSettings.cirBTCLogoUrl||CIRCLE_ASSETS.cirBTC.logo, color:CIRCLE_ASSETS.cirBTC.color, isGas:false },
+    { symbol:'USDC',   name:'USD Coin',     logo:siteSettings.usdcLogoUrl||CIRCLE_ASSETS.USDC.logo,   color:CIRCLE_ASSETS.USDC.color,   isGas:true  },
+    { symbol:'EURC',   name:'Euro Coin',    logo:siteSettings.eurcLogoUrl||CIRCLE_ASSETS.EURC.logo,   color:CIRCLE_ASSETS.EURC.color,   isGas:false },
+    { symbol:'cirBTC', name:'Circle Bitcoin', logo:siteSettings.cirBTCLogoUrl||CIRCLE_ASSETS.cirBTC.logo, color:CIRCLE_ASSETS.cirBTC.color, isGas:false },
+    { symbol:'USYC',   name:'USYC (Hashnote)', logo:ARC_CONTRACTS.USYC ? circleLogo('USYC','#047857') : '', color:'#047857', isGas:false },
   ];
   const customAssets = tokens.filter(t=>t.networkId===networkId);
   const allAssets = [...nativeAssets, ...customAssets.map(t=>({symbol:t.symbol,name:t.name,logo:t.logo,color:t.color,isGas:false}))];
@@ -756,10 +766,10 @@ export default function WalletPage() {
                   <div className="bg-glow-card border border-glow-border rounded-xl p-3 space-y-2">
                     <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">Route</p>
                     <div className="flex items-center gap-2">
-                      <NetLogo src={CIRCLE_CHAINS[0].logo} name="Arc" size={20}/>
+                      <NetLogo src={CIRCLE_CHAINS[0].logo} name="Arc" networkId="arc-testnet" size={20}/>
                       <span className="text-xs text-glow-text font-semibold">Arc Testnet</span>
                       <span className="text-glow-muted/40 text-xs flex-1 text-center">·····→</span>
-                      <NetLogo src={CCTP_CHAINS.find(c=>c.id===cctpDest)?.logo||''} name={cctpDest} size={20}/>
+                      <NetLogo src={CCTP_CHAINS.find(c=>c.id===cctpDest)?.logo||''} name={cctpDest} networkId={cctpDest} size={20}/>
                       <span className="text-xs text-glow-text font-semibold">{CCTP_CHAINS.find(c=>c.id===cctpDest)?.shortName}</span>
                     </div>
                     <div className="flex justify-between text-xs"><span className="text-glow-muted">Amount</span><span className="text-glow-cyan font-bold">{cctpAmt} USDC</span></div>

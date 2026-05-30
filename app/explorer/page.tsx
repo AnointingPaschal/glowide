@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { NETWORKS, EVM_NETWORKS, LOGOS, type NetworkInfo } from '@/lib/circle-chains';
+import { NetworkLogo } from '@/components/wallet/CryptoLogo';
 import {
   Search, ExternalLink, Copy, CheckCircle, Loader2, AlertCircle,
   Hash, Wallet, Code2, Box, RefreshCw, ChevronDown, Activity,
@@ -67,7 +68,7 @@ function NetworkSelector({ selected, onChange }: { selected: string; onChange: (
     <div className="relative">
       <button onClick={() => setOpen(!open)}
         className="flex items-center gap-2 pl-2 pr-3 py-2 bg-glow-card border border-glow-border rounded-xl hover:border-glow-accent/40 transition-colors text-sm">
-        <img src={net.logo} alt={net.name} width={20} height={20} className="rounded-full flex-shrink-0"/>
+        <NetworkLogo networkId={net.id} fallbackLogo={net.logo} size={20}/>
         <span className="font-medium text-glow-text hidden sm:block">{net.shortName}</span>
         {net.testnet && <span className="hidden md:block text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/25 px-1.5 py-0.5 rounded-full">TEST</span>}
         <ChevronDown className={cn("w-3.5 h-3.5 text-glow-muted transition-transform", open && "rotate-180")}/>
@@ -85,7 +86,7 @@ function NetworkSelector({ selected, onChange }: { selected: string; onChange: (
               {filtered.filter(n => n.id === 'arc-testnet').map(n => (
                 <button key={n.id} onClick={() => { onChange(n.id); setOpen(false); setSearch(''); }}
                   className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-glow-card/60 transition-colors", selected===n.id && "bg-glow-accent/10")}>
-                  <img src={n.logo} alt={n.name} width={28} height={28} className="rounded-full flex-shrink-0"/>
+                  <NetworkLogo networkId={n.id} fallbackLogo={n.logo} size={28}/>
                   <div className="flex-1 text-left">
                     <p className="text-xs font-semibold text-glow-text">{n.name}</p>
                     <p className="text-[10px] text-glow-muted">{n.ecosystem} · USDC native gas</p>
@@ -100,7 +101,7 @@ function NetworkSelector({ selected, onChange }: { selected: string; onChange: (
               {filtered.filter(n => n.id !== 'arc-testnet' && n.testnet).map(n => (
                 <button key={n.id} onClick={() => { onChange(n.id); setOpen(false); setSearch(''); }}
                   className={cn("w-full flex items-center gap-2.5 px-3 py-2 hover:bg-glow-card/60 transition-colors", selected===n.id && "bg-glow-accent/10")}>
-                  <img src={n.logo} alt={n.name} width={24} height={24} className="rounded-full flex-shrink-0"/>
+                  <NetworkLogo networkId={n.id} fallbackLogo={n.logo} size={24}/>
                   <div className="flex-1 text-left">
                     <p className="text-xs font-medium text-glow-text">{n.name}</p>
                     <p className="text-[10px] text-glow-muted">{n.ecosystem}{n.chainId ? ` · ${n.chainId}` : ''}</p>
@@ -114,7 +115,7 @@ function NetworkSelector({ selected, onChange }: { selected: string; onChange: (
               {filtered.filter(n => !n.testnet && n.id !== 'arc-testnet').map(n => (
                 <button key={n.id} onClick={() => { onChange(n.id); setOpen(false); setSearch(''); }}
                   className={cn("w-full flex items-center gap-2.5 px-3 py-2 hover:bg-glow-card/60 transition-colors", selected===n.id && "bg-glow-accent/10")}>
-                  <img src={n.logo} alt={n.name} width={24} height={24} className="rounded-full flex-shrink-0"/>
+                  <NetworkLogo networkId={n.id} fallbackLogo={n.logo} size={24}/>
                   <div className="flex-1 text-left">
                     <p className="text-xs font-medium text-glow-text">{n.name}</p>
                     <p className="text-[10px] text-glow-muted">{n.ecosystem}{n.chainId ? ` · ${n.chainId}` : ''}</p>
@@ -254,7 +255,7 @@ export default function ExplorerPage() {
 
         {/* Network info bar */}
         <div className="flex items-center gap-3 p-3 bg-glow-card border border-glow-border rounded-xl flex-wrap">
-          <img src={network.logo} alt={network.name} width={28} height={28} className="rounded-full flex-shrink-0"/>
+          <NetworkLogo networkId={network.id} fallbackLogo={network.logo} size={28}/>
           <div>
             <p className="text-sm font-semibold text-glow-text">{network.name}</p>
             <p className="text-[10px] text-glow-muted">{network.ecosystem}{network.chainId ? ` · Chain ${network.chainId}` : ''}{network.testnet ? ' · Testnet' : ' · Mainnet'}</p>
@@ -262,10 +263,10 @@ export default function ExplorerPage() {
           {network.cctpSupported && <span className="text-[10px] text-glow-accent bg-glow-accent/10 border border-glow-accent/20 px-2 py-0.5 rounded-full flex items-center gap-1"><Zap className="w-2.5 h-2.5"/>CCTP {network.cctpDomain !== undefined ? `Domain ${network.cctpDomain}` : ''}</span>}
           {/* Circle assets on this network */}
           <div className="ml-auto flex items-center gap-1.5 flex-wrap">
-            {network.usdc  && <span className="flex items-center gap-1 text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full"><img src={LOGOS.usdc} width={12} height={12} className="rounded-full" alt="USDC"/>USDC</span>}
-            {network.eurc  && <span className="flex items-center gap-1 text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full"><img src={LOGOS.eurc} width={12} height={12} className="rounded-full" alt="EURC"/>EURC</span>}
-            {network.cirbtc && <span className="flex items-center gap-1 text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full"><img src={LOGOS.cirbtc} width={12} height={12} className="rounded-full" alt="cirBTC"/>cirBTC</span>}
-            {network.usyc  && <span className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full"><img src={LOGOS.usyc} width={12} height={12} className="rounded-full" alt="USYC"/>USYC</span>}
+            {network.usdc  && <span className="flex items-center gap-1 text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full"><NetworkLogo networkId="usdc" fallbackLogo={LOGOS.usdc} size={12}/>USDC</span>}
+            {network.eurc  && <span className="flex items-center gap-1 text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full"><NetworkLogo networkId="eurc" fallbackLogo={LOGOS.eurc} size={12}/>EURC</span>}
+            {network.cirbtc && <span className="flex items-center gap-1 text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full"><NetworkLogo networkId="cirbtc" fallbackLogo={LOGOS.cirbtc} size={12}/>cirBTC</span>}
+            {network.usyc  && <span className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full"><NetworkLogo networkId="usyc" fallbackLogo={LOGOS.usyc} size={12}/>USYC</span>}
           </div>
         </div>
 
@@ -419,7 +420,7 @@ export default function ExplorerPage() {
                 <button key={n.id} onClick={() => setNetworkId(n.id)}
                   className={cn("flex items-center gap-2 p-2.5 rounded-xl border transition-all text-left hover:border-glow-accent/30 hover:bg-glow-surface",
                     n.id === networkId ? "border-glow-accent/40 bg-glow-accent/5" : "border-glow-border/50 bg-glow-surface/30")}>
-                  <img src={n.logo} alt={n.name} width={22} height={22} className="rounded-full flex-shrink-0"/>
+                  <NetworkLogo networkId={n.id} fallbackLogo={n.logo} size={22}/>
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-glow-text truncate">{n.shortName}</p>
                     <p className="text-[9px] text-glow-muted truncate">{n.testnet ? 'Testnet' : 'Mainnet'}</p>
