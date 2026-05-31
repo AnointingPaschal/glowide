@@ -1,16 +1,16 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
-  Copy, Check, Edit3, RotateCcw, Eye, EyeOff,
-  ChevronDown, Terminal, Code2, Maximize2, X, ExternalLink,
+  Copy, Check, Edit3, RotateCcw, Eye,
+  ChevronDown, Terminal, Code2, X, ExternalLink,
+  Hammer, FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/types";
-import { extractPreviewableCode } from "@/components/preview/CodePreview";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -19,46 +19,51 @@ interface ChatMessageProps {
   onRetry?: () => void;
 }
 
-// ── Preview Modal ─────────────────────────────────────────────────────────────
-function PreviewModal({ code, lang, onClose }: { code: string; lang: string; onClose: () => void }) {
-  const openInTab = () => {
-    const content = lang === "html"
-      ? code
-      : `<!DOCTYPE html><html><head><script>${code}<\/script></head><body></body></html>`;
-    const blob = new Blob([content], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  };
+// ── Detect code blocks in content ────────────────────────────────────────────
+interface DetectedBlock { lang: string; code: string; filename?: string; }
 
+function detectBlocks(content: string): DetectedBlock[] {
+  const blocks: DetectedBlock[] = [];
+  const re = /```(\w+)(?:\s+([^\n]+))?\n([\s\S]*?)```/g;
+  let m;
+  while ((m = re.exec(content)) !== null) {
+    blocks.push({ lang: m[1], filename: m[2], code: m[3].trim() });
+  }
+  return blocks;
+}
+
+// File extensions that indicate named files (for "Create Project")
+const FILE_EXTENSIONS = /\.(sol|ts|tsx|js|jsx|py|rs|go|json|html|css|md|yaml|yml|toml|sh|env)$/i;
+
+// ── Preview Modal ─────────────────────────────────────────────────────────────
+function PreviewModal({ code, lang, onClose }: { code:string; lang:string; onClose:()=>void }) {
+  const popout = () => {
+    const html = (lang==="html"||lang==="jsx"||lang==="tsx")
+      ? code
+      : `<!DOCTYPE html><html><head><style>body{background:#0d0d18;color:#e2e8f0;font-family:system-ui;padding:20px}</style></head><body><script>${code}<\/script></body></html>`;
+    const url = URL.createObjectURL(new Blob([html],{type:"text/html"}));
+    window.open(url,"_blank");
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+  };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="w-full max-w-4xl h-[80vh] bg-[#0e0e1a] border border-glow-border rounded-2xl overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Modal header */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-glow-border bg-[#111120] flex-shrink-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-4xl h-[78vh] bg-[#0e0e1a] border border-glow-border rounded-2xl overflow-hidden shadow-2xl flex flex-col" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-3 py-2 border-b border-glow-border bg-[#111120] flex-shrink-0">
           <div className="flex items-center gap-2">
-            <Eye className="w-4 h-4 text-glow-accent"/>
-            <span className="text-sm font-semibold text-glow-text">Preview</span>
-            <span className="text-xs text-glow-muted font-mono">{lang}</span>
+            <Eye className="w-3.5 h-3.5 text-glow-accent"/>
+            <span className="text-xs font-semibold text-glow-text">Preview</span>
+            <span className="text-[10px] text-glow-muted font-mono">{lang}</span>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={openInTab}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light text-xs font-medium rounded-lg hover:bg-glow-accent/25 transition-colors">
+            <button onClick={popout} className="flex items-center gap-1 px-2.5 py-1 bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light text-[10px] font-medium rounded-lg hover:bg-glow-accent/25 transition-colors">
               <ExternalLink className="w-3 h-3"/>Pop out
             </button>
-            <button onClick={onClose} className="p-1.5 text-glow-muted hover:text-glow-text rounded-lg hover:bg-glow-card transition-colors">
-              <X className="w-4 h-4"/>
-            </button>
+            <button onClick={onClose} className="p-1 text-glow-muted hover:text-glow-text"><X className="w-3.5 h-3.5"/></button>
           </div>
         </div>
-        {/* Preview iframe */}
-        <div className="flex-1 bg-[#1a1a2e]">
-          <iframe
-            srcDoc={lang === "html" ? code : `<!DOCTYPE html><html><head><style>body{font-family:sans-serif;padding:16px;background:#fff}</style><\/head><body><script>${code}<\/script><\/body><\/html>`}
-            className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin"
-            title="Code Preview"
-          />
+        <div className="flex-1 bg-[#0d0d18]">
+          <iframe srcDoc={(lang==="html"||lang==="jsx"||lang==="tsx")?code:`<!DOCTYPE html><html><head><style>body{background:#0d0d18;color:#e2e8f0;font-family:system-ui;padding:16px}</style></head><body><script>${code}<\/script></body></html>`}
+            className="w-full h-full border-0" sandbox="allow-scripts allow-same-origin" title="Preview"/>
         </div>
       </div>
     </div>
@@ -66,158 +71,178 @@ function PreviewModal({ code, lang, onClose }: { code: string; lang: string; onC
 }
 
 // ── Code block ────────────────────────────────────────────────────────────────
-function CodeBlock({ code, lang }: { code: string; lang: string }) {
-  const [copied, setCopied]     = useState(false);
+function CodeBlock({ code, lang, filename, onCompile, onCreateProject, isProject }:
+  { code:string; lang:string; filename?:string; onCompile?:()=>void; onCreateProject?:()=>void; isProject?:boolean }) {
+  const [copied, setCopied]   = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const previewable = ["html", "css", "javascript", "js", "tsx", "jsx"].includes(lang.toLowerCase());
-  const lineCount = code.split("\n").length;
+  const [preview, setPreview] = useState(false);
+
+  const isSolidity  = lang.toLowerCase() === "solidity" || lang.toLowerCase() === "sol";
+  const isPreviewable = ["html","css","javascript","js","tsx","jsx"].includes(lang.toLowerCase());
+  const lineCount   = code.split("\n").length;
+
+  const labelMap: Record<string,string> = {
+    solidity:"Solidity", sol:"Solidity", typescript:"TypeScript", javascript:"JavaScript",
+    python:"Python", rust:"Rust", bash:"Shell", html:"HTML", css:"CSS",
+    json:"JSON", tsx:"TSX", jsx:"JSX", sql:"SQL", yaml:"YAML",
+  };
+  const label = (labelMap[lang.toLowerCase()] ?? lang) || "Code";
 
   const copy = async () => {
     await navigator.clipboard.writeText(code);
-    setCopied(true); setTimeout(() => setCopied(false), 2000);
+    setCopied(true); setTimeout(()=>setCopied(false),2000);
   };
-
-  // Filename hint from lang
-  const langLabel: Record<string, string> = {
-    solidity: "Solidity",  typescript: "TypeScript", javascript: "JavaScript",
-    python: "Python",      rust: "Rust",             bash: "Bash / Shell",
-    html: "HTML",          css: "CSS",               json: "JSON",
-    tsx: "TSX",            jsx: "JSX",               sql: "SQL",
-  };
-  const label = (langLabel[lang.toLowerCase()] ?? lang) || "Code";
 
   return (
     <>
-      <div className="my-2 rounded-xl overflow-hidden border border-glow-border/60 shadow-md group/block"
-        style={{ background: "linear-gradient(135deg,#0d0d18 0%,#0a0a14 100%)" }}>
-        {/* Terminal bar */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-glow-border/40"
-          style={{ background: "linear-gradient(90deg,#111120 0%,#0f0f1d 100%)" }}>
+      <div className="my-2 rounded-lg overflow-hidden border border-glow-border/50 shadow-sm"
+        style={{background:"linear-gradient(135deg,#0c0c16 0%,#09090f 100%)"}}>
+
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-glow-border/30"
+          style={{background:"linear-gradient(90deg,#0f0f1c 0%,#0d0d18 100%)"}}>
           <div className="flex items-center gap-2">
-            {/* Traffic lights */}
-            <div className="flex gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 hover:bg-red-400 transition-colors cursor-default"/>
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 hover:bg-amber-400 transition-colors cursor-default"/>
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 hover:bg-emerald-400 transition-colors cursor-default"/>
+            <div className="flex gap-1">
+              <span className="w-2 h-2 rounded-full bg-red-500/70"/>
+              <span className="w-2 h-2 rounded-full bg-amber-500/70"/>
+              <span className="w-2 h-2 rounded-full bg-emerald-500/70"/>
             </div>
-            <div className="flex items-center gap-1.5 ml-1.5 px-2 py-0.5 rounded-md bg-glow-surface">
-              <Terminal className="w-3 h-3 text-glow-muted/60"/>
-              <span className="text-[11px] text-glow-muted/80 font-mono">{label}</span>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/4">
+              <Terminal className="w-2.5 h-2.5 text-glow-muted/60"/>
+              <span className="text-[10px] text-glow-muted/70 font-mono">{filename || label}</span>
             </div>
-            <span className="text-[10px] text-glow-muted/40">{lineCount} lines</span>
+            <span className="text-[9px] text-glow-muted/30">{lineCount}L</span>
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center gap-1">
-            {previewable && (
-              <button onClick={() => setPreviewOpen(true)}
-                className="flex items-center gap-1 px-2 py-1 text-[10px] text-glow-muted hover:text-glow-cyan border border-glow-border/40 hover:border-glow-cyan/30 rounded-lg transition-all hover:bg-glow-cyan/5">
-                <Eye className="w-3 h-3"/>Preview
+            {/* Solidity → Compile button */}
+            {isSolidity && onCompile && (
+              <button onClick={onCompile}
+                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-glow-cyan border border-glow-cyan/25 bg-glow-cyan/8 rounded hover:bg-glow-cyan/15 transition-colors font-medium">
+                <Hammer className="w-2.5 h-2.5"/>Compile
               </button>
             )}
-            <button onClick={() => setCollapsed(!collapsed)}
-              className="p-1.5 text-glow-muted hover:text-glow-text rounded-lg transition-colors hover:bg-white/5"
-              title={collapsed ? "Expand" : "Collapse"}>
-              <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", collapsed && "rotate-180")}/>
+            {/* Multiple files → Create Project button */}
+            {isProject && onCreateProject && (
+              <button onClick={onCreateProject}
+                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-emerald-400 border border-emerald-500/25 bg-emerald-500/8 rounded hover:bg-emerald-500/15 transition-colors font-medium">
+                <FolderPlus className="w-2.5 h-2.5"/>Project
+              </button>
+            )}
+            {isPreviewable && (
+              <button onClick={()=>setPreview(true)}
+                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-glow-muted border border-glow-border/30 rounded hover:text-glow-cyan hover:border-glow-cyan/25 transition-colors">
+                <Eye className="w-2.5 h-2.5"/>Preview
+              </button>
+            )}
+            <button onClick={()=>setCollapsed(!collapsed)}
+              className="p-0.5 text-glow-muted/50 hover:text-glow-text rounded transition-colors">
+              <ChevronDown className={cn("w-3 h-3 transition-transform duration-150",collapsed&&"rotate-180")}/>
             </button>
             <button onClick={copy}
-              className={cn("flex items-center gap-1 px-2 py-1 text-[10px] border rounded-lg transition-all",
-                copied
-                  ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                  : "text-glow-muted hover:text-glow-text border-glow-border/40 hover:border-glow-accent/30 hover:bg-glow-accent/5"
-              )}>
-              {copied ? <Check className="w-3 h-3"/> : <Copy className="w-3 h-3"/>}
-              {copied ? "Copied!" : "Copy"}
+              className={cn("flex items-center gap-1 px-2 py-0.5 text-[10px] border rounded transition-all",
+                copied?"text-emerald-400 border-emerald-500/25 bg-emerald-500/8":"text-glow-muted/70 border-glow-border/30 hover:text-glow-text hover:border-glow-accent/20")}>
+              {copied?<Check className="w-2.5 h-2.5"/>:<Copy className="w-2.5 h-2.5"/>}
+              {copied?"Copied":"Copy"}
             </button>
           </div>
         </div>
 
-        {/* Code body */}
-        <div className={cn("overflow-hidden transition-all duration-200", collapsed ? "max-h-0" : "max-h-[600px] overflow-y-auto")}>
-          <SyntaxHighlighter
-            language={lang || "text"}
-            style={vscDarkPlus}
-            customStyle={{
-              margin: 0, padding: "16px 20px",
-              background: "transparent",
-              fontSize: "13px",
-              lineHeight: "1.65",
-              fontFamily: "'JetBrains Mono','Fira Code',Consolas,monospace",
-            }}
-            showLineNumbers={lineCount > 3}
-            lineNumberStyle={{ color: "#2d2d45", fontSize: "11px", minWidth: "2.5em", userSelect: "none" }}
-            wrapLongLines={false}
-          >
+        {/* Code */}
+        <div className={cn("overflow-hidden transition-all duration-150",collapsed?"max-h-0":"max-h-[450px] overflow-y-auto")}>
+          <SyntaxHighlighter language={lang||"text"} style={vscDarkPlus}
+            customStyle={{margin:0,padding:"12px 16px",background:"transparent",fontSize:"12px",lineHeight:"1.6",fontFamily:"'JetBrains Mono','Fira Code',Consolas,monospace"}}
+            showLineNumbers={lineCount>4}
+            lineNumberStyle={{color:"#2a2a3e",fontSize:"10px",minWidth:"2em",userSelect:"none"}}
+            wrapLongLines={false}>
             {code}
           </SyntaxHighlighter>
         </div>
       </div>
-
-      {previewOpen && <PreviewModal code={code} lang={lang} onClose={() => setPreviewOpen(false)}/>}
+      {preview && <PreviewModal code={code} lang={lang} onClose={()=>setPreview(false)}/>}
     </>
   );
 }
 
-// ── Streaming cursor ───────────────────────────────────────────────────────────
-function StreamingCursor() {
-  return <span className="inline-block w-0.5 h-4 bg-glow-accent ml-0.5 animate-pulse align-middle rounded-full"/>;
+// ── Send to editor ────────────────────────────────────────────────────────────
+function sendToEditor(files: Array<{filename:string;content:string;lang:string}>) {
+  // Store in sessionStorage, editor page reads it
+  sessionStorage.setItem("glowide_editor_files", JSON.stringify(files));
+  sessionStorage.setItem("glowide_editor_action", files.length === 1 ? "compile" : "project");
+  window.dispatchEvent(new CustomEvent("glowide:open-editor", { detail: { files } }));
+  // Navigate to editor
+  window.location.href = "/editor";
 }
 
 // ── AI Avatar ─────────────────────────────────────────────────────────────────
-function AIAvatar({ isStreaming }: { isStreaming?: boolean }) {
+function AIAvatar({ isStreaming }: { isStreaming?:boolean }) {
   return (
-    <div className={cn(
-      "w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 shadow-glow-sm relative",
-      "bg-gradient-to-br from-glow-accent to-purple-600",
-      isStreaming && "animate-pulse"
-    )}>
-      <Code2 className="w-3.5 h-3.5 text-white"/>
-      {isStreaming && (
-        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#080812] animate-pulse"/>
-      )}
+    <div className={cn("w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 relative","bg-gradient-to-br from-glow-accent to-purple-700",isStreaming&&"animate-pulse")}>
+      <Code2 className="w-3 h-3 text-white"/>
+      {isStreaming && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border border-[#070710] animate-pulse"/>}
     </div>
   );
 }
 
-// ── Main ChatMessage ──────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessageProps) {
   const [copied, setCopied]   = useState(false);
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState(message.content);
   const isUser = message.role === "user";
 
+  // Detect all code blocks in this message
+  const blocks = !isUser && !isStreaming ? detectBlocks(message.content) : [];
+
+  // Check if there's a .sol block
+  const solBlocks   = blocks.filter(b => b.lang.toLowerCase() === "sol" || b.lang.toLowerCase() === "solidity");
+  // Check if there are multiple named-file blocks
+  const namedBlocks = blocks.filter(b => b.filename && FILE_EXTENSIONS.test(b.filename));
+  const isMultiFile = namedBlocks.length >= 2 || (blocks.length >= 2 && blocks.some(b => b.lang === "solidity" || b.lang === "sol"));
+
+  const handleCompile = useCallback((code:string, lang:string) => {
+    sendToEditor([{ filename: "Contract.sol", content: code, lang }]);
+  }, []);
+
+  const handleCreateProject = useCallback(() => {
+    const files = (namedBlocks.length >= 2 ? namedBlocks : blocks).map(b => ({
+      filename: b.filename || `file.${b.lang}`,
+      content:  b.code,
+      lang:     b.lang,
+    }));
+    sendToEditor(files);
+  }, [namedBlocks, blocks]);
+
   const copy = async () => {
     await navigator.clipboard.writeText(message.content);
-    setCopied(true); setTimeout(() => setCopied(false), 2000);
+    setCopied(true); setTimeout(()=>setCopied(false),2000);
   };
 
   // ── User message ──────────────────────────────────────────────────────────
   if (isUser) {
     return (
-      <div className="flex justify-end px-4 py-2 group animate-slide-in-right">
-        <div className="relative max-w-[82%] lg:max-w-[70%]">
+      <div className="flex justify-end px-3 py-1 group animate-slide-in-right">
+        <div className="relative max-w-[80%] lg:max-w-[68%]">
           {editing ? (
-            <div className="space-y-2 w-full min-w-[300px]">
-              <textarea autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                className="w-full bg-glow-accent/80 text-white text-sm rounded-2xl rounded-tr-sm p-3 resize-none focus:outline-none border border-glow-accent/60 min-h-[60px]"
-                rows={3}/>
-              <div className="flex gap-2 justify-end">
-                <button onClick={() => { setEditing(false); setEditVal(message.content); }}
-                  className="text-xs text-glow-muted hover:text-glow-text px-3 py-1.5 rounded-lg border border-glow-border">Cancel</button>
-                <button onClick={() => { onEdit?.(editVal); setEditing(false); }}
-                  className="text-xs bg-glow-accent text-white px-3 py-1.5 rounded-lg hover:bg-glow-accent/90">Resend</button>
+            <div className="space-y-1.5 min-w-[260px]">
+              <textarea autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)}
+                className="w-full bg-glow-accent/80 text-white text-xs rounded-xl rounded-tr-sm p-2.5 resize-none focus:outline-none border border-glow-accent/60 min-h-[50px]" rows={3}/>
+              <div className="flex gap-1.5 justify-end">
+                <button onClick={()=>{setEditing(false);setEditVal(message.content);}}
+                  className="text-[10px] text-glow-muted px-2.5 py-1 rounded-lg border border-glow-border">Cancel</button>
+                <button onClick={()=>{onEdit?.(editVal);setEditing(false);}}
+                  className="text-[10px] bg-glow-accent text-white px-2.5 py-1 rounded-lg">Resend</button>
               </div>
             </div>
           ) : (
-            <div className="bg-gradient-to-br from-glow-accent to-purple-600 rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm text-white shadow-md shadow-glow-accent/20 whitespace-pre-wrap break-words">
+            <div className="bg-gradient-to-br from-glow-accent to-purple-700 rounded-xl rounded-tr-sm px-3 py-2 text-xs text-white shadow-sm shadow-glow-accent/15 whitespace-pre-wrap break-words">
               {message.content}
             </div>
           )}
           {!editing && (
-            <div className="absolute -bottom-7 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <ActionBtn icon={copied ? Check : Copy} label="Copy" onClick={copy} green={copied}/>
-              {onEdit && <ActionBtn icon={Edit3} label="Edit" onClick={() => { setEditing(true); setEditVal(message.content); }}/>}
+            <div className="absolute -bottom-6 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <TinyBtn icon={copied?Check:Copy} label="Copy" onClick={copy} green={copied}/>
+              {onEdit && <TinyBtn icon={Edit3} label="Edit" onClick={()=>{setEditing(true);setEditVal(message.content);}}/>}
             </div>
           )}
         </div>
@@ -227,68 +252,79 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
 
   // ── AI message ────────────────────────────────────────────────────────────
   return (
-    <div className={cn("px-3 py-1.5 group", isStreaming ? "animate-fade-in" : "animate-slide-in-left")}>
-      <div className="flex items-start gap-3">
+    <div className={cn("px-3 py-1.5 group",isStreaming?"animate-fade-in":"animate-slide-in-left")}>
+      <div className="flex items-start gap-2.5">
         <AIAvatar isStreaming={isStreaming}/>
-
         <div className="flex-1 min-w-0">
           <div className={cn(
-            "text-sm text-glow-text prose prose-invert max-w-none",
-            "prose-p:leading-relaxed prose-p:my-2 prose-p:text-glow-text",
-            "prose-headings:text-glow-text prose-headings:font-bold",
-            "prose-ul:my-2 prose-li:my-0.5 prose-li:text-glow-text",
-            "prose-ol:my-2",
+            "text-xs leading-relaxed text-glow-text prose prose-invert max-w-none",
+            "prose-p:my-1.5 prose-p:text-xs prose-p:text-glow-text prose-p:leading-relaxed",
+            "prose-headings:text-glow-text prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1",
+            "prose-h1:text-sm prose-h2:text-sm prose-h3:text-xs",
+            "prose-ul:my-1.5 prose-li:my-0 prose-li:text-xs prose-li:text-glow-text",
+            "prose-ol:my-1.5",
             "prose-strong:text-glow-text prose-strong:font-semibold",
-            "prose-a:text-glow-cyan hover:prose-a:underline",
-            "prose-blockquote:border-l-glow-accent/50 prose-blockquote:text-glow-muted",
-            "prose-hr:border-glow-border",
-            "prose-table:border-collapse",
-            "prose-th:text-glow-muted prose-th:text-xs prose-th:uppercase prose-th:tracking-wider",
-            "prose-td:text-glow-text prose-td:border-glow-border/30",
+            "prose-a:text-glow-cyan",
+            "prose-blockquote:border-l-2 prose-blockquote:border-glow-accent/50 prose-blockquote:text-glow-muted prose-blockquote:pl-3 prose-blockquote:my-2",
+            "prose-hr:border-glow-border/30 prose-hr:my-3",
           )}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
                 code({ className, children }) {
-                  const match = /language-(\w+)/.exec(className || "");
-                  const lang  = match?.[1] ?? "";
-                  const code  = String(children).replace(/\n$/, "");
-                  const inline = !className;
-                  if (inline) {
-                    return (
-                      <code className="bg-[#1a1a2e] text-glow-cyan px-1.5 py-0.5 rounded text-[12px] font-mono border border-glow-border/40">
-                        {children}
-                      </code>
-                    );
+                  const match = /language-(\w+)/.exec(className||"");
+                  const lang  = match?.[1]??"";
+                  const code  = String(children).replace(/\n$/,"");
+                  if (!className) {
+                    return <code className="bg-[#1a1a2e] text-glow-cyan px-1 py-0.5 rounded text-[11px] font-mono border border-glow-border/30">{children}</code>;
                   }
-                  return <CodeBlock code={code} lang={lang}/>;
+                  // Detect filename from preceding text (e.g. "```typescript filename.ts")
+                  const isSol = lang==="sol"||lang==="solidity";
+                  return (
+                    <CodeBlock code={code} lang={lang}
+                      onCompile={isSol ? ()=>handleCompile(code,lang) : undefined}
+                      onCreateProject={isMultiFile ? handleCreateProject : undefined}
+                      isProject={isMultiFile}
+                    />
+                  );
                 },
                 pre({ children }) { return <>{children}</>; },
                 table({ children }) {
-                  return (
-                    <div className="overflow-x-auto my-3 rounded-xl border border-glow-border/40">
-                      <table className="w-full text-sm border-collapse">{children}</table>
-                    </div>
-                  );
+                  return <div className="overflow-x-auto my-2 rounded-lg border border-glow-border/40"><table className="w-full text-xs border-collapse">{children}</table></div>;
                 },
                 th({ children }) {
-                  return <th className="px-3 py-2 text-left text-xs font-semibold text-glow-muted uppercase tracking-wider bg-glow-surface border-b border-glow-border/40">{children}</th>;
+                  return <th className="px-2.5 py-1.5 text-left text-[10px] font-semibold text-glow-muted uppercase tracking-wider bg-glow-surface border-b border-glow-border/40">{children}</th>;
                 },
                 td({ children }) {
-                  return <td className="px-3 py-2 text-sm text-glow-text border-b border-glow-border/20">{children}</td>;
+                  return <td className="px-2.5 py-1.5 text-xs text-glow-text border-b border-glow-border/20">{children}</td>;
                 },
               }}
             >
               {message.content}
             </ReactMarkdown>
-            {isStreaming && <StreamingCursor/>}
+            {isStreaming && <span className="inline-block w-0.5 h-3.5 bg-glow-accent ml-0.5 animate-pulse align-middle rounded-sm"/>}
           </div>
 
-          {/* Action bar */}
+          {/* Multi-file Create Project banner (outside markdown) */}
+          {isMultiFile && !isStreaming && (
+            <button onClick={handleCreateProject}
+              className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium rounded-lg hover:bg-emerald-500/20 transition-colors">
+              <FolderPlus className="w-3.5 h-3.5"/>Create Project in Editor ({blocks.length} files)
+            </button>
+          )}
+          {/* Solidity compile banner */}
+          {solBlocks.length > 0 && !isMultiFile && !isStreaming && (
+            <button onClick={()=>handleCompile(solBlocks[0].code, "solidity")}
+              className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-glow-cyan/10 border border-glow-cyan/20 text-glow-cyan text-xs font-medium rounded-lg hover:bg-glow-cyan/20 transition-colors">
+              <Hammer className="w-3.5 h-3.5"/>Compile in Editor
+            </button>
+          )}
+
+          {/* Action row */}
           {!isStreaming && (
-            <div className="flex items-center gap-1 mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <ActionBtn icon={copied ? Check : Copy} label={copied ? "Copied" : "Copy"} onClick={copy} green={copied}/>
-              {onRetry && <ActionBtn icon={RotateCcw} label="Retry" onClick={onRetry}/>}
+            <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              <TinyBtn icon={copied?Check:Copy} label={copied?"Copied":"Copy"} onClick={copy} green={copied}/>
+              {onRetry && <TinyBtn icon={RotateCcw} label="Retry" onClick={onRetry}/>}
             </div>
           )}
         </div>
@@ -297,17 +333,12 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
   );
 }
 
-// ── Tiny action button ────────────────────────────────────────────────────────
-function ActionBtn({ icon: Icon, label, onClick, green }: { icon: React.ElementType; label: string; onClick: () => void; green?: boolean }) {
+function TinyBtn({ icon:Icon, label, onClick, green }:{icon:React.ElementType;label:string;onClick:()=>void;green?:boolean}) {
   return (
     <button onClick={onClick}
-      className={cn(
-        "flex items-center gap-1 px-2 py-1 text-[11px] rounded-lg border transition-all",
-        green
-          ? "text-emerald-400 border-emerald-500/25 bg-emerald-500/10"
-          : "text-glow-muted border-glow-border/50 bg-glow-card/50 hover:text-glow-text hover:border-glow-accent/30 hover:bg-glow-accent/5"
-      )}>
-      <Icon className="w-3 h-3"/>{label}
+      className={cn("flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border transition-all",
+        green?"text-emerald-400 border-emerald-500/20 bg-emerald-500/8":"text-glow-muted/60 border-glow-border/30 bg-glow-card/30 hover:text-glow-text hover:border-glow-accent/20")}>
+      <Icon className="w-2.5 h-2.5"/>{label}
     </button>
   );
 }

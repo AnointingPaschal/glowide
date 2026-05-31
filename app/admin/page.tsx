@@ -1151,7 +1151,12 @@ export default function AdminPage() {
                 <div><h2 className="text-base font-semibold text-glow-text">AI Training Data</h2><p className="text-xs text-glow-muted mt-0.5">{trainingExamples.length} examples · shapes AI behaviour</p></div>
                 <div className="flex gap-2">
                   <button onClick={()=>setTrainingExamples(p=>[...p,{id:`new-${Date.now()}`,user_message:'',assistant_response:'',category:'general',enabled:true,created_at:new Date().toISOString()}])} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light rounded-lg hover:bg-glow-accent/25"><Plus className="w-3.5 h-3.5"/>Add</button>
-                  <button onClick={async()=>{setSavingTraining(true);try{const res=await fetch('/api/admin/training',{method:'POST',headers:authHeader(),body:JSON.stringify({examples:trainingExamples.filter(e=>e.enabled)})});if(res.ok)toast.success('Training saved');else toast.error('Save failed');}catch{toast.error('Failed');}finally{setSavingTraining(false);}}} disabled={savingTraining} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 rounded-lg disabled:opacity-50">
+                  <button onClick={async()=>{setSavingTraining(true);try{
+                      const res=await fetch('/api/admin/training',{method:'POST',headers:authHeader(),body:JSON.stringify({examples:trainingExamples})});
+                      const d=await res.json().catch(()=>({}));
+                      if(res.ok&&d.success)toast.success('Saved '+d.count+' training examples ✓');
+                      else toast.error((d.error??'Save failed').slice(0,80));
+                    }catch(e){toast.error((e as Error).message.slice(0,60));}finally{setSavingTraining(false);}}} disabled={savingTraining} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 rounded-lg disabled:opacity-50">
                     {savingTraining?<Loader2 className="w-3.5 h-3.5 animate-spin"/>:<Save className="w-3.5 h-3.5"/>}Save
                   </button>
                 </div>

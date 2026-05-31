@@ -13,7 +13,7 @@ import { useFileSystemStore } from "@/store/fileSystemStore";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
-import { Play, Rocket, MessageSquare, Plus, AlertCircle, Save, FileCode } from "lucide-react";
+import { Play, Rocket, MessageSquare, Plus, AlertCircle, Save, FileCode, Download } from "lucide-react";
 import type { CompileOutput } from "@/lib/compiler";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,57 @@ export default function EditorPage() {
   const [isMobile, setIsMobile] = useState(false);
 
   const activeTab = tabs.find(t => t.id === activeTabId);
+
+  // Read files sent from Chat (Compile or Create Project)
+  useEffect(() => {
+    const filesJson = sessionStorage.getItem("glowide_editor_files");
+    const action    = sessionStorage.getItem("glowide_editor_action");
+    if (!filesJson) return;
+    try {
+      const files: Array<{filename:string;content:string;lang:string}> = JSON.parse(filesJson);
+      sessionStorage.removeItem("glowide_editor_files");
+      sessionStorage.removeItem("glowide_editor_action");
+      if (!files.length) return;
+      // Import files into editor tabs
+      const newTabs = files.map((f,i) => ({
+        id: 'chat-' + Date.now() + '-' + i,
+        fileId: 'chat-file-' + i,
+        name: f.filename,
+        path: '/' + f.filename,
+        language: f.lang as import("@/types").Language,
+        content: f.content,
+        isModified: false,
+        isActive: i === files.length - 1,
+      } as import("@/types").EditorTab));
+      const lastTab = newTabs[newTabs.length-1];
+      useEditorStore.setState(state => ({
+        tabs: [...state.tabs.filter(t=>!newTabs.some(nt=>nt.name===t.name)), ...newTabs],
+        activeTabId: lastTab.id,
+      }));
+      if (action === "compile") {
+        toast.success("Contract loaded — click Compile to build");
+      } else {
+        toast.success(files.length + " files loaded into editor");
+      }
+    } catch { /* skip */ }
+  }, []); // eslint-disable-line
+
+  // Download project as ZIP
+  const downloadProject = async () => {
+    const { tabs: allTabs } = useEditorStore.getState();
+    if (!allTabs.length) { toast.error("No files to download"); return; }
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      allTabs.forEach(t => { zip.file(t.name || "file.txt", t.content || ""); });
+      const blob = await zip.generateAsync({ type:"blob" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url; a.download = "glowide-project.zip"; a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Project downloaded");
+    } catch(e) { toast.error("Download failed: " + (e as Error).message); }
+  };
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
