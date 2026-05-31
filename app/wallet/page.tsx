@@ -93,12 +93,19 @@ function QRCode({ address }: { address: string }) {
 }
 
 // ── Network logo img ──────────────────────────────────────────────────────────
+// Networks with admin-uploadable logos — these skip CryptoCompare
+const ADMIN_UPLOADABLE_NETWORKS = new Set(["arc-testnet"]);
+// Assets with admin-uploadable logos
+const ADMIN_UPLOADABLE_ASSETS = new Set(["USDC","EURC","CIRBTC","USYC"]);
+
 function NetLogo({ src, name, networkId, size=24 }: { src:string; name:string; networkId?:string; size?:number }) {
-  // If src is an admin-uploaded logo (data URI or https URL), use it as resolvedLogo
-  // so it takes priority over CryptoCompare and never gets overridden
-  const isAdminLogo = src && (src.startsWith('data:') || src.startsWith('https://'));
-  if (networkId) return <NetworkLogo networkId={networkId} fallbackLogo={src} resolvedLogo={isAdminLogo ? src : undefined} size={size}/>;
-  return <CryptoLogo symbol={name.split(' ')[0]} fallbackLogo={src} resolvedLogo={isAdminLogo ? src : undefined} size={size}/>;
+  // Only use resolvedLogo (skips CryptoCompare) for admin-managed networks/assets
+  // All other networks use fallbackLogo so CryptoCompare can load real logos
+  const isAdminManaged = networkId
+    ? ADMIN_UPLOADABLE_NETWORKS.has(networkId)
+    : ADMIN_UPLOADABLE_ASSETS.has(name.split(" ")[0].toUpperCase());
+  if (networkId) return <NetworkLogo networkId={networkId} fallbackLogo={src} resolvedLogo={isAdminManaged ? src : undefined} size={size}/>;
+  return <CryptoLogo symbol={name.split(" ")[0]} fallbackLogo={src} resolvedLogo={isAdminManaged ? src : undefined} size={size}/>;
 }
 
 // ── CCTP Destination Dropdown ─────────────────────────────────────────────────
