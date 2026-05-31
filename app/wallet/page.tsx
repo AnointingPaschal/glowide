@@ -94,8 +94,11 @@ function QRCode({ address }: { address: string }) {
 
 // ── Network logo img ──────────────────────────────────────────────────────────
 function NetLogo({ src, name, networkId, size=24 }: { src:string; name:string; networkId?:string; size?:number }) {
-  if (networkId) return <NetworkLogo networkId={networkId} fallbackLogo={src} size={size}/>;
-  return <CryptoLogo symbol={name.split(' ')[0]} fallbackLogo={src} size={size}/>;
+  // If src is an admin-uploaded logo (data URI or https URL), use it as resolvedLogo
+  // so it takes priority over CryptoCompare and never gets overridden
+  const isAdminLogo = src && (src.startsWith('data:') || src.startsWith('https://'));
+  if (networkId) return <NetworkLogo networkId={networkId} fallbackLogo={src} resolvedLogo={isAdminLogo ? src : undefined} size={size}/>;
+  return <CryptoLogo symbol={name.split(' ')[0]} fallbackLogo={src} resolvedLogo={isAdminLogo ? src : undefined} size={size}/>;
 }
 
 // ── CCTP Destination Dropdown ─────────────────────────────────────────────────
@@ -836,7 +839,7 @@ export default function WalletPage() {
                   <div className="bg-glow-card border border-glow-border rounded-xl p-3 space-y-2">
                     <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">Route</p>
                     <div className="flex items-center gap-2">
-                      <NetLogo src={CIRCLE_CHAINS[0].logo} name="Arc" networkId="arc-testnet" size={20}/>
+                      <NetLogo src={siteSettings.arcLogoUrl||CIRCLE_CHAINS[0].logo} name="Arc" networkId="arc-testnet" size={20}/>
                       <span className="text-xs text-glow-text font-semibold">Arc Testnet</span>
                       <span className="text-glow-muted/40 text-xs flex-1 text-center">·····→</span>
                       <NetLogo src={CCTP_CHAINS.find(c=>c.id===cctpDest)?.logo||''} name={cctpDest} networkId={cctpDest} size={20}/>

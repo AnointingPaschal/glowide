@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { NETWORKS, EVM_NETWORKS, LOGOS, type NetworkInfo } from '@/lib/circle-chains';
 import { NetworkLogo } from '@/components/wallet/CryptoLogo';
+import { useCircleLogos } from '@/hooks/useCircleLogos';
 import {
   Search, ExternalLink, Copy, CheckCircle, Loader2, AlertCircle,
   Hash, Wallet, Code2, Box, RefreshCw, ChevronDown, Activity,
@@ -56,7 +57,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ── Network selector dropdown ──────────────────────────────────────────────────
-function NetworkSelector({ selected, onChange }: { selected: string; onChange: (id: string) => void }) {
+function NetworkSelector({ selected, onChange, arcLogoUrl='' }: { selected: string; onChange: (id: string) => void; arcLogoUrl?: string }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const net = ALL_NETWORKS_SORTED.find(n => n.id === selected) ?? ALL_NETWORKS_SORTED[0];
@@ -68,7 +69,7 @@ function NetworkSelector({ selected, onChange }: { selected: string; onChange: (
     <div className="relative">
       <button onClick={() => setOpen(!open)}
         className="flex items-center gap-2 pl-2 pr-3 py-2 bg-glow-card border border-glow-border rounded-xl hover:border-glow-accent/40 transition-colors text-sm">
-        <NetworkLogo networkId={net.id} fallbackLogo={net.logo} size={20}/>
+        <NetworkLogo networkId={net.id} fallbackLogo={net.id==="arc-testnet" && arcLogoUrl ? arcLogoUrl : net.logo} resolvedLogo={net.id==="arc-testnet" && arcLogoUrl ? arcLogoUrl : undefined} size={20}/>
         <span className="font-medium text-glow-text hidden sm:block">{net.shortName}</span>
         {net.testnet && <span className="hidden md:block text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/25 px-1.5 py-0.5 rounded-full">TEST</span>}
         <ChevronDown className={cn("w-3.5 h-3.5 text-glow-muted transition-transform", open && "rotate-180")}/>
@@ -86,7 +87,7 @@ function NetworkSelector({ selected, onChange }: { selected: string; onChange: (
               {filtered.filter(n => n.id === 'arc-testnet').map(n => (
                 <button key={n.id} onClick={() => { onChange(n.id); setOpen(false); setSearch(''); }}
                   className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-glow-card/60 transition-colors", selected===n.id && "bg-glow-accent/10")}>
-                  <NetworkLogo networkId={n.id} fallbackLogo={n.logo} size={28}/>
+                  <NetworkLogo networkId={n.id} fallbackLogo={n.id==="arc-testnet" && arcLogoUrl ? arcLogoUrl : n.logo} resolvedLogo={n.id==="arc-testnet" && arcLogoUrl ? arcLogoUrl : undefined} size={28}/>
                   <div className="flex-1 text-left">
                     <p className="text-xs font-semibold text-glow-text">{n.name}</p>
                     <p className="text-[10px] text-glow-muted">{n.ecosystem} · USDC native gas</p>
@@ -101,7 +102,7 @@ function NetworkSelector({ selected, onChange }: { selected: string; onChange: (
               {filtered.filter(n => n.id !== 'arc-testnet' && n.testnet).map(n => (
                 <button key={n.id} onClick={() => { onChange(n.id); setOpen(false); setSearch(''); }}
                   className={cn("w-full flex items-center gap-2.5 px-3 py-2 hover:bg-glow-card/60 transition-colors", selected===n.id && "bg-glow-accent/10")}>
-                  <NetworkLogo networkId={n.id} fallbackLogo={n.logo} size={24}/>
+                  <NetworkLogo networkId={n.id} fallbackLogo={n.id==="arc-testnet" && arcLogoUrl ? arcLogoUrl : n.logo} resolvedLogo={n.id==="arc-testnet" && arcLogoUrl ? arcLogoUrl : undefined} size={24}/>
                   <div className="flex-1 text-left">
                     <p className="text-xs font-medium text-glow-text">{n.name}</p>
                     <p className="text-[10px] text-glow-muted">{n.ecosystem}{n.chainId ? ` · ${n.chainId}` : ''}</p>
@@ -115,7 +116,7 @@ function NetworkSelector({ selected, onChange }: { selected: string; onChange: (
               {filtered.filter(n => !n.testnet && n.id !== 'arc-testnet').map(n => (
                 <button key={n.id} onClick={() => { onChange(n.id); setOpen(false); setSearch(''); }}
                   className={cn("w-full flex items-center gap-2.5 px-3 py-2 hover:bg-glow-card/60 transition-colors", selected===n.id && "bg-glow-accent/10")}>
-                  <NetworkLogo networkId={n.id} fallbackLogo={n.logo} size={24}/>
+                  <NetworkLogo networkId={n.id} fallbackLogo={n.id==="arc-testnet" && arcLogoUrl ? arcLogoUrl : n.logo} resolvedLogo={n.id==="arc-testnet" && arcLogoUrl ? arcLogoUrl : undefined} size={24}/>
                   <div className="flex-1 text-left">
                     <p className="text-xs font-medium text-glow-text">{n.name}</p>
                     <p className="text-[10px] text-glow-muted">{n.ecosystem}{n.chainId ? ` · ${n.chainId}` : ''}</p>
@@ -200,6 +201,7 @@ function NetworkStats({ network }: { network: NetworkInfo }) {
 // MAIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ExplorerPage() {
+  const cl = useCircleLogos();
   const [networkId, setNetworkId] = useState('arc-testnet');
   const [query, setQuery]         = useState('');
   const [loading, setLoading]     = useState(false);
@@ -239,7 +241,7 @@ export default function ExplorerPage() {
 
         {/* Network selector + search */}
         <div className="flex gap-2">
-          <NetworkSelector selected={networkId} onChange={id => { setNetworkId(id); setResult(null); setError(null); }}/>
+          <NetworkSelector selected={networkId} arcLogoUrl={cl.ARC} onChange={id => { setNetworkId(id); setResult(null); setError(null); }}/>
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-glow-muted pointer-events-none"/>
             <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key==='Enter' && search()}
@@ -255,7 +257,7 @@ export default function ExplorerPage() {
 
         {/* Network info bar */}
         <div className="flex items-center gap-3 p-3 bg-glow-card border border-glow-border rounded-xl flex-wrap">
-          <NetworkLogo networkId={network.id} fallbackLogo={network.logo} size={28}/>
+          <NetworkLogo networkId={network.id} fallbackLogo={network.id==="arc-testnet" && cl.ARC ? cl.ARC : network.logo} resolvedLogo={network.id==="arc-testnet" && cl.ARC ? cl.ARC : undefined} size={28}/>
           <div>
             <p className="text-sm font-semibold text-glow-text">{network.name}</p>
             <p className="text-[10px] text-glow-muted">{network.ecosystem}{network.chainId ? ` · Chain ${network.chainId}` : ''}{network.testnet ? ' · Testnet' : ' · Mainnet'}</p>
@@ -420,7 +422,7 @@ export default function ExplorerPage() {
                 <button key={n.id} onClick={() => setNetworkId(n.id)}
                   className={cn("flex items-center gap-2 p-2.5 rounded-xl border transition-all text-left hover:border-glow-accent/30 hover:bg-glow-surface",
                     n.id === networkId ? "border-glow-accent/40 bg-glow-accent/5" : "border-glow-border/50 bg-glow-surface/30")}>
-                  <NetworkLogo networkId={n.id} fallbackLogo={n.logo} size={22}/>
+                  <NetworkLogo networkId={n.id} fallbackLogo={n.id==="arc-testnet" && cl.ARC ? cl.ARC : n.logo} resolvedLogo={n.id==="arc-testnet" && cl.ARC ? cl.ARC : undefined} size={22}/>
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-glow-text truncate">{n.shortName}</p>
                     <p className="text-[9px] text-glow-muted truncate">{n.testnet ? 'Testnet' : 'Mainnet'}</p>

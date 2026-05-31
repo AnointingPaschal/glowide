@@ -63,8 +63,8 @@ export function CryptoLogo({ symbol, fallbackLogo, resolvedLogo, color = '#7c3ae
 /**
  * Network logo — looks up the native token symbol for the network ID
  */
-export function NetworkLogo({ networkId, fallbackLogo, color, size = 28, className = '' }: {
-  networkId: string; fallbackLogo?: string; color?: string; size?: number; className?: string;
+export function NetworkLogo({ networkId, fallbackLogo, resolvedLogo, color, size = 28, className = '' }: {
+  networkId: string; fallbackLogo?: string; resolvedLogo?: string; color?: string; size?: number; className?: string;
 }) {
   // Map network IDs to their native token symbols for CryptoCompare
   const SYMBOLS: Record<string, string> = {
@@ -91,5 +91,5 @@ export function NetworkLogo({ networkId, fallbackLogo, color, size = 28, classNa
     'xrpl-mainnet':'XRP', 'sei-mainnet':'SEI',
   };
   const sym = SYMBOLS[networkId] ?? networkId.split('-')[0].toUpperCase();
-  return <CryptoLogo symbol={sym} fallbackLogo={fallbackLogo} color={color} size={size} className={className}/>;
+  return <CryptoLogo symbol={sym} fallbackLogo={fallbackLogo} resolvedLogo={resolvedLogo} color={color} size={size} className={className}/>;
 }
