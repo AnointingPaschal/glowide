@@ -12,6 +12,7 @@ import { CryptoLogo, NetworkLogo } from '@/components/wallet/CryptoLogo';
 import { SwapPanel } from '@/components/wallet/SwapPanel';
 import { WalletSwitcher, type StoredWallet as SW, loadWallets, saveWallets, getActiveId, setActiveId } from '@/components/wallet/WalletSwitcher';
 import { useCircleLogos } from '@/hooks/useCircleLogos';
+import { lookupToken } from '@/lib/token-lookup';
 
 // Helper: use LOGOS inline SVG as fallback (never fails)
 function circleLogo(sym: string, _color: string): string {
@@ -262,7 +263,8 @@ export default function WalletPage() {
   // Add token
   const [newTokenAddr, setNewTokenAddr]   = useState('');
   const [tokenLoading, setTokenLoading]   = useState(false);
-  const [newTokenInfo, setNewTokenInfo]   = useState<{symbol:string;name:string;decimals:number}|null>(null);
+  const [newTokenInfo, setNewTokenInfo]   = useState<{symbol:string;name:string;decimals:number;logo?:string;source?:string}|null>(null);
+  const [tokenNetworkId, setTokenNetworkId] = useState<string>(''); // network where token was found
 
   // Wallet management
   const [importKey, setImportKey]         = useState('');
@@ -410,96 +412,61 @@ export default function WalletPage() {
   };
 
   // ── Add token ───────────────────────────────────────────────────────────────
-  const lookupToken = async () => {
+  const doLookupToken = async () => {
     const addr = newTokenAddr.trim();
-    if(!/^0x[0-9a-fA-F]{40}$/.test(addr)){toast.error('Invalid EVM contract address (0x…)');return;}
+    // EVM address check (0x + 40 hex)
+    const isEVM    = /^0x[0-9a-fA-F]{40}$/.test(addr);
+    // Solana: base58 32–44 chars
+    const isSolana = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) && networkId.startsWith('solana');
+    // Stellar: ISSUER format
+    const isStellar = networkId.startsWith('stellar');
+
+    if (!isEVM && !isSolana && !isStellar) {
+      toast.error('Enter a valid token contract address');
+      return;
+    }
+
     setTokenLoading(true);
     setNewTokenInfo(null);
+    setTokenNetworkId('');
+
     try {
-      const selectedNet = NETWORKS.find(n => n.id === networkId);
-      const apiBase = selectedNet?.explorerApi ?? 'https://testnet.arcscan.app/api/v2';
-
-      // 1. Try the selected network's Blockscout API
-      let found = false;
-      try {
-        const res = await fetch(`${apiBase}/tokens/${addr}`, {signal: AbortSignal.timeout(5000)});
-        if(res.ok){
-          const d = await res.json() as Record<string,unknown>;
-          if(d.symbol){
-            setNewTokenInfo({symbol:String(d.symbol),name:String(d.name??d.symbol),decimals:parseInt(String(d.decimals??'18'))});
-            found = true;
-          }
-        }
-      } catch { /* try next */ }
-
-      // 2. Try DexScreener (works for most EVM tokens)
-      if (!found) {
-        try {
-          const ds = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addr}`, {signal: AbortSignal.timeout(5000)});
-          if(ds.ok){
-            const d = await ds.json() as {pairs?:Array<{baseToken?:{symbol?:string;name?:string};quoteToken?:{symbol?:string;name?:string}}>};
-            const pair = d.pairs?.[0];
-            if(pair?.baseToken?.symbol){
-              // baseToken is likely the one we searched
-              const tok = pair.baseToken.symbol?.toLowerCase() === addr.slice(-4).toLowerCase() ? pair.quoteToken : pair.baseToken;
-              setNewTokenInfo({
-                symbol: tok?.symbol ?? addr.slice(2,8).toUpperCase(),
-                name:   tok?.name   ?? 'Unknown Token',
-                decimals: 18,
-              });
-              found = true;
-            }
-          }
-        } catch { /* try next */ }
+      const info = await lookupToken(addr, networkId);
+      setNewTokenInfo({
+        symbol:   info.symbol,
+        name:     info.name,
+        decimals: info.decimals,
+        logo:     info.logo,
+        source:   info.source,
+      });
+      setTokenNetworkId(networkId);
+      if (info.source === 'manual') {
+        toast('Token found by address — verify details below', {icon:'ℹ️'});
+      } else {
+        toast.success(`Found: ${info.symbol} via ${info.source}`);
       }
-
-      // 3. Try eth_call to read EVM name/symbol/decimals directly from RPC
-      if (!found) {
-        const rpc = selectedNet?.rpc ?? ARC_RPC;
-        async function rpcCall(data: string): Promise<string> {
-          const r = await fetch(rpc, {method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to:addr,data},'latest']}),cache:'no-store'});
-          const d = await r.json() as {result?:string};
-          return d.result ?? '0x';
-        }
-        try {
-          // symbol() = 0x95d89b41, name() = 0x06fdde03, decimals() = 0x313ce567
-          const [symHex, nameHex, decHex] = await Promise.all([
-            rpcCall('0x95d89b41'), rpcCall('0x06fdde03'), rpcCall('0x313ce567'),
-          ]);
-          function decodeString(hex: string): string {
-            if(!hex || hex==='0x') return '';
-            // ABI string: offset(32) + length(32) + data
-            const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-            if(clean.length < 128) return '';
-            const len = parseInt(clean.slice(64,128), 16);
-            const str = clean.slice(128, 128 + len*2);
-            return decodeURIComponent(str.match(/.{1,2}/g)?.map(b=>'%'+b).join('')??'');
-          }
-          const sym = decodeString(symHex) || addr.slice(2,8).toUpperCase();
-          const nm  = decodeString(nameHex) || sym;
-          const dec = decHex && decHex!=='0x' ? parseInt(decHex,16) : 18;
-          setNewTokenInfo({symbol:sym, name:nm, decimals:isNaN(dec)?18:dec});
-          found = true;
-        } catch { /* use fallback */ }
-      }
-
-      if (!found) {
-        // Fallback: create entry with address-derived values
-        setNewTokenInfo({symbol:addr.slice(2,8).toUpperCase(), name:'Custom Token', decimals:18});
-        toast('Token found by address — name/symbol fetched from contract', {icon:'ℹ️'});
-      }
-    } catch(e){
+    } catch(e) {
       toast.error('Lookup failed: ' + ((e as Error).message ?? '').slice(0,60));
+    } finally {
+      setTokenLoading(false);
     }
-    finally { setTokenLoading(false); }
   };
   const confirmAddToken = () => {
     if(!newTokenInfo) return;
     const colors=['#7c3aed','#06b6d4','#10b981','#f59e0b','#ef4444'];
-    addToken({symbol:newTokenInfo.symbol,name:newTokenInfo.name,address:newTokenAddr,decimals:newTokenInfo.decimals,color:colors[Math.floor(Math.random()*colors.length)],networkId});
-    toast.success(newTokenInfo.symbol+' added!');
-    setNewTokenAddr(''); setNewTokenInfo(null); setPanel('assets');
+    // Use the network where the token was actually found
+    const targetNetwork = tokenNetworkId || networkId;
+    addToken({
+      symbol:   newTokenInfo.symbol,
+      name:     newTokenInfo.name,
+      address:  newTokenAddr.trim(),
+      decimals: newTokenInfo.decimals,
+      logo:     newTokenInfo.logo, // CryptoCompare logo from lookup
+      color:    colors[Math.floor(Math.random()*colors.length)],
+      networkId: targetNetwork,
+    });
+    toast.success(`${newTokenInfo.symbol} added to ${NETWORKS.find(n=>n.id===targetNetwork)?.shortName??targetNetwork}!`);
+    setNewTokenAddr(''); setNewTokenInfo(null); setTokenNetworkId(''); setPanel('assets');
   };
 
   // ── Wallet: generate new ─────────────────────────────────────────────────────
@@ -910,7 +877,7 @@ export default function WalletPage() {
                     <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Contract Address</label>
                     <div className="flex gap-2">
                       <input value={newTokenAddr} onChange={e=>{setNewTokenAddr(e.target.value);setNewTokenInfo(null);}} placeholder="0x…" className={cn(inputCls,'font-mono text-xs flex-1')}/>
-                      <button onClick={lookupToken} disabled={tokenLoading} className="px-4 py-2.5 bg-glow-accent/20 border border-glow-accent/30 text-glow-accent-light text-xs font-semibold rounded-xl disabled:opacity-50 flex items-center gap-1">
+                      <button onClick={doLookupToken} disabled={tokenLoading} className="px-4 py-2.5 bg-glow-accent/20 border border-glow-accent/30 text-glow-accent-light text-xs font-semibold rounded-xl disabled:opacity-50 flex items-center gap-1">
                         {tokenLoading?<Loader2 className="w-3.5 h-3.5 animate-spin"/>:<Search className="w-3.5 h-3.5"/>}Lookup
                       </button>
                     </div>
