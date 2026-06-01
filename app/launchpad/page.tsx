@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils';
 import { truncateAddress } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { TokenChart } from '@/components/charts/TokenChart';
 
 // ── Fonts injected via style tag ──────────────────────────────────────────
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Outfit:wght@400;500;600;700;800&display=swap');`;
@@ -118,6 +119,11 @@ function TokenCard({ token }: { token: LaunchpadToken }) {
         {token.description && (
           <p className="text-xs text-glow-muted line-clamp-2 mb-3">{token.description}</p>
         )}
+
+        {/* Mini chart for this token */}
+        <div className="mb-3">
+          <TokenChart symbol={token.symbol} address={token.token_address} name={token.name} compact/>
+        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-2 text-xs">

@@ -13,6 +13,7 @@ import { SwapPanel } from '@/components/wallet/SwapPanel';
 import { WalletSwitcher, type StoredWallet as SW, loadWallets, saveWallets, getActiveId, setActiveId } from '@/components/wallet/WalletSwitcher';
 import { useCircleLogos } from '@/hooks/useCircleLogos';
 import { lookupToken } from '@/lib/token-lookup';
+import { TokenChart } from '@/components/charts/TokenChart';
 
 // Helper: use LOGOS inline SVG as fallback (never fails)
 function circleLogo(sym: string, _color: string): string {
@@ -660,6 +661,11 @@ export default function WalletPage() {
                     <p className="text-sm text-glow-cyan font-semibold">${getUSD(currentAsset.symbol,balances[currentAsset.symbol]||'0')}</p>
                   </div>
                 </div>
+                {/* Price Chart for native Circle assets */}
+                {['USDC','EURC','cirBTC','USYC'].includes(currentAsset.symbol) && (
+                  <TokenChart symbol={currentAsset.symbol} name={currentAsset.name} compact/>
+                )}
+
                 <div className="grid grid-cols-2 gap-2.5">
                   {[{icon:Send,label:'Send',fn:()=>{setSendAmt('');setSendTo('');setPanel('send');}},{icon:QrCode,label:'Receive',fn:()=>setPanel('receive')},{icon:ArrowLeftRight,label:'Swap',fn:()=>{setSwapFrom(currentAsset.symbol);setPanel('swap');}},{icon:Zap,label:'CCTP Transfer',fn:()=>setPanel('cctp')}].map(({icon:Icon,label,fn})=>(
                     <button key={label} onClick={fn} className="flex items-center gap-2 p-3 bg-glow-card border border-glow-border rounded-xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-all text-sm text-glow-muted hover:text-glow-text">
@@ -667,6 +673,13 @@ export default function WalletPage() {
                     </button>
                   ))}
                 </div>
+                {/* Price Chart */}
+                <TokenChart
+                  symbol={currentAsset.symbol}
+                  address={customAssets.find(t=>t.symbol===currentAsset.symbol)?.address}
+                  name={currentAsset.name}
+                  compact
+                />
                 {customAssets.find(t=>t.symbol===currentAsset.symbol) && (
                   <button onClick={()=>{removeToken(customAssets.find(t=>t.symbol===currentAsset.symbol)!.address);setPanel('assets');}} className="flex items-center gap-2 text-xs text-red-400 hover:text-red-300">
                     <Trash2 className="w-3.5 h-3.5"/>Remove token

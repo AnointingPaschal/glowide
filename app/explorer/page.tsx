@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { NETWORKS, EVM_NETWORKS, LOGOS, type NetworkInfo } from '@/lib/circle-chains';
 import { NetworkLogo } from '@/components/wallet/CryptoLogo';
+import { TokenChart } from '@/components/charts/TokenChart';
 import { useCircleLogos } from '@/hooks/useCircleLogos';
 import {
   Search, ExternalLink, Copy, CheckCircle, Loader2, AlertCircle,
@@ -289,7 +290,15 @@ export default function ExplorerPage() {
         {/* ── Address result ─────────────────────────────────────── */}
         {result && (result.type === 'address' || result.type === 'contract') && (() => {
           const d = result.data as Record<string,unknown>;
+          const tokenSymbol = d.tokenSymbol as string|undefined;
           return (
+            <>
+            {/* Chart for token contracts */}
+            {d.isContract && tokenSymbol && (
+              <div className="animate-fade-in">
+                <TokenChart symbol={tokenSymbol} address={query.trim()} chainId={networkId} name={String(d.name||tokenSymbol)}/>
+              </div>
+            )}
             <div className="bg-glow-card border border-glow-border rounded-2xl overflow-hidden animate-fade-in">
               <div className="flex items-center justify-between px-5 py-3.5 border-b border-glow-border bg-glow-surface/50">
                 <div className="flex items-center gap-2.5">
@@ -337,6 +346,7 @@ export default function ExplorerPage() {
                 )}
               </div>
             </div>
+            </>
           );
         })()}
 
