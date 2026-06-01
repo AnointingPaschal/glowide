@@ -10,6 +10,7 @@ import { ContractDeployer } from "@/components/contracts/ContractDeployer";
 import { useEditorStore } from "@/store/editorStore";
 import { useFileSystemStore } from "@/store/fileSystemStore";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
+import { FileTreePanel } from "@/components/filesystem/FileTree";
 import {
   Play, Rocket, MessageSquare, Save, Download, FolderOpen,
   BookOpen, ChevronRight, X, Layers, Terminal as TermIcon,
@@ -28,41 +29,7 @@ const DIFFICULTY_COLOR = {
   advanced:     "text-red-400 bg-red-500/10 border-red-500/20",
 };
 
-// ── File Tree (slim panel) ────────────────────────────────────────────────────
-function FileTree() {
-  const { tabs, activeTabId, closeTab } = useEditorStore();
-  const setActiveTab = useEditorStore(s => s.setActiveTab);
-
-  if (!tabs.length) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full px-3 gap-3 text-center">
-        <FileCode className="w-8 h-8 text-glow-muted/20"/>
-        <p className="text-xs text-glow-muted/50">No files open</p>
-        <p className="text-[10px] text-glow-muted/30">Load a sample or paste code</p>
-      </div>
-    );
-  }
-  return (
-    <div className="py-2">
-      <p className="text-[9px] text-glow-muted/40 uppercase tracking-widest px-3 pb-1.5">Files</p>
-      {tabs.map(tab => (
-        <div key={tab.id}
-          className={cn("flex items-center gap-2 px-3 py-1.5 cursor-pointer group transition-colors",
-            tab.id === activeTabId ? "bg-glow-accent/10 text-glow-accent-light" : "text-glow-muted/70 hover:text-glow-text hover:bg-glow-card/40"
-          )}
-          onClick={() => setActiveTab(tab.id)}>
-          <FileCode className="w-3.5 h-3.5 flex-shrink-0"/>
-          <span className="text-xs truncate flex-1">{tab.name}</span>
-          {tab.isModified && <span className="w-1.5 h-1.5 bg-amber-400 rounded-full flex-shrink-0"/>}
-          <button onClick={e => { e.stopPropagation(); closeTab(tab.id); }}
-            className="opacity-0 group-hover:opacity-100 p-0.5 text-glow-muted hover:text-red-400 flex-shrink-0">
-            <X className="w-3 h-3"/>
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
+// FileTreePanel from @/components/filesystem/FileTree handles directory + file creation
 
 // ── Sample Projects Panel ─────────────────────────────────────────────────────
 function SamplesPanel({ onLoad }: { onLoad: (p: SampleProject) => void }) {
@@ -357,7 +324,7 @@ export default function EditorPage() {
             {/* Left: File tree */}
             <Panel defaultSize={15} minSize={10} maxSize={22}>
               <div className="h-full border-r border-glow-border overflow-hidden bg-[#080812]">
-                <FileTree/>
+                <FileTreePanel/>
               </div>
             </Panel>
             <PanelResizeHandle className="w-[3px] bg-glow-border/30 hover:bg-glow-accent/40 transition-colors cursor-col-resize"/>

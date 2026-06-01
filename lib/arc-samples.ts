@@ -24,7 +24,7 @@ export const ARC_SAMPLES: SampleProject[] = [
         name: "GlowToken.sol",
         language: "solidity",
         content: `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
@@ -203,7 +203,7 @@ await token.bridgeViaCCTP(amount, 0, ethers.zeroPadValue(recipient, 32));
         name: "GlowNFT.sol",
         language: "solidity",
         content: `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol";
@@ -378,7 +378,7 @@ mintNFT(2).catch(console.error);`
         name: "GlowStaking.sol",
         language: "solidity",
         content: `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -635,7 +635,7 @@ export function StakingDashboard({ contractAddress }: { contractAddress: string 
         name: "GlowDAO.sol",
         language: "solidity",
         content: `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -803,7 +803,7 @@ contract GlowDAO is ReentrancyGuard {
         name: "GlowBridge.sol",
         language: "solidity",
         content: `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -1004,7 +1004,7 @@ bridgeUSDC(
         name: "GlowMultisig.sol",
         language: "solidity",
         content: `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -1122,8 +1122,649 @@ contract GlowMultisig is ReentrancyGuard {
       }
     ]
   },
+// ── 7. Embedded Wallets (Circle Dev Controlled) ──────────────────────────────
+,{
+  id: "embedded-wallet",
+  title: "Embedded Wallet Integration",
+  description: "User-controlled embedded wallets with gasless transactions using Circle's ERC-4337 paymaster on Arc",
+  tags: ["ERC-4337", "Paymaster", "Gasless", "UserOp"],
+  difficulty: "advanced",
+  files: [
+    {
+      name: "GlowPaymaster.sol",
+      language: "solidity",
+      content: `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+/// @title GlowPaymaster — ERC-4337 Paymaster for gasless USDC txs on Arc Testnet
+/// @notice Sponsor gas fees using USDC so users don't need ETH/native tokens
+/// @dev Compatible with Circle's ERC-4337 infrastructure on Arc Testnet
+interface IEntryPoint {
+    function depositTo(address account) external payable;
+    function getDepositInfo(address account) external view returns (uint256 deposit, bool staked, uint112 stake, uint32 unstakeDelaySec, uint48 withdrawTime);
+    function handleOps(bytes[] calldata ops, address payable beneficiary) external;
+}
+
+struct UserOperation {
+    address sender;
+    uint256 nonce;
+    bytes initCode;
+    bytes callData;
+    uint256 callGasLimit;
+    uint256 verificationGasLimit;
+    uint256 preVerificationGas;
+    uint256 maxFeePerGas;
+    uint256 maxPriorityFeePerGas;
+    bytes paymasterAndData;
+    bytes signature;
+}
+
+contract GlowPaymaster is Ownable {
+    using SafeERC20 for IERC20;
+
+    IERC20 public constant USDC = IERC20(0x3600000000000000000000000000000000000000);
+    IEntryPoint public immutable entryPoint;
+
+    // Per-user sponsored gas limit (in USDC equivalent)
+    uint256 public sponsorLimitPerUser = 1_000000; // 1 USDC per user per day
+    mapping(address => uint256) public dailySponsored;
+    mapping(address => uint256) public lastSponsorDay;
+
+    uint256 public totalSponsored;
+
+    event GasSponsored(address indexed user, uint256 usdcEquivalent, bytes32 opHash);
+    event SponsorLimitUpdated(uint256 newLimit);
+
+    error ExceedsDailyLimit(uint256 attempted, uint256 remaining);
+    error InsufficientDeposit();
+
+    constructor(address entryPoint_, address owner_) Ownable(owner_) {
+        entryPoint = IEntryPoint(entryPoint_);
+    }
+
+    /// @notice Fund the paymaster with USDC to sponsor gas
+    function deposit(uint256 amount) external {
+        USDC.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    /// @notice Get remaining sponsor allowance for a user today
+    function remainingAllowance(address user) external view returns (uint256) {
+        if (block.timestamp / 1 days > lastSponsorDay[user]) return sponsorLimitPerUser;
+        return sponsorLimitPerUser - dailySponsored[user];
+    }
+
+    function setSponsorLimit(uint256 limit) external onlyOwner {
+        sponsorLimitPerUser = limit;
+        emit SponsorLimitUpdated(limit);
+    }
+
+    function withdrawUSDC(address to, uint256 amount) external onlyOwner {
+        USDC.safeTransfer(to, amount);
+    }
+
+    function paymasterBalance() external view returns (uint256) {
+        return USDC.balanceOf(address(this));
+    }
+}`,
+    },
+    {
+      name: "wallet-sdk.ts",
+      language: "typescript",
+      content: `// Circle Embedded Wallet SDK integration for Arc Testnet
+// Docs: https://developers.circle.com/wallets/user-controlled/quickstart
+
+import { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
+
+const sdk = new W3SSdk();
+
+// Initialize with your Circle App ID
+await sdk.setAppSettings({
+  appId: process.env.NEXT_PUBLIC_CIRCLE_APP_ID!,
+});
+
+// Create a user-controlled wallet on Arc Testnet
+export async function createWallet(userToken: string, encryptionKey: string) {
+  await sdk.setAuthentication({
+    userToken,
+    encryptionKey,
+  });
+
+  const { data } = await fetch("/api/circle/create-wallet", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ blockchains: ["ARC-TESTNET"] }),
+  }).then(r => r.json());
+
+  // Complete the wallet creation challenge
+  await sdk.execute(data.challengeId, (error, result) => {
+    if (error) throw error;
+    console.log("Wallet created:", result?.type);
+  });
+}
+
+// Send USDC gaslessly via paymaster
+export async function sendUSDCGasless(
+  userToken: string,
+  encryptionKey: string,
+  toAddress: string,
+  amount: string // "1.50" = 1.50 USDC
+) {
+  await sdk.setAuthentication({ userToken, encryptionKey });
+
+  const response = await fetch("/api/circle/send-transaction", {
+    method: "POST",
+    body: JSON.stringify({
+      walletId: "YOUR_WALLET_ID",
+      tokenId:  "USDC-ARC-TESTNET",
+      destinationAddress: toAddress,
+      amounts: [amount],
+      fee: { type: "level", config: { feeLevel: "MEDIUM" } },
+    }),
+  }).then(r => r.json());
+
+  // User signs via SDK
+  await sdk.execute(response.data.challengeId, (error, result) => {
+    if (error) throw error;
+    console.log("TX:", result);
+  });
+}`,
+    }
+  ]
+},
+
+// ── 8. Chain-Abstracted Balance (Gateway) ────────────────────────────────────
+{
+  id: "unified-balance",
+  title: "Chain-Abstracted Balance",
+  description: "Circle Gateway: unified USDC balance and payments across all EVM chains simultaneously",
+  tags: ["Gateway", "Chain-Abstraction", "Unified Balance", "Multi-chain"],
+  difficulty: "intermediate",
+  files: [
+    {
+      name: "GlowGateway.sol",
+      language: "solidity",
+      content: `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+/// @title GlowGateway — Chain-Abstracted USDC payments on Arc Testnet
+/// @notice Accept USDC payments from ANY chain via Circle Gateway
+/// @dev Integrates with Circle Gateway for unified balance management
+/// @custom:docs https://developers.circle.com/gateway/quickstarts/unified-balance-evm
+contract GlowGateway is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
+    IERC20 public constant USDC = IERC20(0x3600000000000000000000000000000000000000);
+
+    // ── Payment tracking ──────────────────────────────────────────────────
+    struct Payment {
+        address payer;
+        uint256 amount;
+        uint256 timestamp;
+        string  reference;
+        uint32  sourceChain;  // 0 = Arc native, else chain ID
+        bool    settled;
+    }
+
+    uint256 public paymentCount;
+    mapping(bytes32 => Payment) public payments;
+    mapping(address => uint256) public totalPaid;
+    uint256 public totalRevenue;
+    address public treasury;
+
+    // Gateway operator (authorized to relay cross-chain payments)
+    mapping(address => bool) public operators;
+
+    event PaymentReceived(
+        bytes32 indexed paymentId,
+        address indexed payer,
+        uint256 amount,
+        uint32  sourceChain,
+        string  reference
+    );
+    event PaymentSettled(bytes32 indexed paymentId);
+    event Withdrawn(address indexed treasury, uint256 amount);
+
+    error NotOperator();
+    error AlreadySettled();
+    error ZeroAmount();
+
+    modifier onlyOperator() {
+        if (!operators[msg.sender] && msg.sender != owner()) revert NotOperator();
+        _;
+    }
+
+    constructor(address owner_, address treasury_) Ownable(owner_) {
+        treasury = treasury_;
+        operators[owner_] = true;
+    }
+
+    // ── Native Arc payment ────────────────────────────────────────────────
+
+    /// @notice Pay directly with Arc Testnet USDC
+    /// @param amount    USDC amount (represented in 18 dec on Arc native)
+    /// @param reference Payment reference (e.g. order ID)
+    function payNative(uint256 amount, string calldata reference)
+        external nonReentrant returns (bytes32 paymentId) {
+        if (amount == 0) revert ZeroAmount();
+        USDC.safeTransferFrom(msg.sender, address(this), amount);
+
+        paymentId = _createPayment(msg.sender, amount, 5042002, reference);
+        totalRevenue += amount;
+        totalPaid[msg.sender] += amount;
+    }
+
+    // ── Cross-chain payment relay (called by Gateway operator) ────────────
+
+    /// @notice Relay a USDC payment that originated on another chain
+    /// @dev Called by Circle Gateway after verifying cross-chain USDC transfer
+    function relayPayment(
+        address payer,
+        uint256 amount,
+        uint32  sourceChain,
+        string  calldata reference
+    ) external onlyOperator returns (bytes32 paymentId) {
+        if (amount == 0) revert ZeroAmount();
+        paymentId = _createPayment(payer, amount, sourceChain, reference);
+        totalRevenue += amount;
+        totalPaid[payer] += amount;
+    }
+
+    function _createPayment(
+        address payer, uint256 amount, uint32 chain, string memory reference
+    ) internal returns (bytes32 paymentId) {
+        paymentId = keccak256(abi.encodePacked(payer, amount, block.timestamp, ++paymentCount));
+        payments[paymentId] = Payment({
+            payer: payer, amount: amount,
+            timestamp: block.timestamp, reference: reference,
+            sourceChain: chain, settled: false
+        });
+        emit PaymentReceived(paymentId, payer, amount, chain, reference);
+    }
+
+    function settle(bytes32 paymentId) external onlyOwner {
+        Payment storage p = payments[paymentId];
+        if (p.settled) revert AlreadySettled();
+        p.settled = true;
+        emit PaymentSettled(paymentId);
+    }
+
+    function withdraw() external onlyOwner {
+        uint256 bal = USDC.balanceOf(address(this));
+        USDC.safeTransfer(treasury, bal);
+        emit Withdrawn(treasury, bal);
+    }
+
+    function addOperator(address op) external onlyOwner { operators[op] = true; }
+    function removeOperator(address op) external onlyOwner { operators[op] = false; }
+    function setTreasury(address t) external onlyOwner { treasury = t; }
+
+    function getPayment(bytes32 id) external view returns (Payment memory) { return payments[id]; }
+}`,
+    },
+    {
+      name: "gateway-api.ts",
+      language: "typescript",
+      content: `// Circle Gateway — Chain-Abstracted USDC Balance
+// Docs: https://developers.circle.com/gateway/quickstarts/unified-balance-evm
+// This lets users pay from ANY chain — Ethereum, Base, Arbitrum, etc.
+// and your app receives it on Arc Testnet unified.
+
+const CIRCLE_API = "https://api.circle.com/v1/w3s";
+const API_KEY    = process.env.CIRCLE_API_KEY!;
+
+const headers = {
+  "Content-Type": "application/json",
+  "Authorization": \`Bearer \${API_KEY}\`,
+};
+
+// Get unified USDC balance across all connected chains
+export async function getUnifiedBalance(walletAddress: string) {
+  const res = await fetch(
+    \`\${CIRCLE_API}/wallets/balances?address=\${walletAddress}&includeChains=true\`,
+    { headers }
+  );
+  const { data } = await res.json();
+  // Returns combined USDC balance from ETH + Base + Arc + ARB etc.
+  return {
+    totalBalance: data.tokenBalances.find((t: {symbol:string}) => t.symbol === "USDC")?.amount ?? "0",
+    perChain:     data.tokenBalances,
+  };
+}
+
+// Initiate cross-chain USDC payment — user pays from any chain
+export async function initiatePayment({
+  amount,
+  destinationChain = "ARC-TESTNET",
+  destinationAddress,
+  reference,
+}: {
+  amount: string;
+  destinationChain?: string;
+  destinationAddress: string;
+  reference: string;
+}) {
+  const res = await fetch(\`\${CIRCLE_API}/transactions/transfer\`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      idempotencyKey:     crypto.randomUUID(),
+      destinationAddress,
+      refId:              reference,
+      amounts:            [amount],
+      destinationChainId: destinationChain,
+      tokenId:            "USDC",
+      // Circle Gateway will route from user's best chain automatically
+      routeOptimization:  "LOWEST_COST",
+    }),
+  });
+  const { data } = await res.json();
+  return data; // { transactionId, state, txHash }
+}
+
+// React hook: poll for payment status
+export async function waitForPayment(transactionId: string, timeoutMs = 120_000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const res = await fetch(\`\${CIRCLE_API}/transactions/\${transactionId}\`, { headers });
+    const { data } = await res.json();
+    if (data.state === "CONFIRMED") return data;
+    if (data.state === "FAILED") throw new Error("Payment failed");
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  throw new Error("Payment timeout");
+}`,
+    }
+  ]
+},
+
+// ── 9. USYC Tokenized Money Market ───────────────────────────────────────────
+{
+  id: "usyc-integration",
+  title: "USYC Tokenized Money Market",
+  description: "Integrate USYC (Hashnote US Yield Coin) — earn yield on-chain via Circle's tokenized money market fund",
+  tags: ["USYC", "Yield", "Tokenized", "RWA", "Money Market"],
+  difficulty: "advanced",
+  files: [
+    {
+      name: "GlowYield.sol",
+      language: "solidity",
+      content: `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+/// @title GlowYield — USYC yield strategy vault on Arc Testnet
+/// @notice Deposit USDC → receive USYC (yield-bearing) → redeem anytime
+/// @dev USYC = Hashnote US Yield Coin via Circle on Arc Testnet
+/// @custom:usyc 0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C
+contract GlowYield is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
+    // Arc Testnet
+    IERC20 public constant USDC = IERC20(0x3600000000000000000000000000000000000000);
+    IERC20 public constant USYC = IERC20(0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C);
+
+    // ── Vault accounting ──────────────────────────────────────────────────
+    mapping(address => uint256) public usdcDeposited;   // original USDC deposited
+    mapping(address => uint256) public usycBalance;      // USYC received for user
+    mapping(address => uint256) public depositTime;
+
+    uint256 public totalDeposited;
+    uint256 public totalUsycManaged;
+
+    // Circle USYC operator — authorized to convert USDC↔USYC
+    address public usycOperator;
+
+    event Deposited(address indexed user, uint256 usdcAmount, uint256 usycReceived);
+    event Redeemed(address indexed user, uint256 usycAmount, uint256 usdcReceived);
+    event YieldClaimed(address indexed user, uint256 yieldAmount);
+
+    error InsufficientBalance(uint256 have, uint256 need);
+    error NotOperator();
+
+    modifier onlyOperator() {
+        if (msg.sender != usycOperator && msg.sender != owner()) revert NotOperator();
+        _;
+    }
+
+    constructor(address owner_, address operator_) Ownable(owner_) {
+        usycOperator = operator_;
+    }
+
+    /// @notice Deposit USDC and receive USYC yield-bearing tokens
+    /// @dev Conversion rate: 1 USDC ≈ 1 USYC (USYC accrues value over time)
+    function deposit(uint256 usdcAmount) external nonReentrant returns (uint256 usycAmount) {
+        USDC.safeTransferFrom(msg.sender, address(this), usdcAmount);
+
+        // Operator converts USDC → USYC at current rate
+        // In production: call Circle's USYC subscription API
+        usycAmount = _convertToUsyc(usdcAmount);
+
+        usdcDeposited[msg.sender]  += usdcAmount;
+        usycBalance[msg.sender]    += usycAmount;
+        depositTime[msg.sender]    = depositTime[msg.sender] == 0 ? block.timestamp : depositTime[msg.sender];
+        totalDeposited             += usdcAmount;
+        totalUsycManaged           += usycAmount;
+
+        emit Deposited(msg.sender, usdcAmount, usycAmount);
+    }
+
+    /// @notice Redeem USYC → USDC (includes accrued yield)
+    function redeem(uint256 usycAmount) external nonReentrant returns (uint256 usdcAmount) {
+        if (usycBalance[msg.sender] < usycAmount)
+            revert InsufficientBalance(usycBalance[msg.sender], usycAmount);
+
+        usdcAmount = _convertToUsdc(usycAmount);
+
+        usycBalance[msg.sender]  -= usycAmount;
+        usdcDeposited[msg.sender] = usycBalance[msg.sender] == 0 ? 0 : usdcDeposited[msg.sender];
+        totalUsycManaged         -= usycAmount;
+
+        USDC.safeTransfer(msg.sender, usdcAmount);
+        emit Redeemed(msg.sender, usycAmount, usdcAmount);
+    }
+
+    /// @notice View estimated yield for a user
+    function estimatedYield(address user) external view returns (uint256) {
+        if (usycBalance[user] == 0) return 0;
+        // USYC yield: ~5% APY accrued in token price appreciation
+        uint256 elapsed = block.timestamp - depositTime[user];
+        return (usdcDeposited[user] * 500 * elapsed) / (10_000 * 365 days);
+    }
+
+    // ── Operator: manage USDC↔USYC conversion ────────────────────────────
+
+    /// @notice Operator supplies USYC tokens to the vault (after converting USDC)
+    function supplyUsyc(uint256 amount) external onlyOperator {
+        USYC.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    function setOperator(address op) external onlyOwner { usycOperator = op; }
+
+    function _convertToUsyc(uint256 usdcAmount) internal view returns (uint256) {
+        // Approximate 1:1 with slight discount for fees
+        // In production: use Circle's USYC subscription API for exact rate
+        return (usdcAmount * 999) / 1000;
+    }
+
+    function _convertToUsdc(uint256 usycAmount) internal view returns (uint256) {
+        // USYC appreciates in value — returns more USDC than deposited
+        // In production: use USYC redemption API
+        uint256 usycBal = USYC.balanceOf(address(this));
+        if (usycBal == 0) return usycAmount;
+        uint256 usdcBal = USDC.balanceOf(address(this));
+        return (usycAmount * usdcBal) / usycBal;
+    }
+
+    function vaultStats() external view returns (uint256 deposits, uint256 usycHeld, uint256 usdcHeld) {
+        return (totalDeposited, USYC.balanceOf(address(this)), USDC.balanceOf(address(this)));
+    }
+}`,
+    }
+  ]
+},
+
+// ── 10. Stablecoin Payroll ────────────────────────────────────────────────────
+{
+  id: "usdc-payroll",
+  title: "USDC Payroll Contract",
+  description: "Automated on-chain payroll in USDC — schedule recurring payments to employees/contractors",
+  tags: ["Payroll", "USDC", "Automation", "Recurring"],
+  difficulty: "intermediate",
+  files: [
+    {
+      name: "GlowPayroll.sol",
+      language: "solidity",
+      content: `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+/// @title GlowPayroll — Automated USDC payroll on Arc Testnet
+/// @notice Schedule recurring USDC payments on-chain
+contract GlowPayroll is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
+    IERC20 public constant USDC = IERC20(0x3600000000000000000000000000000000000000);
+
+    enum Frequency { Weekly, BiWeekly, Monthly }
+
+    struct Employee {
+        address wallet;
+        uint256 salaryPerPeriod;  // USDC (6 dec on ERC-20 / 18 dec native)
+        Frequency frequency;
+        uint256 nextPaymentAt;
+        uint256 totalPaid;
+        bool    active;
+        string  name;
+    }
+
+    Employee[] public employees;
+    mapping(address => uint256) public employeeIndex;
+    mapping(address => bool)    public isEmployee;
+
+    uint256 public totalDisbursed;
+
+    event EmployeeAdded(address indexed wallet, uint256 salary, Frequency freq);
+    event PaymentSent(address indexed wallet, uint256 amount, uint256 periodTimestamp);
+    event EmployeeDeactivated(address indexed wallet);
+
+    error NotEmployee();
+    error NotDueYet(uint256 nextPaymentAt);
+    error InsufficientFunds(uint256 balance, uint256 required);
+
+    constructor(address owner_) Ownable(owner_) {}
+
+    /// @notice Add employee to payroll
+    function addEmployee(
+        address wallet, uint256 salaryPerPeriod,
+        Frequency frequency, string calldata name
+    ) external onlyOwner {
+        if (isEmployee[wallet]) return; // Update salary instead
+
+        uint256 periodSeconds = _periodToSeconds(frequency);
+        employees.push(Employee({
+            wallet: wallet, salaryPerPeriod: salaryPerPeriod,
+            frequency: frequency, nextPaymentAt: block.timestamp + periodSeconds,
+            totalPaid: 0, active: true, name: name
+        }));
+        employeeIndex[wallet] = employees.length - 1;
+        isEmployee[wallet]    = true;
+
+        emit EmployeeAdded(wallet, salaryPerPeriod, frequency);
+    }
+
+    /// @notice Process all due payroll payments
+    function runPayroll() external onlyOwner nonReentrant {
+        uint256 total = 0;
+        for (uint256 i; i < employees.length;) {
+            Employee storage emp = employees[i];
+            if (emp.active && block.timestamp >= emp.nextPaymentAt) {
+                total += emp.salaryPerPeriod;
+            }
+            unchecked { ++i; }
+        }
+
+        uint256 balance = USDC.balanceOf(address(this));
+        if (balance < total) revert InsufficientFunds(balance, total);
+
+        for (uint256 i; i < employees.length;) {
+            Employee storage emp = employees[i];
+            if (emp.active && block.timestamp >= emp.nextPaymentAt) {
+                uint256 period = emp.nextPaymentAt;
+                emp.nextPaymentAt += _periodToSeconds(emp.frequency);
+                emp.totalPaid     += emp.salaryPerPeriod;
+                totalDisbursed    += emp.salaryPerPeriod;
+
+                USDC.safeTransfer(emp.wallet, emp.salaryPerPeriod);
+                emit PaymentSent(emp.wallet, emp.salaryPerPeriod, period);
+            }
+            unchecked { ++i; }
+        }
+    }
+
+    /// @notice Pay a single employee now (emergency / off-cycle)
+    function payEmployee(address wallet, uint256 amount) external onlyOwner nonReentrant {
+        if (!isEmployee[wallet]) revert NotEmployee();
+        USDC.safeTransfer(wallet, amount);
+        employees[employeeIndex[wallet]].totalPaid += amount;
+        totalDisbursed += amount;
+        emit PaymentSent(wallet, amount, block.timestamp);
+    }
+
+    function deactivate(address wallet) external onlyOwner {
+        if (!isEmployee[wallet]) revert NotEmployee();
+        employees[employeeIndex[wallet]].active = false;
+        emit EmployeeDeactivated(wallet);
+    }
+
+    function fund(uint256 amount) external { USDC.safeTransferFrom(msg.sender, address(this), amount); }
+    function withdraw(uint256 amount) external onlyOwner { USDC.safeTransfer(owner(), amount); }
+
+    function getNextDueAt() external view returns (uint256 timestamp, uint256 totalDue) {
+        timestamp = type(uint256).max;
+        for (uint256 i; i < employees.length;) {
+            if (employees[i].active) {
+                if (employees[i].nextPaymentAt < timestamp) timestamp = employees[i].nextPaymentAt;
+                if (block.timestamp >= employees[i].nextPaymentAt) totalDue += employees[i].salaryPerPeriod;
+            }
+            unchecked { ++i; }
+        }
+        if (timestamp == type(uint256).max) timestamp = 0;
+    }
+
+    function employeeCount() external view returns (uint256 active, uint256 total) {
+        total = employees.length;
+        for (uint256 i; i < total;) { if (employees[i].active) active++; unchecked { ++i; } }
+    }
+
+    function _periodToSeconds(Frequency f) internal pure returns (uint256) {
+        if (f == Frequency.Weekly)    return 7 days;
+        if (f == Frequency.BiWeekly)  return 14 days;
+        return 30 days; // Monthly
+    }
+}`,
+    }
+  ]
+}
 ];
 
 export function getProjectById(id: string): SampleProject | undefined {
   return ARC_SAMPLES.find(p => p.id === id);
 }
+

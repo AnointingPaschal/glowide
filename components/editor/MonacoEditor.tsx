@@ -83,11 +83,13 @@ export function MonacoEditor() {
   }
 
   return (
-    <div className="flex-1 overflow-hidden">
+    <div className="flex-1 overflow-hidden w-full h-full" style={{minWidth:0}}>
       <Editor
+        key={activeTabId}
         height="100%"
+        width="100%"
         language={activeTab.language || "plaintext"}
-        value={activeTab.content}
+        value={activeTab.content ?? ""}
         theme={theme}
         onChange={handleChange}
         onMount={handleMount}
