@@ -19,6 +19,8 @@ interface EditorState {
   fontSize: number;
   wordWrap: "on" | "off";
   minimap: boolean;
+  lastCompileResult: import("@/lib/compiler").CompileOutput | null;
+  setCompileResult: (r: import("@/lib/compiler").CompileOutput | null) => void;
   
   // Actions
   setActiveProject: (projectId: string) => void;
@@ -56,6 +58,8 @@ export const useEditorStore = create<EditorState>()(
       isTerminalOpen: true,
       isAIPanelOpen: true,
       aiPanelWidth: 360,
+      lastCompileResult: null,
+      setCompileResult: (r) => set({ lastCompileResult: r }),
       theme: "vs-dark",
       fontSize: 14,
       wordWrap: "on",

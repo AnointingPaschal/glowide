@@ -101,7 +101,7 @@ function SamplesPanel({ onLoad }: { onLoad: (p: SampleProject) => void }) {
 
 // ── Main Editor Page ──────────────────────────────────────────────────────────
 export default function EditorPage() {
-  const { tabs, activeTabId, isTerminalOpen, toggleTerminal, updateTabContent, closeTab, setActiveTab } = useEditorStore();
+  const { tabs, activeTabId, isTerminalOpen, toggleTerminal, updateTabContent, closeTab, setActiveTab, lastCompileResult, setCompileResult: storeSetCompileResult } = useEditorStore();
   const { updateContent, nodes } = useFileSystemStore();
 
   const [rightPanel,     setRightPanel]     = useState<"chat"|"deploy"|"samples"|null>("samples");
@@ -197,6 +197,7 @@ export default function EditorPage() {
       });
       const result: CompileOutput = await res.json();
       setCompileResult(result);
+      storeSetCompileResult(result);
       if (result.success) {
         toast.success(`Compiled: ${result.contractName}`);
         log(`✓ ${result.contractName} compiled successfully`, "success");
@@ -361,7 +362,7 @@ export default function EditorPage() {
                     {rightPanel === "chat"    && <ChatPanel compact editorMode/>}
                     {rightPanel === "deploy"  && (
                       <div className="flex-1 overflow-y-auto">
-                        <ContractDeployer compiled={compileResult}/>
+                        <ContractDeployer compiled={compileResult ?? lastCompileResult}/>
                       </div>
                     )}
                   </div>
