@@ -144,6 +144,7 @@ async function fetchDexCandles(pairAddress: string, chainId: string): Promise<Oh
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const symbol    = (searchParams.get("symbol") ?? "").toUpperCase();
+  const forceCG   = searchParams.get("source") === "coingecko";
   const address   = searchParams.get("address") ?? "";
   const timeframe = searchParams.get("tf") ?? "1D";
   const type      = searchParams.get("type") ?? "line"; // "line" | "candlestick" | "meta"
@@ -175,16 +176,16 @@ export async function GET(req: NextRequest) {
 
     // ── CHART data ─────────────────────────────────────────────────────────
     if (type === "candlestick") {
-      // Try CoinGecko OHLC first (has it for major coins)
+      // CoinGecko OHLC (primary source — always tried first)
       if (cgId) {
         try {
           const ohlc = await fetchCoinGeckoOHLC(cgId, days);
           if (ohlc.length) return NextResponse.json({ type:"candlestick", data:ohlc, source:"coingecko" });
-        } catch { /* try dex */ }
+        } catch { /* try approximation */ }
       }
 
-      // DexScreener OHLC (for on-chain tokens)
-      if (address) {
+      // DexScreener OHLC (only if not forcing CoinGecko)
+      if (!forceCG && address) {
         try {
           const dex = await fetchDexScreener(address);
           if (dex?.pairAddress) {
@@ -219,16 +220,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error:"No chart data available", data:[] });
     }
 
-    // Line chart
+    // Line chart — CoinGecko first
     if (cgId) {
       try {
         const line = await fetchCoinGeckoLine(cgId, days);
         return NextResponse.json({ type:"line", data:line, source:"coingecko" });
-      } catch { /* try dex */ }
+      } catch { /* try dex if not forced */ }
     }
 
-    // DexScreener price data for on-chain tokens
-    if (address) {
+    // DexScreener price data (only if CoinGecko had no data and not forced)
+    if (!forceCG && address) {
       try {
         const dex = await fetchDexScreener(address);
         if (dex) {
