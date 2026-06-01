@@ -7,7 +7,7 @@ import {
   optimism, optimismSepolia, arbitrum, arbitrumSepolia,
   base, baseSepolia, polygon, polygonAmoy, linea, lineaSepolia,
   celo, celoAlfajores, bsc, bscTestnet, zkSync, zkSyncSepoliaTestnet,
-  sonic, worldchain, zksync,
+  sonic, worldchain,
 } from "viem/chains";
 import type { Chain } from "viem";
 
@@ -190,31 +190,7 @@ export async function lookupEVMToken(
   return { name: "Unknown Token", symbol: sym, decimals: 18, logo, source: "manual" };
 }
 
-// ── Non-EVM ecosystems (lookup only — no wallet interaction needed) ─────────
-export async function lookupSolanaToken(mint: string): Promise<TokenInfo> {
-  try {
-    // Jupiter token list for Solana
-    const res = await fetch(`https://token.jup.ag/all`, { signal: AbortSignal.timeout(6000), cache: "force-cache" });
-    if (res.ok) {
-      const tokens = await res.json() as Array<{address:string;symbol:string;name:string;decimals:number;logoURI?:string}>;
-      const tok = tokens.find(t => t.address === mint);
-      if (tok) {
-        const logo = tok.logoURI || await getCCLogo(tok.symbol) || undefined;
-        return { name: tok.name, symbol: tok.symbol, decimals: tok.decimals, logo, source: "jupiter" };
-      }
-    }
-  } catch { /* try CryptoCompare */ }
-  return { name: "Solana Token", symbol: mint.slice(0,6), decimals: 9, source: "manual" };
-}
-
-export async function lookupStellarToken(assetCode: string): Promise<TokenInfo> {
-  const logo = await getCCLogo(assetCode);
-  return { name: assetCode, symbol: assetCode, decimals: 7, logo, source: "stellar" };
-}
-
-// Convenience: detect chain type and route
+// All supported networks are EVM — direct lookup
 export async function lookupToken(address: string, networkId: string): Promise<TokenInfo> {
-  if (networkId.startsWith("solana")) return lookupSolanaToken(address);
-  if (networkId.startsWith("stellar")) return lookupStellarToken(address);
   return lookupEVMToken(address, networkId);
 }

@@ -415,15 +415,9 @@ export default function WalletPage() {
   // ── Add token ───────────────────────────────────────────────────────────────
   const doLookupToken = async () => {
     const addr = newTokenAddr.trim();
-    // EVM address check (0x + 40 hex)
-    const isEVM    = /^0x[0-9a-fA-F]{40}$/.test(addr);
-    // Solana: base58 32–44 chars
-    const isSolana = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) && networkId.startsWith('solana');
-    // Stellar: ISSUER format
-    const isStellar = networkId.startsWith('stellar');
-
-    if (!isEVM && !isSolana && !isStellar) {
-      toast.error('Enter a valid token contract address');
+    // EVM address check only
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+      toast.error('Enter a valid EVM contract address (0x…)');
       return;
     }
 
@@ -661,11 +655,6 @@ export default function WalletPage() {
                     <p className="text-sm text-glow-cyan font-semibold">${getUSD(currentAsset.symbol,balances[currentAsset.symbol]||'0')}</p>
                   </div>
                 </div>
-                {/* Price Chart for native Circle assets */}
-                {['USDC','EURC','cirBTC','USYC'].includes(currentAsset.symbol) && (
-                  <TokenChart symbol={currentAsset.symbol} name={currentAsset.name} compact/>
-                )}
-
                 <div className="grid grid-cols-2 gap-2.5">
                   {[{icon:Send,label:'Send',fn:()=>{setSendAmt('');setSendTo('');setPanel('send');}},{icon:QrCode,label:'Receive',fn:()=>setPanel('receive')},{icon:ArrowLeftRight,label:'Swap',fn:()=>{setSwapFrom(currentAsset.symbol);setPanel('swap');}},{icon:Zap,label:'CCTP Transfer',fn:()=>setPanel('cctp')}].map(({icon:Icon,label,fn})=>(
                     <button key={label} onClick={fn} className="flex items-center gap-2 p-3 bg-glow-card border border-glow-border rounded-xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-all text-sm text-glow-muted hover:text-glow-text">

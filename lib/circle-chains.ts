@@ -19,10 +19,6 @@ export const LOGOS: Record<string, string> = {
   arb:      circle('#2D374B','ARB'),
   base:     circle('#0052FF','B', 18),
   polygon:  circle('#8247E5','POL'),
-  solana:   circle('#9945FF','◎', 16),
-  stellar:  circle('#3E1BDB','✦', 16),
-  sui:      circle('#4CA2FF','SUI'),
-  aptos:    circle('#00BFD8','APT'),
   linea:    circle('#121212','LIN'),
   zksync:   circle('#4E529A','ZK'),
   starknet: circle('#EC796B','⬟', 16),
@@ -34,19 +30,9 @@ export const LOGOS: Record<string, string> = {
   ink:      circle('#8B5CF6','INK'),
   unichain: circle('#FF007A','UNI'),
   xdc:      circle('#2187D0','XDC'),
-  xrpl:     circle('#346AA9','XRP'),
   hedera:   circle('#00AAAD','ℏ', 16),
-  near:     circle('#000000','NEAR', 11),
-  algorand: circle('#000000','ALGO', 11),
-  polkadot: circle('#E6007A','DOT'),
-  sei:      circle('#9E1515','SEI'),
-  noble:    circle('#6B21A8','NOB'),
   plume:    circle('#8B5CF6','PLM'),
   codex:    circle('#059669','CDX'),
-  edge:     circle('#1E40AF','EDGE',11),
-  pharos:   circle('#0EA5E9','PHR'),
-  morph:    circle('#10B981','MRP'),
-  hyperliquid: circle('#00B4D8','HL'),
   injective: circle('#00B4D8','INJ'),
   usdc:     circle('#2775CA','USDC',12),
   eurc:     circle('#1A56DB','€', 18),
@@ -58,7 +44,7 @@ export interface NetworkInfo {
   id: string;
   name: string;
   shortName: string;
-  ecosystem: 'EVM' | 'SVM' | 'Stellar' | 'SUI' | 'Aptos' | 'Algorand' | 'NEAR' | 'Polkadot' | 'XRPL' | 'Hedera' | 'Cosmos' | 'Other';
+  ecosystem: 'EVM';
   color: string;
   logo: string;
   testnet: boolean;
@@ -213,86 +199,10 @@ export const NETWORKS: NetworkInfo[] = [
     usdc:'0xFEce4462D57bD51A6A552365A011b95f0E16d9B7',
   },
   // ── SOLANA ────────────────────────────────────────────────────────────────────
-  {
-    id:'solana-mainnet', name:'Solana', shortName:'Solana', ecosystem:'SVM', testnet:false,
-    color:'#9945FF', logo:LOGOS.solana,
-    explorer:'https://solscan.io',
-    cctpDomain:5, cctpSupported:true,
-    usdc:'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-    eurc:'HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr',
-    usyc:'7LWanZteUKtvFjv4MHYgKXXdAuCQYFPJysL9pxxdRQGn',
-  },
-  {
-    id:'solana-devnet', name:'Solana Devnet', shortName:'Sol Devnet', ecosystem:'SVM', testnet:true,
-    color:'#9945FF', logo:LOGOS.solana,
-    explorer:'https://explorer.solana.com?cluster=devnet',
-    cctpDomain:5, cctpSupported:true,
-    usdc:'4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
-    eurc:'HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr',
-    usyc:'7WkaBNxz6jpJWGLPNFNsUbuVH8iQ2FxBooMak6itUMWb',
-  },
   // ── STELLAR ───────────────────────────────────────────────────────────────────
-  {
-    id:'stellar-mainnet', name:'Stellar', shortName:'Stellar', ecosystem:'Stellar', testnet:false,
-    color:'#3E1BDB', logo:LOGOS.stellar,
-    explorer:'https://stellar.expert',
-    cctpDomain:4, cctpSupported:true,
-    usdc:'USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
-    eurc:'EURC-GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2',
-  },
-  {
-    id:'stellar-testnet', name:'Stellar Testnet', shortName:'Stellar Test', ecosystem:'Stellar', testnet:true,
-    color:'#3E1BDB', logo:LOGOS.stellar,
-    explorer:'https://stellar.expert/explorer/testnet',
-    cctpDomain:4, cctpSupported:true,
-    usdc:'USDC-GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-    eurc:'EURC-GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO',
-  },
   // ── SUI ───────────────────────────────────────────────────────────────────────
-  {
-    id:'sui-mainnet', name:'SUI', shortName:'SUI', ecosystem:'SUI', testnet:false,
-    color:'#4CA2FF', logo:LOGOS.sui,
-    explorer:'https://suiscan.xyz/mainnet',
-    cctpDomain:8, cctpSupported:false,
-    usdc:'0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC',
-  },
-  {
-    id:'sui-testnet', name:'SUI Testnet', shortName:'SUI Test', ecosystem:'SUI', testnet:true,
-    color:'#4CA2FF', logo:LOGOS.sui,
-    explorer:'https://suiscan.xyz/testnet',
-    cctpDomain:8, cctpSupported:false,
-    usdc:'0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC',
-  },
   // ── APTOS ─────────────────────────────────────────────────────────────────────
-  {
-    id:'aptos-mainnet', name:'Aptos', shortName:'Aptos', ecosystem:'Aptos', testnet:false,
-    color:'#00BFD8', logo:LOGOS.aptos,
-    explorer:'https://explorer.aptoslabs.com',
-    cctpDomain:9, cctpSupported:false,
-    usdc:'0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b',
-  },
-  {
-    id:'aptos-testnet', name:'Aptos Testnet', shortName:'Aptos Test', ecosystem:'Aptos', testnet:true,
-    color:'#00BFD8', logo:LOGOS.aptos,
-    explorer:'https://explorer.aptoslabs.com?network=testnet',
-    cctpDomain:9, cctpSupported:false,
-    usdc:'0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832',
-  },
   // ── STARKNET ──────────────────────────────────────────────────────────────────
-  {
-    id:'starknet-mainnet', name:'Starknet', shortName:'Starknet', ecosystem:'Other', testnet:false,
-    color:'#EC796B', logo:LOGOS.starknet,
-    explorer:'https://voyager.online',
-    cctpDomain:23, cctpSupported:false,
-    usdc:'0x033068F6539f8e6e6b131e6B2B814e6c34A5224bC66947c47DaB9dFeE93b35fb',
-  },
-  {
-    id:'starknet-sepolia', name:'Starknet Sepolia', shortName:'Stark Sep', ecosystem:'Other', testnet:true,
-    color:'#EC796B', logo:LOGOS.starknet,
-    explorer:'https://sepolia.voyager.online',
-    cctpDomain:23, cctpSupported:false,
-    usdc:'0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343',
-  },
   // ── CELO ──────────────────────────────────────────────────────────────────────
   {
     id:'celo-mainnet', name:'Celo', shortName:'Celo', ecosystem:'EVM', testnet:false,
@@ -457,13 +367,6 @@ export const NETWORKS: NetworkInfo[] = [
     usdc:'0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392',
   },
   // ── XRPL ─────────────────────────────────────────────────────────────────────
-  {
-    id:'xrpl-mainnet', name:'XRPL', shortName:'XRPL', ecosystem:'XRPL', testnet:false,
-    color:'#346AA9', logo:LOGOS.xrpl,
-    explorer:'https://livenet.xrpl.org',
-    cctpDomain:13, cctpSupported:false,
-    usdc:'5553444300000000000000000000000000000000.rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE',
-  },
 ];
 
 // ── Convenience exports ────────────────────────────────────────────────────────
