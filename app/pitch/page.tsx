@@ -68,21 +68,21 @@ export default function PitchPage() {
               <div className="w-3 h-3 rounded-full bg-red-500/80" />
               <div className="w-3 h-3 rounded-full bg-amber-500/80" />
               <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
-              <span className="ml-4 text-xs font-mono text-glow-muted">Terminal — Local Environment</span>
+              <span className="ml-4 text-xs font-mono text-glow-muted">Terminal — Local Environment Stack</span>
             </div>
             <div className="p-6 font-mono text-sm space-y-4">
               <div>
-                <span className="text-gray-800 dark:text-gray-200">$ npx hardhat compile</span><br />
-                <span className="text-red-600 dark:text-red-400">Error HH8: There's one or more errors in your config file. Missing solc dependencies.</span>
+                <span className="text-gray-800 dark:text-gray-200">$ web3-cli compile</span><br />
+                <span className="text-red-600 dark:text-red-400">Error: One or more dependencies are missing from your configuration file. Missing package-specific elements.</span>
               </div>
               <div>
                 <span className="text-gray-800 dark:text-gray-200">$ npm install</span><br />
-                <span className="text-amber-600 dark:text-amber-400">WARN ERESOLVE overriding peer dependency...</span>
+                <span className="text-amber-600 dark:text-amber-400">WARN ERESOLVE overriding peer dependency versions...</span>
               </div>
               <div>
-                <span className="text-gray-800 dark:text-gray-200">$ npx hardhat run scripts/deploy.js --network arc_testnet</span><br />
-                <span className="text-red-600 dark:text-red-400">ProviderError: Invalid RPC URL or insufficient funds for gas.</span><br />
-                <span className="text-glow-muted">Failed to connect to MetaMask. Attempting reconnect... <span className="animate-pulse inline-block w-2 h-4 bg-glow-cyan align-middle ml-1" /></span>
+                <span className="text-gray-800 dark:text-gray-200">$ web3-cli deploy --network arc_testnet</span><br />
+                <span className="text-red-600 dark:text-red-400">ProviderError: Invalid RPC provider endpoint configuration or insufficient balance for network gas.</span><br />
+                <span className="text-glow-muted">Failed to establish connection to browser wallet extension. Retrying connection... <span className="animate-pulse inline-block w-2 h-4 bg-glow-cyan align-middle ml-1" /></span>
               </div>
             </div>
           </Card>
@@ -106,7 +106,7 @@ export default function PitchPage() {
               </div>
               <h3 className="text-2xl font-bold text-glow-text mb-4">Context-Aware AI Assistant</h3>
               <p className="text-glow-muted mb-6">
-                Not just an LLM wrapper. A senior Web3 pair programmer embedded directly into your workspace, inherently aware of the Arc ecosystem's unique architecture.
+                Not just a baseline LLM utility interface. A specialized Web3 assistant embedded directly into your workspace, completely synced with the target infrastructure's network rules.
               </p>
               <ul className="space-y-3">
                 {['Pre-trained on Arc documentation and USDC gas mechanics', 'Automated security audits for reentrancy and overflows', '1-click complex contract architecture injection'].map((item, i) => (
@@ -143,7 +143,7 @@ export default function PitchPage() {
                  <p className="text-glow-muted mt-2">{"/**"}</p>
                  <p className="text-glow-muted">{" * @dev Arc Testnet Contract"}</p>
                  <p className="text-glow-muted">{" */"}</p>
-                 <p><span className="text-pink-600 dark:text-pink-400">contract</span> <span className="text-emerald-600 dark:text-emerald-300">GlowSub</span> {'{'}</p>
+                 <p><span className="text-pink-400">contract</span> <span className="text-emerald-600 dark:text-emerald-300">GlowSub</span> {'{'}</p>
                  <p>&nbsp;&nbsp;<span className="text-blue-600 dark:text-blue-400">address</span> <span className="text-pink-600 dark:text-pink-400">public</span> owner;</p>
                  <p>&nbsp;&nbsp;<span className="text-pink-600 dark:text-pink-400">function</span> <span className="text-emerald-600 dark:text-emerald-300">pay</span>() <span className="text-pink-600 dark:text-pink-400">external</span> {'{'}</p>
                  <p>&nbsp;&nbsp;&nbsp;&nbsp;<span className="text-glow-muted">{"// Logic executes here"}<span className="animate-pulse inline-block w-2 h-4 bg-glow-accent align-middle ml-1" /></span></p>
@@ -179,9 +179,9 @@ export default function PitchPage() {
 
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              { icon: Shield, title: 'Non-Custodial Security', desc: 'We never hold private keys. All signing happens client-side via wallet injection. Backend only handles compilation.', color: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-              { icon: Server, title: 'Session Middleware', desc: 'Custom middleware securely bridges Web2/Web3, linking EVM addresses with persistent sessions without forced emails.', color: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-              { icon: LinkIcon, title: 'On-Chain Anchoring', desc: 'Immutable audit trails. Hash AI-generated code directly to the Arc blockchain for verifiable proof of work and IP.', color: 'text-glow-cyan', bg: 'bg-glow-cyan/10', border: 'border-glow-cyan/20' },
+              { icon: Shield, title: 'Non-Custodial Security', desc: 'We never store transaction keys. Every interaction authorization runs client-side via sandbox injection. The workspace backend handles build steps safely.', color: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+              { icon: Server, title: 'Session Middleware', desc: 'Custom middleware securely bridges decentralized verification points with browser states, enabling persistent workspace tracking without mandatory standard credentials.', color: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+              { icon: LinkIcon, title: 'On-Chain Anchoring', desc: 'Immutable audit trails. Hash data profiles directly to the base chain for verifiable deployment logging and project provenance.', color: 'text-glow-cyan', bg: 'bg-glow-cyan/10', border: 'border-glow-cyan/20' },
             ].map((arch, i) => (
               <Card key={i} className="p-6 bg-glow-surface/30">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 border ${arch.bg} ${arch.border}`}>
@@ -221,17 +221,17 @@ export default function PitchPage() {
                 <thead className="text-xs text-glow-text uppercase bg-glow-surface/80 border-b border-glow-border">
                   <tr>
                     <th className="px-6 py-4 text-left font-bold">Value Proposition</th>
-                    <th className="px-6 py-4 text-center font-bold">VS Code + Hardhat</th>
-                    <th className="px-6 py-4 text-center font-bold">Remix IDE</th>
+                    <th className="px-6 py-4 text-center font-bold">Desktop Local Stacks</th>
+                    <th className="px-6 py-4 text-center font-bold">Legacy Web Environments</th>
                     <th className="px-6 py-4 text-center font-bold bg-glow-accent/10 text-glow-accent">Glow IDE</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-glow-border">
                   {[
-                    { prop: 'Onboarding Velocity', a: 'Hours (Local Configs)', b: 'Minutes', c: 'Instant (Browser Native)' },
-                    { prop: 'AI Synergy', a: 'Generic Plugins', b: 'Basic Auto-complete', c: 'Native Senior-Pair Logic' },
-                    { prop: 'Arc Integration', a: 'Manual RPC Setup', b: 'Fragmented', c: '1-Click Testnet Native' },
-                    { prop: 'Gas Economics', a: 'Manual USDC bridging', b: 'Complex calcs', c: 'Automated USDC Engine' },
+                    { prop: 'Onboarding Velocity', a: 'Hours (Local Configs)', b: 'Minutes (Partial Context)', c: 'Instant (Browser Native)' },
+                    { prop: 'AI Synergy', a: 'Generic Code Plugins', b: 'Basic Text Auto-complete', c: 'Native Senior-Pair Logic' },
+                    { prop: 'Arc Integration', a: 'Manual Network Configurations', b: 'Fragmented Interface Mapping', c: '1-Click Testnet Native' },
+                    { prop: 'Gas Economics', a: 'Manual Infrastructure Bridging', b: 'Complex Static Calculations', c: 'Automated USDC Engine' },
                   ].map((row, i) => (
                     <tr key={i} className="hover:bg-glow-surface/30 transition-colors">
                       <td className="px-6 py-4 font-semibold text-glow-text">{row.prop}</td>
@@ -289,10 +289,10 @@ export default function PitchPage() {
           <h2 className="text-3xl font-bold text-glow-text mb-12 text-center">Product Roadmap</h2>
           <div className="space-y-8 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-glow-border before:to-transparent">
             {[
-              { phase: 'Phase 1 (Current)', title: 'The Foundation', desc: 'Glow IDE Beta. Deep Arc Testnet integration. Core AI code generation, solc compilation middleware, and 1-click USDC-gas deployments.', active: true },
-              { phase: 'Phase 2', title: 'Advanced Testing & Auditing', desc: 'Integrated AI security audits (Slither equivalents) and local browser-based blockchain simulation for zero-cost testing.' },
-              { phase: 'Phase 3', title: 'The App Marketplace', desc: 'Launch of Glow Templates. Top developers sell complex, audited architectures to other users directly for USDC.' },
-              { phase: 'Phase 4', title: 'Mainnet & Cross-Chain', desc: 'Arc Mainnet support and strategic expansion to EVM L2s utilizing Circle CCTP for cross-chain deployments.' },
+              { phase: 'Phase 1 (Current)', title: 'The Foundation', desc: 'Glow IDE Beta. Deep Arc Testnet integration. Core AI code generation, compiler pipeline processing middleware, and 1-click USDC-gas deployments.', active: true },
+              { phase: 'Phase 2', title: 'Advanced Testing & Auditing', desc: 'Integrated AI security analysis frameworks and fully secure local application runtime virtualization profiles for risk-free builds.', active: false },
+              { phase: 'Phase 3', title: 'The App Marketplace', desc: 'Launch of Glow Templates. Top developers sell complex, audited architectures to other users directly for USDC.', active: false },
+              { phase: 'Phase 4', title: 'Mainnet & Cross-Chain', desc: 'Arc Mainnet support and strategic expansion across decentralized ecosystems utilizing reliable cross-chain token settlement frameworks.', active: false },
             ].map((step, i) => (
               <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
                 <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-glow-bg bg-glow-surface shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 ${step.active ? 'border-glow-accent bg-glow-accent/20' : ''}`}>
