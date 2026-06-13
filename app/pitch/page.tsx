@@ -6,8 +6,8 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import {
-  Terminal, Bot, Code2, Rocket, Search, Shield, Server,
-  Link as LinkIcon, Globe, Target, Cpu, Zap, Coins, Users,
+  Terminal, Bot, Code2, Shield, Server,
+  Link as LinkIcon, Coins, Users,
   CheckCircle2, XCircle, ArrowRight, Activity, Box
 } from 'lucide-react';
 import Link from 'next/link';
@@ -20,7 +20,7 @@ export default function PitchPage() {
     >
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-32">
         
-        {/* Background Gradients (matching your glow aesthetic) */}
+        {/* Background Gradients */}
         <div className="fixed top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-glow-accent/5 blur-[120px] pointer-events-none z-[-1]" />
         <div className="fixed bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-purple-500/5 blur-[120px] pointer-events-none z-[-1]" />
 
@@ -136,13 +136,13 @@ export default function PitchPage() {
                </div>
                <div className="p-6 font-mono text-sm text-glow-text space-y-1">
                  <p><span className="text-pink-400">pragma</span> <span className="text-blue-400">solidity</span> ^0.8.20;</p>
-                 <p className="text-glow-muted mt-2">/**</p>
-                 <p className="text-glow-muted"> * @dev Arc Testnet Contract</p>
-                 <p className="text-glow-muted"> */</p>
+                 <p className="text-glow-muted mt-2">{"/**"}</p>
+                 <p className="text-glow-muted">{" * @dev Arc Testnet Contract"}</p>
+                 <p className="text-glow-muted">{" */"}</p>
                  <p><span className="text-pink-400">contract</span> <span className="text-emerald-300">GlowSub</span> {'{'}</p>
                  <p>&nbsp;&nbsp;<span className="text-blue-400">address</span> <span className="text-pink-400">public</span> owner;</p>
                  <p>&nbsp;&nbsp;<span className="text-pink-400">function</span> <span className="text-emerald-300">pay</span>() <span className="text-pink-400">external</span> {'{'}</p>
-                 <p>&nbsp;&nbsp;&nbsp;&nbsp;<span className="text-glow-muted">// Logic executes here<span className="animate-pulse inline-block w-2 h-4 bg-glow-accent align-middle ml-1" /></span></p>
+                 <p>&nbsp;&nbsp;&nbsp;&nbsp;<span className="text-glow-muted">{"// Logic executes here"}<span className="animate-pulse inline-block w-2 h-4 bg-glow-accent align-middle ml-1" /></span></p>
                  <p>&nbsp;&nbsp;{'}'}</p>
                  <p>{'}'}</p>
                </div>
@@ -164,8 +164,6 @@ export default function PitchPage() {
               </ul>
             </div>
           </div>
-          
-          {/* Add more alternating rows for Launchpad & Explorer following the pattern above if needed... */}
         </section>
 
         {/* 4. ARCHITECTURE */}
