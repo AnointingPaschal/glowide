@@ -40,12 +40,16 @@ export default function PitchPage() {
             The ultimate AI-native workspace accelerating Web3 development. Write, compile, test, and deploy smart contracts to the Arc network in under 60 seconds.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button variant="gradient" className="w-full sm:w-auto px-8 py-6 text-base" asChild>
-              <Link href="#platform">Explore Platform <ArrowRight className="w-4 h-4 ml-2" /></Link>
-            </Button>
-            <Button variant="outline" className="w-full sm:w-auto px-8 py-6 text-base border-glow-border hover:bg-glow-surface" asChild>
-              <Link href="/workspace">Launch Workspace</Link>
-            </Button>
+            <Link href="#platform">
+              <Button variant="gradient" className="w-full sm:w-auto px-8 py-6 text-base">
+                Explore Platform <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </Link>
+            <Link href="/workspace">
+              <Button variant="outline" className="w-full sm:w-auto px-8 py-6 text-base border-glow-border hover:bg-glow-surface">
+                Launch Workspace
+              </Button>
+            </Link>
           </div>
         </section>
 
@@ -302,9 +306,11 @@ export default function PitchPage() {
             Whether you're an enterprise looking to scale, a developer looking to build, or a protocol looking to partner, Glow IDE is your workspace.
           </p>
           <div className="flex justify-center gap-4">
-            <Button variant="gradient" className="px-8 py-6 text-base" asChild>
-              <Link href="/workspace">Launch Workspace <ArrowRight className="w-4 h-4 ml-2" /></Link>
-            </Button>
+            <Link href="/workspace">
+              <Button variant="gradient" className="px-8 py-6 text-base">
+                Launch Workspace <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </Link>
           </div>
         </section>
 
