@@ -141,6 +141,7 @@ export default function AnalyticsPage() {
 
   const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET ?? "";
   const isAdmin = isConnected && address?.toLowerCase() === ADMIN_WALLET.toLowerCase();
+  // Analytics is public — all users can view
 
   const fetchLive = useCallback(async () => {
     setLoading(true);

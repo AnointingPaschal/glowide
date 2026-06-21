@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Treat solc as an external package — don't bundle it, use the installed version
-  serverExternalPackages: ["solc"],
+  experimental: {
+    serverComponentsExternalPackages: ["solc"],
+  },
 
   webpack: (config, { isServer }) => {
     if (!isServer) {

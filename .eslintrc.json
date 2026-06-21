@@ -5,6 +5,8 @@
     "@typescript-eslint/no-unused-vars": "off",
     "@typescript-eslint/no-require-imports": "off",
     "@typescript-eslint/no-explicit-any": "off",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/jsx-no-comment-textnodes": "error",
     "react/no-unescaped-entities": "off",
     "@next/next/no-img-element": "off"
   }

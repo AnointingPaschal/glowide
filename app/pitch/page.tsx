@@ -227,9 +227,9 @@ export default function PitchPage() {
                 <div className="mockup-header"><div className="mockup-header-left"><div className="mockup-dot"/><div className="mockup-dot"/><div className="mockup-dot"/></div><span className="mockup-title">Workspace.sol</span><div style={{width:"40px"}}/></div>
                 <div className="mockup-body">
                   <span className="syntax-keyword">pragma</span> <span className="syntax-type">solidity</span> ^0.8.20;<br/><br/>
-                  <span className="syntax-comment">/**</span><br/>
+                  <span className="syntax-comment">&#47;**</span><br/>
                   <span className="syntax-comment">&nbsp;*&nbsp;@dev Arc Testnet Native Subscription</span><br/>
-                  <span className="syntax-comment"> */</span><br/>
+                  <span className="syntax-comment">&nbsp;*&#47;</span><br/>
                   <span className="syntax-keyword">contract</span> <span className="syntax-function">GlowSub</span> {"{"}{"}"}<br/>
                   &nbsp;&nbsp;<span className="syntax-type">address</span> <span className="syntax-keyword">public</span> owner;<br/>
                   &nbsp;&nbsp;<span className="syntax-keyword">function</span> <span className="syntax-function">pay</span>() <span className="syntax-keyword">external</span> {"{"}<br/>
