@@ -374,6 +374,8 @@ export default function AnalyticsPage() {
   const [live,    setLive]   = useState<LiveStats|null>(null);
   const [loading, setLoading] = useState(false);
   const [dbError, setDbError] = useState<string|null>(null);
+  const [seeding,  setSeeding]  = useState(false);
+  const [seedMsg,  setSeedMsg]  = useState("");
 
   const fetchLive = useCallback(async (p: Preset, customRange?: {from:string;to:string}) => {
     setLoading(true);
@@ -392,6 +394,24 @@ export default function AnalyticsPage() {
     } catch(e) { setDbError(String(e)); }
     finally { setLoading(false); }
   }, []);
+
+  const seedEvents = async () => {
+    setSeeding(true); setSeedMsg("");
+    try {
+      const res  = await fetch("/api/admin/seed-events", {
+        method: "POST",
+        headers: { Authorization: `Wallet 0xcca907ae079db7638a4d2d3e82defaea5fbdf383` },
+      });
+      const data = await res.json() as { success?:boolean; message?:string; totalInserted?:number; error?:string };
+      if (data.success) {
+        setSeedMsg(`✓ ${data.message}`);
+        fetchLive(preset);
+      } else {
+        setSeedMsg(`✗ ${data.error ?? "Failed"}`);
+      }
+    } catch(e) { setSeedMsg(`✗ ${String(e)}`); }
+    finally    { setSeeding(false); }
+  };
 
   useEffect(() => {
     fetchLive(preset);
@@ -447,6 +467,12 @@ export default function AnalyticsPage() {
             <code className="block mt-1 text-[10px] font-mono text-amber-300/60 bg-amber-500/5 rounded p-2">
               CREATE TABLE IF NOT EXISTS analytics_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), page TEXT NOT NULL DEFAULT &apos;/&apos;, event TEXT NOT NULL DEFAULT &apos;pageview&apos;, wallet TEXT, country TEXT, region TEXT, city TEXT, ip TEXT, browser TEXT, is_mobile BOOLEAN DEFAULT FALSE, referer TEXT, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE analytics_events DISABLE ROW LEVEL SECURITY; GRANT ALL ON analytics_events TO service_role;
             </code>
+          </div>
+        )}
+
+        {seedMsg && (
+          <div className={cn("px-4 py-2.5 rounded-xl text-xs border", seedMsg.startsWith("✓") ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400")}>
+            {seedMsg}
           </div>
         )}
 
