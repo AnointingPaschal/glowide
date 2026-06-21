@@ -33,8 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="bg-glow-bg text-glow-text antialiased">
-        <Providers>{children}</Providers>
-        <PageTracker/>
+        <Providers>{children}<PageTracker/></Providers>
     </body>
     </html>
   );
