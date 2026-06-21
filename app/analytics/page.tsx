@@ -346,9 +346,9 @@ export default function AnalyticsPage() {
         {dbError && (
           <div className="px-4 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-400">
             <p className="font-semibold mb-0.5">Database not set up yet</p>
-            <p className="text-amber-300/70">Run this SQL in Supabase SQL Editor to enable tracking:</p>
+            <p className="text-amber-300/70">Table may already exist — just run the GRANT lines in Supabase SQL Editor:</p>
             <code className="block mt-1 text-[10px] font-mono text-amber-300/60 bg-amber-500/5 rounded p-2">
-              CREATE TABLE analytics_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), page TEXT NOT NULL DEFAULT &apos;/&apos;, event TEXT NOT NULL DEFAULT &apos;pageview&apos;, wallet TEXT, country TEXT, region TEXT, city TEXT, ip TEXT, browser TEXT, is_mobile BOOLEAN DEFAULT FALSE, referer TEXT, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE analytics_events DISABLE ROW LEVEL SECURITY; GRANT ALL ON analytics_events TO service_role;
+              CREATE TABLE IF NOT EXISTS analytics_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), page TEXT NOT NULL DEFAULT &apos;/&apos;, event TEXT NOT NULL DEFAULT &apos;pageview&apos;, wallet TEXT, country TEXT, region TEXT, city TEXT, ip TEXT, browser TEXT, is_mobile BOOLEAN DEFAULT FALSE, referer TEXT, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE analytics_events DISABLE ROW LEVEL SECURITY; GRANT ALL ON analytics_events TO service_role;
             </code>
           </div>
         )}
