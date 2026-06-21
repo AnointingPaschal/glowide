@@ -459,32 +459,91 @@ export default function AnalyticsPage() {
         )}
 
         {/* ── GEO ────────────────────────────────────────────────── */}
-        {tab==="geo" && (
-          <div className="bg-glow-card border border-glow-border rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <div>
-                <p className="text-sm font-semibold text-glow-text">Geographic Distribution</p>
-                <p className="text-[10px] text-glow-muted/50">19 cities · {rangeLabel}</p>
+        {tab==="geo" && (() => {
+          // Build the display list based on filter:
+          // - showBaseline (all time / 30d): baseline + any new tracked events merged in
+          // - filtered period (today/7d/etc): only live DB geo, sorted by count
+          const liveGeo = live?.geo ?? [];
+
+          if (!showBaseline && liveGeo.length > 0) {
+            // Filtered view — show only what was tracked in this period
+            const maxCount = Math.max(...liveGeo.map(g => g.count), 1);
+            return (
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-glow-text">Geographic Distribution</p>
+                    <p className="text-[10px] text-glow-muted/50">{liveGeo.length} location{liveGeo.length!==1?"s":""} · {rangeLabel}</p>
+                  </div>
+                  <span className="text-sm font-bold text-glow-text">{fmt(liveEvents)}</span>
+                </div>
+                {liveGeo.map((g,i) => {
+                  // Try to match baseline entry for flag + color
+                  const base = B.geo.find(b => b.city.toLowerCase() === g.city.toLowerCase() ||
+                    g.city.toLowerCase().includes(b.city.split(" ")[0].toLowerCase()));
+                  const pct  = liveEvents > 0 ? (g.count / liveEvents) * 100 : 0;
+                  return (
+                    <BarRow key={`${g.country}-${g.city}-${i}`}
+                      flag={base?.flag ?? "🌍"}
+                      label={`${g.city}, ${g.country}`}
+                      count={g.count}
+                      max={maxCount}
+                      color={base?.color ?? "#388bfd"}
+                      pct={pct}
+                    />
+                  );
+                })}
               </div>
-              <span className="text-sm font-bold text-glow-text">{fmt(grandTotal)}</span>
+            );
+          }
+
+          // No live geo for filtered range — show message
+          if (!showBaseline && liveGeo.length === 0) {
+            return (
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-4">
+                <p className="text-sm font-semibold text-glow-text mb-2">Geographic Distribution</p>
+                <p className="text-[10px] text-glow-muted/50 mb-6">{rangeLabel}</p>
+                <div className="text-center py-10">
+                  <Globe className="w-10 h-10 text-glow-muted/20 mx-auto mb-3"/>
+                  <p className="text-sm text-glow-muted/50">No geo data for this period</p>
+                  <p className="text-xs text-glow-muted/30 mt-1">Make sure the analytics_events table has country data</p>
+                </div>
+              </div>
+            );
+          }
+
+          // All time / 30d — baseline merged with tracked
+          return (
+            <div className="bg-glow-card border border-glow-border rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-glow-text">Geographic Distribution</p>
+                  <p className="text-[10px] text-glow-muted/50">19 cities · {rangeLabel}</p>
+                </div>
+                <span className="text-sm font-bold text-glow-text">{fmt(grandTotal)}</span>
+              </div>
+              {B.geo.map(g => {
+                const tracked = liveGeo.find(l =>
+                  l.city.toLowerCase().includes(g.city.split(" ")[0].toLowerCase()) ||
+                  g.city.toLowerCase().includes(l.city.toLowerCase())
+                )?.count ?? 0;
+                const total   = g.count + tracked;
+                const pct     = (total / grandTotal) * 100;
+                return (
+                  <BarRow key={g.city}
+                    flag={g.flag}
+                    label={`${g.city}, ${g.country}`}
+                    count={total}
+                    max={B.geo[0].count + (liveGeo.find(l=>l.city.toLowerCase().includes("tokyo"))?.count??0)}
+                    color={g.color}
+                    pct={pct}
+                    badge={tracked > 0 ? `+${tracked}` : undefined}
+                  />
+                );
+              })}
             </div>
-            {(showBaseline ? B.geo : B.geo).map(g=>{
-              const tracked = live?.geo.find(l=>l.city.toLowerCase().includes(g.city.split(" ")[0].toLowerCase()))?.count ?? 0;
-              const total   = showBaseline ? g.count + tracked : tracked;
-              const badge   = tracked>0 ? `+${tracked} new` : undefined;
-              return (
-                <BarRow key={g.city}
-                  flag={g.flag}
-                  label={`${g.city}, ${g.country}`}
-                  count={showBaseline ? total : (total || g.count)}
-                  max={showBaseline ? B.geo[0].count : B.geo[0].count}
-                  color={g.color} pct={g.pct}
-                  badge={badge}
-                />
-              );
-            })}
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── PAGES ──────────────────────────────────────────────── */}
         {tab==="pages" && (
