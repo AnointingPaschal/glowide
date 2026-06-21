@@ -1,4 +1,5 @@
 "use client";
+import { useAnalytics } from "@/hooks/useAnalytics";
 import { TopBar } from "./TopBar";
 import React from "react";
 
@@ -8,7 +9,8 @@ interface AppLayoutProps {
   description?: string;
 }
 
-export function AppLayout({ children, title, description }: AppLayoutProps) {
+export function AppLayout({
+  children, title, description }: AppLayoutProps) {
   return (
     <div className="flex flex-col h-screen bg-glow-bg overflow-hidden">
       <TopBar title={title} description={description} />

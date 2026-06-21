@@ -1,3 +1,4 @@
+import { PageTracker } from "@/components/analytics/PageTracker";
 import type { Metadata, Viewport } from "next";
 import { Providers } from "@/components/providers/Providers";
 import "./globals.css";
@@ -33,7 +34,8 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="bg-glow-bg text-glow-text antialiased">
         <Providers>{children}</Providers>
-      </body>
+        <PageTracker/>
+    </body>
     </html>
   );
 }

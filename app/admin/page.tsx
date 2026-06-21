@@ -694,8 +694,9 @@ export default function AdminPage() {
               )}
               {(['premium','fast','coding'] as const).map(tier=>{
                 const tm=models.filter(m=>m.tier===tier); if(!tm.length) return null;
-                const tc={premium:{label:'⭐ Premium',color:'#a855f7'},fast:{label:'⚡ Fast',color:'#06b6d4'},coding:{label:'💻 Coding',color:'#f59e0b'}}[tier];
-                return <div key={tier} className="space-y-2"><p className="text-xs font-semibold uppercase tracking-wider px-1" style={{color:tc.color}}>{tc.label}</p>{tm.map(m=><ModelRow key={m.id} model={m} onToggle={async ()=>{
+                const tc: Record<string,{label:string;color:string}> = {premium:{label:'⭐ Premium',color:'#a855f7'},fast:{label:'⚡ Fast',color:'#06b6d4'},coding:{label:'💻 Coding',color:'#f59e0b'}};
+                const tierLabel = tc[tier];
+                return <div key={tier} className="space-y-2"><p className="text-xs font-semibold uppercase tracking-wider px-1" style={{color:tierLabel?.color}}>{tierLabel?.label}</p>{tm.map(m=><ModelRow key={m.id} model={m} onToggle={async ()=>{
                   const updated = models.map(x=>x.id===m.id?{...x,enabled:!x.enabled}:x);
                   setModels(updated);
                   await fetch('/api/models', {method:'POST', headers:{'Content-Type':'application/json',authorization:`Wallet ${address}`}, body:JSON.stringify({models:updated})}).catch(()=>{});
