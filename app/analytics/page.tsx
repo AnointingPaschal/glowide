@@ -452,6 +452,12 @@ export default function AnalyticsPage() {
           </div>
           <div className="flex items-center gap-2">
             <DateFilter preset={preset} custom={custom} onPreset={handlePreset} onCustom={handleCustom}/>
+            <button onClick={seedEvents} disabled={seeding}
+              title="Seed historical data for last 7 days"
+              className="flex items-center gap-1.5 px-3 py-2 bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light rounded-xl text-xs font-medium hover:bg-glow-accent/25 transition-colors disabled:opacity-50">
+              <Activity className={cn("w-3.5 h-3.5", seeding && "animate-pulse")}/>
+              {seeding ? "Seeding…" : "Seed Data"}
+            </button>
             <button onClick={()=>fetchLive(preset, isCustom?custom:undefined)} disabled={loading}
               className="p-2 bg-glow-card border border-glow-border rounded-xl text-glow-muted hover:text-glow-text transition-colors">
               <RefreshCw className={cn("w-4 h-4",loading&&"animate-spin")}/>
