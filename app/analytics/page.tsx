@@ -383,10 +383,25 @@ function GeoSection({ showBaseline, liveGeo, liveEvents, grandTotal, rangeLabel 
             max={maxBase}
             color={g.color}
             pct={pct}
-            badge={tracked > 0 ? `+${tracked}` : undefined}
+
           />
         );
       })}
+
+      {/* New cities tracked that aren't in baseline — show at bottom */}
+      {liveGeo.filter(lg => !B.geo.some(b =>
+        b.city.toLowerCase().includes(lg.city.split(" ")[0].toLowerCase()) ||
+        lg.city.toLowerCase().includes(b.city.split(" ")[0].toLowerCase())
+      )).map((g, i) => (
+        <BarRow key={`new-${g.country}-${g.city}-${i}`}
+          flag={countryFlag(g.country)}
+          label={g.city ? `${g.city}, ${g.country}` : g.country}
+          count={g.count}
+          max={maxBase}
+          color={countryColor(g.country)}
+          pct={(g.count / grandTotal) * 100}
+        />
+      ))}
     </div>
   );
 }
@@ -479,13 +494,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="flex items-center gap-2">
             <DateFilter preset={preset} custom={custom} onPreset={handlePreset} onCustom={handleCustom}/>
-            <button onClick={seedEvents} disabled={seeding}
-              title="Seed historical data for last 7 days"
-              className="flex items-center gap-1.5 px-3 py-2 bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light rounded-xl text-xs font-medium hover:bg-glow-accent/25 transition-colors disabled:opacity-50">
-              <Activity className={cn("w-3.5 h-3.5", seeding && "animate-pulse")}/>
-              {seeding ? "Seeding…" : "Seed Data"}
-            </button>
-            <button onClick={()=>fetchLive(preset, isCustom?custom:undefined)} disabled={loading}
+<button onClick={()=>fetchLive(preset, isCustom?custom:undefined)} disabled={loading}
               className="p-2 bg-glow-card border border-glow-border rounded-xl text-glow-muted hover:text-glow-text transition-colors">
               <RefreshCw className={cn("w-4 h-4",loading&&"animate-spin")}/>
             </button>
@@ -500,12 +509,6 @@ export default function AnalyticsPage() {
             <code className="block mt-1 text-[10px] font-mono text-amber-300/60 bg-amber-500/5 rounded p-2">
               CREATE TABLE IF NOT EXISTS analytics_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), page TEXT NOT NULL DEFAULT &apos;/&apos;, event TEXT NOT NULL DEFAULT &apos;pageview&apos;, wallet TEXT, country TEXT, region TEXT, city TEXT, ip TEXT, browser TEXT, is_mobile BOOLEAN DEFAULT FALSE, referer TEXT, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE analytics_events DISABLE ROW LEVEL SECURITY; GRANT ALL ON analytics_events TO service_role;
             </code>
-          </div>
-        )}
-
-        {seedMsg && (
-          <div className={cn("px-4 py-2.5 rounded-xl text-xs border", seedMsg.startsWith("✓") ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400")}>
-            {seedMsg}
           </div>
         )}
 
