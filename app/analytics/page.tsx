@@ -108,6 +108,37 @@ function getRange(preset: Preset): DateRange {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (n:number) => n>=1e6?(n/1e6).toFixed(2)+"M":n>=1e3?(n/1e3).toFixed(1)+"K":n.toLocaleString();
 
+// Convert any ISO-3166-1 alpha-2 country code to flag emoji
+function countryFlag(code: string): string {
+  if (!code || code.length < 2) return "🌍";
+  try {
+    return code.toUpperCase().slice(0,2).split("").map(c =>
+      String.fromCodePoint(c.charCodeAt(0) + 127397)
+    ).join("");
+  } catch { return "🌍"; }
+}
+
+// Color palette for countries not in baseline
+const COUNTRY_COLORS: Record<string,string> = {
+  JP:"#388bfd", HK:"#f59e0b", SG:"#10b981", US:"#ef4444",
+  DE:"#8b5cf6", ZA:"#06b6d4", GB:"#f97316", SE:"#34d399",
+  CA:"#fb923c", FR:"#818cf8", KR:"#f43f5e", BR:"#4ade80",
+  IN:"#fbbf24", IE:"#67e8f9", AU:"#c084fc", NG:"#a3e635",
+  HR:"#38bdf8", PL:"#f472b6", NL:"#facc15", IT:"#fb7185",
+  ES:"#818cf8", PT:"#6ee7b7", TR:"#fca5a5", RU:"#a78bfa",
+  UA:"#fde68a", CN:"#f87171", TW:"#34d399", TH:"#93c5fd",
+  ID:"#fca5a5", MY:"#86efac", PH:"#fcd34d", VN:"#6ee7b7",
+  PK:"#a3e635", BD:"#67e8f9", EG:"#fb923c", SA:"#4ade80",
+  AE:"#38bdf8", KE:"#f472b6", GH:"#facc15", ZW:"#fb7185",
+  AR:"#818cf8", MX:"#6ee7b7", CO:"#fca5a5", CL:"#a78bfa",
+  NZ:"#fde68a", FI:"#f87171", NO:"#34d399", DK:"#93c5fd",
+  AT:"#fca5a5", CH:"#86efac", BE:"#fcd34d", CZ:"#6ee7b7",
+  RO:"#67e8f9", HU:"#fb923c", GR:"#a3e635", SK:"#4ade80",
+};
+function countryColor(code: string): string {
+  return COUNTRY_COLORS[code.toUpperCase()] ?? "#7c3aed";
+}
+
 // ── UI primitives ─────────────────────────────────────────────────────────────
 function StatCard({ icon:Icon, label, value, sub, color="text-glow-accent", accent=false }:{
   icon:React.ElementType;label:string;value:string|number;sub?:string;color?:string;accent?:boolean;
@@ -276,13 +307,8 @@ function GeoSection({ showBaseline, liveGeo, liveEvents, grandTotal, rangeLabel 
   grandTotal: number;
   rangeLabel: string;
 }) {
-  // Find matching baseline entry for flag/color
-  const getBase = (city: string) =>
-    B.geo.find(b =>
-      b.city.toLowerCase() === city.toLowerCase() ||
-      city.toLowerCase().includes(b.city.split(" ")[0].toLowerCase()) ||
-      b.city.toLowerCase().includes(city.split(" ")[0].toLowerCase())
-    );
+  // Use country code directly for flag emoji and color
+  // This works for ANY country, not just baseline cities
 
   // ── Filtered period (today / yesterday / 7d) — only live DB data ──────────
   if (!showBaseline) {
@@ -311,15 +337,16 @@ function GeoSection({ showBaseline, liveGeo, liveEvents, grandTotal, rangeLabel 
           <span className="text-sm font-bold text-glow-text">{liveEvents.toLocaleString()} visits</span>
         </div>
         {liveGeo.map((g, i) => {
-          const base = getBase(g.city);
-          const pct  = liveEvents > 0 ? (g.count / liveEvents) * 100 : 0;
+          const flag  = countryFlag(g.country);
+          const color = countryColor(g.country);
+          const pct   = liveEvents > 0 ? (g.count / liveEvents) * 100 : 0;
           return (
             <BarRow key={`${g.country}-${g.city}-${i}`}
-              flag={base?.flag ?? "🌍"}
-              label={`${g.city}, ${g.country}`}
+              flag={flag}
+              label={g.city ? `${g.city}, ${g.country}` : g.country}
               count={g.count}
               max={maxCount}
-              color={base?.color ?? "#388bfd"}
+              color={color}
               pct={pct}
             />
           );
@@ -351,7 +378,7 @@ function GeoSection({ showBaseline, liveGeo, liveEvents, grandTotal, rangeLabel 
         return (
           <BarRow key={g.city}
             flag={g.flag}
-            label={`${g.city}, ${g.country}`}
+            label={g.city ? `${g.city}, ${g.country}` : g.country}
             count={total}
             max={maxBase}
             color={g.color}
