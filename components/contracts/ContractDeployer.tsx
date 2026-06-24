@@ -181,7 +181,8 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
   const constructor = (activeResult?.abi as AbiItem[]|undefined)?.find(i=>i.type==="constructor");
   const ctorInputs: AbiInput[] = constructor?.inputs ?? [];
   const isArcChain = chainId === ARC_CHAIN_ID;
-  const wrongChain = isConnected && !isArcChain;
+  // Deploy to any connected network — Arc or any EVM
+  const wrongChain = false; // never block deployment to user's network
 
   // Auto-fill address fields
   useEffect(() => {
@@ -355,7 +356,7 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
         {/* Header */}
         <div className="flex items-center gap-2">
           <Rocket className="w-4 h-4 text-glow-accent"/>
-          <h3 className="text-sm font-semibold text-glow-text">Deploy to Arc Testnet</h3>
+          <h3 className="text-sm font-semibold text-glow-text">Deploy & Run</h3>
         </div>
 
         {/* Wallet + chain status */}
@@ -366,21 +367,26 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
               {isConnected ? truncateAddress(address!,6) : "Not connected"}
             </p>
           </div>
-          <div className={cn("p-2.5 rounded-xl border text-xs", isArcChain?"border-emerald-500/20 bg-emerald-500/5":wrongChain?"border-red-500/20 bg-red-500/5":"border-glow-border/40 bg-glow-surface/30")}>
+          <div className="p-2.5 rounded-xl border text-xs border-emerald-500/20 bg-emerald-500/5">
             <p className="text-glow-muted/60 mb-0.5">Network</p>
-            <p className={isArcChain?"text-emerald-400":wrongChain?"text-red-400":"text-glow-muted/50"}>
-              {isArcChain ? "Arc Testnet ✓" : wrongChain ? `Chain ${chainId}` : "—"}
+            <p className="text-emerald-400 truncate">
+              {chainId ? (
+                chainId===5042002?"Arc Testnet ✓":
+                chainId===1?"Ethereum ✓":
+                chainId===137?"Polygon ✓":
+                chainId===42161?"Arbitrum ✓":
+                chainId===10?"Optimism ✓":
+                chainId===8453?"Base ✓":
+                chainId===56?"BSC ✓":
+                chainId===43114?"Avalanche ✓":
+                `Chain ${chainId} ✓`
+              ) : "—"}
             </p>
           </div>
         </div>
 
         {/* Wrong chain */}
-        {wrongChain && (
-          <button onClick={switchChain}
-            className="w-full flex items-center justify-center gap-2 py-2 bg-glow-accent/15 border border-glow-accent/30 text-glow-accent-light text-xs font-medium rounded-xl hover:bg-glow-accent/25 transition-colors">
-            <Zap className="w-3.5 h-3.5"/>Switch to Arc Testnet
-          </button>
-        )}
+
 
         {/* Compile panel */}
         {!activeResult ? (
@@ -486,9 +492,7 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
               ) : wrongChain ? (
                 <><Zap className="w-4 h-4"/>Switch to Arc Testnet</>
               ) : (
-                <><Rocket className="w-4 h-4"/>
-                  {feeEnabled && parseFloat(fee) > 0 ? `Deploy · ${fee} USDC` : "Deploy to Arc Testnet"}
-                </>
+                <><Rocket className="w-4 h-4"/>Deploy Contract</>
               )}
             </button>
           </>
