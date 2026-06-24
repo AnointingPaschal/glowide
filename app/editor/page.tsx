@@ -107,6 +107,7 @@ export default function EditorPage() {
   const [buildLog,       setBuildLog]       = useState<Array<{type:"info"|"success"|"error"|"warn";text:string;ts:number}>>([]);
   const [solcVersion,    setSolcVersion]    = useState("0.8.20");
   const [versions,       setVersions]       = useState<Array<{version:string;label:string;tag?:string}>>([]);
+  const [verGroups,      setVerGroups]      = useState<Array<{label:string;versions:Array<{version:string;label:string;tag?:string}>}>>([]);
   const [verDropOpen,    setVerDropOpen]    = useState(false);
 
   const activeTab     = tabs.find(t => t.id === activeTabId);
@@ -116,35 +117,59 @@ export default function EditorPage() {
   // Load compiler versions
   useEffect(() => {
     fetch("/api/contracts/versions").then(r=>r.json())
-      .then(d=>{ if(d.versions?.length) setVersions(d.versions); }).catch(()=>{});
+      .then(d=>{
+        if(d.versions?.length) setVersions(d.versions);
+        if(d.groups?.length) setVerGroups(d.groups);
+      }).catch(()=>{});
   }, []);
 
-  // Load files from chat
   useEffect(() => {
+    // Check sessionStorage on mount
     const filesJson = sessionStorage.getItem("glowide_editor_files");
-    const action    = sessionStorage.getItem("glowide_editor_action");
-    if (!filesJson) return;
-    try {
-      const files: Array<{filename:string;content:string;lang:string}> = JSON.parse(filesJson);
-      sessionStorage.removeItem("glowide_editor_files");
-      sessionStorage.removeItem("glowide_editor_action");
-      if (!files.length) return;
-      const newTabs = files.map((f,i) => ({
-        id:"chat-"+Date.now()+"-"+i, fileId:"cf-"+i, name:f.filename, path:"/"+f.filename,
-        language:f.lang as Language, content:f.content, isModified:false, isActive:i===files.length-1,
-      }));
-      useEditorStore.setState(state => ({
-        tabs: [...state.tabs.filter(t=>!newTabs.some(nt=>nt.name===t.name)), ...newTabs],
-        activeTabId: newTabs[newTabs.length-1].id,
-      }));
-      toast.success(action==="compile"?"Contract loaded — click Compile":`${files.length} files loaded`);
-    } catch { /* skip */ }
+    const action    = sessionStorage.getItem("glowide_editor_action") ?? "project";
+    if (filesJson) {
+      try {
+        sessionStorage.removeItem("glowide_editor_files");
+        sessionStorage.removeItem("glowide_editor_action");
+        loadFilesFromChat(JSON.parse(filesJson), action);
+      } catch { /* skip */ }
+    }
+
+    // Also listen for the event (fired when ChatPanel is embedded in editor)
+    const handler = (e: CustomEvent<{files:Array<{filename:string;content:string;lang:string}>;action:string}>) => {
+      loadFilesFromChat(e.detail.files, e.detail.action);
+    };
+    window.addEventListener("glowide:load-files", handler as EventListener);
+    return () => window.removeEventListener("glowide:load-files", handler as EventListener);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const log = useCallback((text:string, type:"info"|"success"|"error"|"warn"="info") => {
     setBuildLog(l=>[...l.slice(-200),{type,text,ts:Date.now()}]);
     terminalLog(text, type==="warn"?"warn":type);
   }, []);
+
+  // Load files from chat (sessionStorage on mount OR event from in-editor ChatPanel)
+  const loadFilesFromChat = useCallback((
+    files: Array<{filename:string;content:string;lang:string}>,
+    action: string
+  ) => {
+    if (!files.length) return;
+    const newTabs = files.map((f,i) => ({
+      id:"chat-"+Date.now()+"-"+i, fileId:"cf-"+i, name:f.filename, path:"/"+f.filename,
+      language:f.lang as Language, content:f.content, isModified:false, isActive:i===files.length-1,
+    }));
+    useEditorStore.setState(state => ({
+      tabs: [...state.tabs.filter(t=>!newTabs.some(nt=>nt.name===t.name)), ...newTabs],
+      activeTabId: newTabs[newTabs.length-1].id,
+    }));
+    const msg = action==="compile"
+      ? `✓ ${files[0].filename} loaded — click Compile`
+      : `✓ Project loaded: ${files.length} files`;
+    toast.success(msg);
+    log(msg, "success");
+  }, [log]);
+
 
   const loadSample = useCallback((p:SampleProject) => {
     const newTabs = p.files.map((f,i) => ({
@@ -307,15 +332,20 @@ export default function EditorPage() {
                 {verDropOpen && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={()=>setVerDropOpen(false)}/>
-                    <div className="absolute right-0 bottom-full mb-1 w-44 bg-[#0e0e1a] border border-glow-border rounded-xl shadow-2xl z-50 max-h-64 overflow-y-auto animate-fade-in">
+                    <div className="absolute right-0 top-full mt-1 w-48 bg-[#0e0e1a] border border-glow-border rounded-xl shadow-2xl z-[200] max-h-72 overflow-y-auto animate-fade-in">
                       <p className="text-[9px] text-glow-muted/50 uppercase tracking-widest px-3 py-2 border-b border-glow-border/30 sticky top-0 bg-[#0e0e1a]">Compiler</p>
-                      {versions.map(v=>(
-                        <button key={v.version} onClick={()=>{setSolcVersion(v.version);setVerDropOpen(false);}}
-                          className={cn("w-full flex items-center justify-between px-3 py-2 text-xs transition-colors",
-                            solcVersion===v.version?"bg-glow-accent/10 text-glow-accent-light":"text-glow-muted hover:bg-glow-card/50")}>
-                          <span className="font-mono">{v.version}</span>
-                          {v.tag&&<span className={cn("text-[9px] px-1.5 py-0.5 rounded font-semibold",v.tag==="latest"?"bg-emerald-500/15 text-emerald-400":"bg-glow-accent/15 text-glow-accent-light")}>{v.tag}</span>}
-                        </button>
+                      {(verGroups.length ? verGroups : [{label:"All",versions}]).map(group=>(
+                        <div key={group.label}>
+                          <p className="text-[9px] text-glow-muted/40 uppercase tracking-widest px-3 py-1.5 bg-[#0e0e1a] sticky top-8 border-b border-glow-border/20 font-semibold">{group.label}</p>
+                          {group.versions.map(v=>(
+                            <button key={v.version} onClick={()=>{setSolcVersion(v.version);setVerDropOpen(false);}}
+                              className={cn("w-full flex items-center justify-between px-3 py-1.5 text-xs transition-colors",
+                                solcVersion===v.version?"bg-glow-accent/10 text-glow-accent-light":"text-glow-muted hover:bg-glow-card/50")}>
+                              <span className="font-mono">{v.version}</span>
+                              {v.tag&&<span className={cn("text-[9px] px-1.5 py-0.5 rounded font-semibold",v.tag==="latest"?"bg-emerald-500/15 text-emerald-400":"bg-glow-accent/15 text-glow-accent-light")}>{v.tag}</span>}
+                            </button>
+                          ))}
+                        </div>
                       ))}
                     </div>
                   </>

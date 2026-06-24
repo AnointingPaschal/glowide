@@ -166,11 +166,12 @@ function CodeBlock({ code, lang, filename, onCompile, onCreateProject, isProject
 
 // ── Send to editor ────────────────────────────────────────────────────────────
 function sendToEditor(files: Array<{filename:string;content:string;lang:string}>) {
-  // Store in sessionStorage, editor page reads it
+  // Store in sessionStorage so editor page reads on load
   sessionStorage.setItem("glowide_editor_files", JSON.stringify(files));
   sessionStorage.setItem("glowide_editor_action", files.length === 1 ? "compile" : "project");
-  window.dispatchEvent(new CustomEvent("glowide:open-editor", { detail: { files } }));
-  // Navigate to editor
+  // Dispatch event in case editor is already open on this page (ChatPanel in editor)
+  window.dispatchEvent(new CustomEvent("glowide:load-files", { detail: { files, action: files.length === 1 ? "compile" : "project" } }));
+  // Navigate to editor tab
   window.location.href = "/editor";
 }
 

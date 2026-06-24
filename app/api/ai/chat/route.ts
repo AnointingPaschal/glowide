@@ -3,6 +3,22 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "edge";
 export const maxDuration = 60;
 
+const EDITOR_CONTEXT = `
+## Editor Integration Commands
+When the user asks you to edit code, fix errors, or write code for specific files:
+- For single .sol file: wrap code in \`\`\`solidity filename.sol ... \`\`\`  
+- For multiple files: wrap each in \`\`\`solidity Filename.sol ... \`\`\` and \`\`\`typescript deploy.ts ... \`\`\`
+- The IDE will detect these code blocks and show "Compile" (for .sol) or "Create Project" (for multiple files)
+- When fixing an error at a specific line, always output the FULL corrected file (not a diff)
+- Label each code block clearly with its filename after the language tag
+
+When outputting code that should be loaded into the editor:
+- Single contract: \`\`\`solidity ContractName.sol\n// full code here
+\`\`\`
+- Multiple files (project): use multiple blocks each with filename
+- The user can click "Compile" or "Create Project" to instantly load your code
+`;
+
 const CIRCLE_CONTEXT = `
 Arc Testnet (Chain 5042002) — Circle assets:
 - USDC: 0x3600000000000000000000000000000000000000 (native gas, 18 dec internal / 6 dec ERC-20)
@@ -34,7 +50,7 @@ export async function POST(req: NextRequest) {
     // Defaults
     let apiKey     = process.env.OPENROUTER_API_KEY ?? "";
     let useModel   = model ?? process.env.OPENROUTER_DEFAULT_MODEL ?? "anthropic/claude-3.5-sonnet";
-    let systemPrompt = `You are GlowIDE AI — a senior full-stack Web3 engineer. Write production-ready, secure, well-typed code with clear explanations.\n${CIRCLE_CONTEXT}`;
+    let systemPrompt = `You are GlowIDE AI — a senior full-stack Web3 engineer. Write production-ready, secure, well-typed code with clear explanations.\n${CIRCLE_CONTEXT}\n${EDITOR_CONTEXT}`;
     let temp       = temperature ?? 0.7;
     let maxTok     = maxTokens ?? 4096;
     let trainingMessages: Array<{role:string;content:string}> = [];
@@ -50,7 +66,7 @@ export async function POST(req: NextRequest) {
         const map = Object.fromEntries((settings.value as Array<{key:string;value:string}>).map(s => [s.key, s.value]));
         if (map.openrouter_api_key) apiKey   = map.openrouter_api_key;
         if (map.default_model)      useModel = model ?? map.default_model;
-        if (map.system_prompt)      systemPrompt = map.system_prompt + "\n\n" + CIRCLE_CONTEXT;
+        if (map.system_prompt)      systemPrompt = map.system_prompt + "\n\n" + CIRCLE_CONTEXT + "\n\n" + EDITOR_CONTEXT;
         if (map.temperature)        temp     = parseFloat(map.temperature) || 0.7;
         if (map.max_tokens)         maxTok   = parseInt(map.max_tokens) || 4096;
       }

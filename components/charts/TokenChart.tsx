@@ -218,7 +218,7 @@ export function TokenChart({ symbol, address, chainId, name, compact = false }: 
       </div>
 
       {/* Chart */}
-      <div className="px-1 pb-2">{chartArea}</div>
+      <div className="px-1 pb-2 overflow-hidden">{chartArea}</div>
 
       {/* DexScreener mini stats */}
       {dex && (
