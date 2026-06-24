@@ -11,7 +11,7 @@ import { useEditorStore } from "@/store/editorStore";
 import { useFileSystemStore } from "@/store/fileSystemStore";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import { FileTreePanel } from "@/components/filesystem/FileTree";
-import {
+import { ChevronDown,
   Play, Rocket, MessageSquare, Save, Download, FolderOpen,
   BookOpen, ChevronRight, X, Layers, Terminal as TermIcon,
   Code2, Zap, Shield, GitBranch, Star, FileCode, Plus,
@@ -108,6 +108,9 @@ export default function EditorPage() {
   const [compileResult,  setCompileResult]  = useState<CompileOutput|null>(null);
   const [isCompiling,    setIsCompiling]    = useState(false);
   const [buildLog,       setBuildLog]       = useState<Array<{type:"info"|"success"|"error"|"warn"; text:string; ts:number}>>([]);
+  const [solcVersion,    setSolcVersion]    = useState("0.8.20");
+  const [versions,       setVersions]       = useState<Array<{version:string;label:string;tag?:string}>>([]);
+  const [verDropOpen,    setVerDropOpen]    = useState(false);
 
   const activeTab = tabs.find(t => t.id === activeTabId);
 
@@ -137,6 +140,13 @@ export default function EditorPage() {
     log(`Loaded project: ${project.title}`, "success");
     setRightPanel(null);
   }, [log]);
+
+  // ── Load compiler versions ───────────────────────────────────────────────
+  useEffect(() => {
+    fetch("/api/contracts/versions").then(r=>r.json())
+      .then(d=>{ if(d.versions?.length) setVersions(d.versions); })
+      .catch(()=>{});
+  }, []);
 
   // ── Load from chat sessionStorage ─────────────────────────────────────────
   useEffect(() => {
@@ -193,14 +203,14 @@ export default function EditorPage() {
       const res = await fetch("/api/contracts/compile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceCode: activeTab.content, contractName: activeTab.name.replace(".sol","") }),
+        body: JSON.stringify({ sourceCode: activeTab.content, contractName: activeTab.name.replace(".sol",""), version: solcVersion }),
       });
       const result: CompileOutput = await res.json();
       setCompileResult(result);
       storeSetCompileResult(result);
       if (result.success) {
         toast.success(`Compiled: ${result.contractName}`);
-        log(`✓ ${result.contractName} compiled successfully`, "success");
+        log(`✓ ${result.contractName} compiled — solc ${result.metadata?.compiler?.version ?? solcVersion}`, "success");
         if (result.warnings?.length) result.warnings.forEach((w: {message:string}) => log(`⚠ ${w.message}`, "warn"));
         if (result.bytecode) log(`Bytecode: ${result.bytecode.length/2} bytes`, "info");
         if (result.abi) log(`ABI: ${result.abi.length} functions/events`, "info");
@@ -289,16 +299,44 @@ export default function EditorPage() {
             </div>
           )}
 
-          {/* Compile button */}
+          {/* Compiler version selector + Compile button */}
           {hasSolidity && (
-            <button onClick={compile} disabled={isCompiling}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-gradient text-white text-xs font-semibold rounded-lg disabled:opacity-50 hover:opacity-90 transition-opacity">
-              {isCompiling ? (
-                <><span className="w-3 h-3 border border-white/50 border-t-white rounded-full animate-spin"/><span>Compiling…</span></>
-              ) : (
-                <><Play className="w-3.5 h-3.5"/><span>Compile</span></>
-              )}
-            </button>
+            <div className="flex items-center gap-1 relative">
+              {/* Version dropdown */}
+              <div className="relative">
+                <button onClick={() => setVerDropOpen(!verDropOpen)}
+                  className="flex items-center gap-1 px-2 py-1.5 bg-glow-card border border-glow-border rounded-lg text-[10px] text-glow-muted hover:text-glow-text hover:border-glow-accent/40 transition-colors font-mono">
+                  v{solcVersion}
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", verDropOpen&&"rotate-180")}/>
+                </button>
+                {verDropOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={()=>setVerDropOpen(false)}/>
+                    <div className="absolute right-0 bottom-full mb-1 w-44 bg-[#0e0e1a] border border-glow-border rounded-xl shadow-2xl z-50 overflow-hidden max-h-64 overflow-y-auto animate-fade-in">
+                      <p className="text-[9px] text-glow-muted/50 uppercase tracking-widest px-3 py-2 border-b border-glow-border/30 sticky top-0 bg-[#0e0e1a]">Compiler Version</p>
+                      {versions.map(v => (
+                        <button key={v.version} onClick={() => { setSolcVersion(v.version); setVerDropOpen(false); }}
+                          className={cn("w-full flex items-center justify-between px-3 py-2 text-left text-xs transition-colors",
+                            solcVersion === v.version ? "bg-glow-accent/10 text-glow-accent-light" : "text-glow-muted hover:bg-glow-card/50 hover:text-glow-text")}>
+                          <span className="font-mono">{v.version}</span>
+                          {v.tag && <span className={cn("text-[9px] px-1.5 py-0.5 rounded font-semibold", v.tag==="latest"?"bg-emerald-500/15 text-emerald-400":"bg-glow-accent/15 text-glow-accent-light")}>{v.tag}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Compile button */}
+              <button onClick={compile} disabled={isCompiling}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-gradient text-white text-xs font-semibold rounded-lg disabled:opacity-50 hover:opacity-90 transition-opacity">
+                {isCompiling ? (
+                  <><span className="w-3 h-3 border border-white/50 border-t-white rounded-full animate-spin"/><span>Compiling…</span></>
+                ) : (
+                  <><Play className="w-3.5 h-3.5"/><span>Compile</span></>
+                )}
+              </button>
+            </div>
           )}
 
           {/* Right panel toggles */}

@@ -78,15 +78,35 @@ async function resolveAll(source: string, fromPkgPath: string, visited = new Set
   await Promise.all(pending);
 }
 
+// ── Solc version cache ────────────────────────────────────────────────────────
+const solcCache = new Map<string, unknown>();
+
+async function loadSolc(version: string): Promise<unknown> {
+  if (version === "0.8.20" || !version) {
+    // Use the locally installed solc (fastest — no network)
+    return require("solc");
+  }
+  if (solcCache.has(version)) return solcCache.get(version);
+
+  // Load a specific version from ethereum/solc-bin via solc.loadRemoteVersion
+  const installedSolc = require("solc");
+  return new Promise((resolve, reject) => {
+    installedSolc.loadRemoteVersion(version, (err: unknown, solcVer: unknown) => {
+      if (err) reject(new Error(`Could not load solc ${version}: ${err}`));
+      else { solcCache.set(version, solcVer); resolve(solcVer); }
+    });
+  });
+}
+
 // ── POST handler ─────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const { sourceCode, contractName, optimizer } = await req.json();
+    const { sourceCode, contractName, optimizer, version } = await req.json();
     if (!sourceCode) return NextResponse.json({ success:false, errors:[{type:"error",message:"No source code provided"}] }, { status:400 });
 
     let solc: any;
-    try { solc = require("solc"); }
-    catch (e) { return NextResponse.json({ success:false, errors:[{type:"error",message:`Solc unavailable: ${e}`}] }); }
+    try { solc = await loadSolc(version ?? "0.8.20"); }
+    catch (e) { return NextResponse.json({ success:false, errors:[{type:"error",message:`Compiler load failed: ${e}`}] }); }
 
     const fileLabel = `${contractName ?? "Contract"}.sol`;
 
@@ -144,7 +164,7 @@ export async function POST(req: NextRequest) {
       bytecode: "0x" + compiled.evm.bytecode.object,
       deployedBytecode: compiled.evm.deployedBytecode?.object ? "0x"+compiled.evm.deployedBytecode.object : null,
       warnings: warnings.map((w:any) => ({ type:"warning", message:w.message })),
-      metadata: { compiler:{ version:solc.version() }, optimizer: optimizer ?? {enabled:true,runs:200}, evmVersion:"paris" },
+      metadata: { compiler:{ version:solc.version?.() ?? version ?? "0.8.20" }, selectedVersion: version ?? "0.8.20", optimizer: optimizer ?? {enabled:true,runs:200}, evmVersion:"paris" },
     });
   } catch (err) {
     console.error("[compile]", err);
