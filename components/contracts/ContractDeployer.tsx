@@ -333,6 +333,7 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
           sourceCode: activeTab?.content ?? "",
           contractName: activeResult.contractName ?? "Contract",
           deployer: address,
+          chainId: chainId ?? 5042002,
         }),
       });
       const saveData = await saveRes.json().catch(()=>({}));

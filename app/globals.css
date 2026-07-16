@@ -6,23 +6,23 @@
 
 /* ── Dark theme (default) ─────────────────────────────────────── */
 :root, .dark {
-  --glow-bg:       #08080f;
-  --glow-surface:  #10101c;
-  --glow-card:     #16162a;
-  --glow-border:   #252540;
-  --glow-text:     #e2e8f0;
-  --glow-muted:    #64748b;
-  --glow-subtle:   #334155;
-  --hero-top:      #1e1040;
+  --glow-bg:       #1a1a1f;
+  --glow-surface:  #212127;
+  --glow-card:     #26262e;
+  --glow-border:   #34343f;
+  --glow-text:     #e8e8ee;
+  --glow-muted:    #8b8b98;
+  --glow-subtle:   #4a4a56;
+  --hero-top:      #2a2140;
 
-  --input-bg:      #0f0f1e;
-  --input-border:  #252540;
-  --input-text:    #e2e8f0;
-  --input-placeholder: #475569;
+  --input-bg:      #1e1e24;
+  --input-border:  #34343f;
+  --input-text:    #e8e8ee;
+  --input-placeholder: #6b6b78;
 
-  --scrollbar-track: #10101c;
-  --scrollbar-thumb: #252540;
-  --scrollbar-hover: #64748b;
+  --scrollbar-track: #212127;
+  --scrollbar-thumb: #34343f;
+  --scrollbar-hover: #55555f;
 }
 
 /* ── Light theme ──────────────────────────────────────────────── */
@@ -136,3 +136,35 @@ a, button { -webkit-tap-highlight-color: transparent; }
 .animate-slide-in-right { animation: slide-in-right 0.2s ease-out forwards; }
 .animate-slide-in-left  { animation: slide-in-left  0.2s ease-out forwards; }
 .animate-fade-in        { animation: fade-in        0.15s ease-out forwards; }
+
+/* ── Theme-aware overrides for hardcoded dark backgrounds ──────────────── */
+/* These map legacy hardcoded hex backgrounds to theme variables so light
+   mode works and dark mode uses the dark-grey palette. #0052FF (Coinbase
+   blue) and pure-black overlays are intentionally left alone. */
+.dark .bg-\[\#0e0e1a\],
+.dark .bg-\[\#080812\],
+.dark .bg-\[\#0d0d18\],
+.dark .bg-\[\#080810\],
+.dark .bg-\[\#070710\],
+.dark .bg-\[\#0a0a14\] { background-color: var(--glow-card) !important; }
+
+.light .bg-\[\#0e0e1a\],
+.light .bg-\[\#080812\],
+.light .bg-\[\#0d0d18\],
+.light .bg-\[\#080810\],
+.light .bg-\[\#070710\],
+.light .bg-\[\#0a0a14\] { background-color: var(--glow-surface) !important; }
+
+/* Monaco editor margin/background follows theme */
+.light .monaco-editor .margin,
+.light .monaco-editor-background { background-color: var(--glow-surface) !important; }
+
+/* Ensure text-glow-muted keeps adequate contrast in light mode */
+.light .text-glow-muted\/60 { color: #64748b !important; }
+.light .text-glow-muted\/50 { color: #7b869c !important; }
+.light .text-glow-muted\/40 { color: #94a3b8 !important; }
+
+/* Light-mode borders for card containers using arbitrary borders */
+.light .border-glow-border\/40,
+.light .border-glow-border\/50,
+.light .border-glow-border\/30 { border-color: var(--glow-border) !important; }

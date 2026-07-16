@@ -18,6 +18,7 @@ interface Contract {
   id: string; address: string; name: string; abi: unknown[];
   tx_hash: string; created_at: string; verified: boolean;
   deployer?: string; status?: string; chain_id?: number;
+  network?: string; explorerUrl?: string;
 }
 
 const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? 'https://rpc.testnet.arc.network';
@@ -41,6 +42,7 @@ export default function DeploymentsPage() {
   const [search, setSearch] = useState('');
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
   const [showManualAdd, setShowManualAdd] = useState(false);
+  const [scope, setScope] = useState<'mine'|'all'>('mine');
 
   // Manual add form state
   const [manualAddr, setManualAddr]   = useState('');
@@ -54,7 +56,7 @@ export default function DeploymentsPage() {
   const fetchContracts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params = address ? `?deployer=${address}` : '';
+      const params = (scope === 'mine' && address) ? `?deployer=${address}` : '';
       const res = await fetch(`/api/contracts${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -62,7 +64,7 @@ export default function DeploymentsPage() {
       }
     } catch { /* silent */ }
     finally { setIsLoading(false); }
-  }, [address]);
+  }, [address, scope]);
 
   useEffect(() => { fetchContracts(); }, [fetchContracts]);
 
@@ -211,6 +213,19 @@ export default function DeploymentsPage() {
           </div>
         )}
 
+        {/* Scope toggle */}
+        {isConnected && (
+          <div className="flex gap-1 bg-glow-surface border border-glow-border/50 rounded-xl p-1 w-fit">
+            {(['mine','all'] as const).map(sc => (
+              <button key={sc} onClick={() => setScope(sc)}
+                className={cn('px-4 py-1.5 rounded-lg text-xs font-medium capitalize transition-all',
+                  scope === sc ? 'bg-glow-accent/20 text-glow-accent-light' : 'text-glow-muted/60 hover:text-glow-text')}>
+                {sc === 'mine' ? 'My Contracts' : 'All Deployments'}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-glow-muted" />
@@ -248,7 +263,7 @@ export default function DeploymentsPage() {
                           className="text-glow-muted hover:text-glow-text transition-colors">
                           {copiedAddr === contract.address ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
-                        <a href={`https://testnet.arcscan.app/address/${contract.address}`} target="_blank" rel="noopener noreferrer"
+                        <a href={contract.explorerUrl || `https://testnet.arcscan.app/address/${contract.address}`} target="_blank" rel="noopener noreferrer"
                           className="text-glow-muted hover:text-glow-cyan transition-colors">
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
@@ -260,9 +275,9 @@ export default function DeploymentsPage() {
                     <Badge variant={contract.verified ? 'success' : 'default'} className="text-xs">
                       {contract.verified ? '✓ Verified' : 'Unverified'}
                     </Badge>
-                    <Badge variant="info" className="text-xs">Arc Testnet</Badge>
+                    <Badge variant="info" className="text-xs">{contract.network || 'Arc Testnet'}</Badge>
                     {contract.tx_hash && contract.tx_hash !== '0x' + '0'.repeat(64) && (
-                      <a href={`https://testnet.arcscan.app/tx/${contract.tx_hash}`} target="_blank" rel="noopener noreferrer">
+                      <a href={`${(contract.explorerUrl||'https://testnet.arcscan.app/address/'+contract.address).replace('/address/'+contract.address,'')}/tx/${contract.tx_hash}`} target="_blank" rel="noopener noreferrer">
                         <Badge variant="default" className="text-xs hover:border-glow-accent/40 cursor-pointer">
                           TX ↗
                         </Badge>
@@ -273,9 +288,9 @@ export default function DeploymentsPage() {
                         <Zap className="w-3 h-3" />Interact
                       </span>
                     </Link>
-                    <a href={`https://testnet.arcscan.app/address/${contract.address}`} target="_blank" rel="noopener noreferrer">
+                    <a href={contract.explorerUrl || `https://testnet.arcscan.app/address/${contract.address}`} target="_blank" rel="noopener noreferrer">
                       <span className="flex items-center gap-1 px-2.5 py-1 bg-glow-card border border-glow-border text-glow-muted text-xs rounded-lg hover:text-glow-text transition-colors cursor-pointer">
-                        ArcScan ↗
+                        Explorer ↗
                       </span>
                     </a>
                   </div>
