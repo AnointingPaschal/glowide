@@ -1,3 +1,5 @@
+// Server-only — never imported by client bundles
+import "server-only";
 /**
  * Circle Programmable Wallets — server-side API client
  * All calls are server-only (API key + entity secret never reach the browser).
@@ -5,7 +7,7 @@
  * Docs: https://developers.circle.com/wallets/user-controlled
  * API:  https://api.circle.com/v1/w3s
  */
-import crypto from "crypto";
+const crypto = require("crypto") as typeof import("crypto");
 
 export const CIRCLE_BASE = "https://api.circle.com/v1/w3s";
 export const API_KEY     = process.env.CIRCLE_API_KEY ?? "";

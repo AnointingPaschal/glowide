@@ -2,7 +2,7 @@
 const nextConfig = {
   // Treat solc as an external package — don't bundle it, use the installed version
   experimental: {
-    serverComponentsExternalPackages: ["solc", "@circle-fin/user-controlled-wallets", "crypto"],
+    serverComponentsExternalPackages: ["solc", "@circle-fin/user-controlled-wallets"],
   },
 
   webpack: (config, { isServer }) => {

@@ -211,20 +211,17 @@ export default function WalletPage() {
   // Execute a pending Circle challenge (PIN confirmation)
   const executeChallenge = useCallback(async (challengeId: string, userToken: string, encryptionKey: string) => {
     if (!sdkRef.current) {
-      toast.error("Circle SDK not loaded yet");
+      toast.error("Circle SDK not loaded yet — check NEXT_PUBLIC_CIRCLE_APP_ID");
       return;
     }
-    sdkRef.current.execute(challengeId, (err, result) => {
+    const sdk = sdkRef.current as unknown as {
+      setAuthentication(a:{userToken:string;encryptionKey:string}):void;
+      execute(id:string,cb:(e:unknown,r:unknown)=>void):void;
+    };
+    sdk.setAuthentication({ userToken, encryptionKey });
+    sdk.execute(challengeId, (err) => {
       if (err) { toast.error(`Challenge failed: ${(err as Error).message}`); return; }
-      toast.success("Transaction confirmed! ✓");
-      // Refresh wallets after action
-      loadWallets();
-    });
-    (sdkRef.current as unknown as { setAuthentication(a:{userToken:string;encryptionKey:string}):void })
-      ?.setAuthentication?.({ userToken, encryptionKey });
-    sdkRef.current.execute(challengeId, (err, result) => {
-      if (err) { toast.error(`Failed: ${(err as Error).message}`); return; }
-      toast.success("✓ Done!");
+      toast.success("✓ Confirmed!");
       loadWallets();
     });
   }, []);
