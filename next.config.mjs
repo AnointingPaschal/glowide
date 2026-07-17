@@ -2,7 +2,7 @@
 const nextConfig = {
   // Treat solc as an external package — don't bundle it, use the installed version
   experimental: {
-    serverComponentsExternalPackages: ["solc"],
+    serverComponentsExternalPackages: ["solc", "@circle-fin/user-controlled-wallets", "crypto"],
   },
 
   webpack: (config, { isServer }) => {
@@ -29,6 +29,8 @@ const nextConfig = {
     NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? '',
     NEXT_PUBLIC_ARC_RPC_URL: process.env.NEXT_PUBLIC_ARC_RPC_URL ?? 'https://rpc.testnet.arc.network',
     NEXT_PUBLIC_ARC_EXPLORER_URL: process.env.NEXT_PUBLIC_ARC_EXPLORER_URL ?? 'https://testnet.arcscan.app',
+    // Circle Integration (public app ID only — API key stays server-side)
+    NEXT_PUBLIC_CIRCLE_APP_ID: process.env.NEXT_PUBLIC_CIRCLE_APP_ID ?? '',
   },
   images: {
     remotePatterns: [

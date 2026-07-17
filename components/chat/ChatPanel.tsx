@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from "react";
 import { useEditorStore } from "@/store/editorStore";
 import { useFileSystemStore } from "@/store/fileSystemStore";
 import { terminalLog } from "@/components/editor/Terminal";
+import { useWalletStore } from "@/store/walletStore";
+import { useCircleStore } from "@/store/circleStore";
 import { useChatStore } from "@/store/chatStore";
 import { ChatMessage } from "./ChatMessage";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +21,8 @@ const QUICK_PROMPTS = [
 
 export function ChatPanel({ compact = false, editorMode = false }: { compact?: boolean; editorMode?: boolean }) {
   const { sessions, activeSessionId, createSession, addMessage, isStreaming, streamingContent, setStreaming, model, setModel } = useChatStore();
+  const { address } = useWalletStore();
+  const circle = useCircleStore();
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
   const { nodes, updateContent: updateFileContent } = useFileSystemStore();
   const [input, setInput] = useState("");
@@ -78,6 +82,16 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
           messages: [...messages.map(m => ({ role: m.role, content: m.content })), { role: "user", content: trimmed + contextContent }],
           model: model || selectedModel?.id,
           sessionId,
+          walletContext: {
+            circleUserId: circle.circleUserId,
+            userToken:    circle.userToken,
+            wallets:      circle.wallets,
+            address:      address,
+          },
+          editorContext: activeTab ? {
+            fileName: activeTab.name,
+            fileContent: activeTab.content?.slice(0, 6000),
+          } : undefined,
         }),
       });
 
@@ -86,26 +100,37 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
         throw new Error(err.error || "Request failed");
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No stream");
-
-      const decoder = new TextDecoder();
+      // Handle both streaming SSE and plain JSON responses
+      const contentType = response.headers.get("content-type") ?? "";
       let fullContent = "";
+      let toolCallData: { id: string; name: string; args: Record<string, unknown> } | undefined;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        for (const line of chunk.split("\n")) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") break;
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices?.[0]?.delta?.content || "";
-              fullContent += content;
-              useChatStore.setState({ streamingContent: fullContent });
-            } catch { /* skip */ }
+      if (contentType.includes("application/json")) {
+        // Non-streaming JSON (tool calls, simple responses)
+        const json = await response.json() as { content?: string; toolCall?: typeof toolCallData; error?: string };
+        if (json.error) throw new Error(json.error);
+        fullContent = json.content ?? "";
+        toolCallData = json.toolCall;
+      } else {
+        // Streaming SSE
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No stream");
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          for (const line of chunk.split("\n")) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              if (data === "[DONE]") break;
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.delta?.content || "";
+                fullContent += content;
+                useChatStore.setState({ streamingContent: fullContent });
+              } catch { /* skip */ }
+            }
           }
         }
       }

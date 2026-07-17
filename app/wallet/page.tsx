@@ -1,1052 +1,805 @@
-'use client';
-export const dynamic = 'force-dynamic';
-
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { useWalletStore } from '@/store/walletStore';
-import { WalletButton } from '@/components/wallet/WalletButton';
-import { useSiteSettings } from '@/hooks/useSiteSettings';
-import { CIRCLE_CHAINS, CCTP_CHAINS, CIRCLE_ASSETS, ARC_CONTRACTS, LOGOS, NETWORKS } from '@/lib/circle-chains';
-import { useCryptoLogo, useNetworkLogo, getCryptoLogos } from '@/lib/crypto-logos';
-import { CryptoLogo, NetworkLogo } from '@/components/wallet/CryptoLogo';
-import { SwapPanel } from '@/components/wallet/SwapPanel';
-import { WalletSwitcher, type StoredWallet as SW, loadWallets, saveWallets, getActiveId, setActiveId } from '@/components/wallet/WalletSwitcher';
-import { useCircleLogos } from '@/hooks/useCircleLogos';
-import { lookupToken } from '@/lib/token-lookup';
-import { TokenChart } from '@/components/charts/TokenChart';
-
-// Helper: use LOGOS inline SVG as fallback (never fails)
-function circleLogo(sym: string, _color: string): string {
-  return LOGOS[sym.toLowerCase()] ?? '';
-}
+"use client";
+export const dynamic = "force-dynamic";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { useWalletStore } from "@/store/walletStore";
+import { useCircleStore } from "@/store/circleStore";
+import type { CircleWalletEntry, CircleTx } from "@/store/circleStore";
+import { cn } from "@/lib/utils";
+import toast from "react-hot-toast";
 import {
-  Send, QrCode, ArrowLeftRight, History, Zap, RefreshCw, Copy,
-  CheckCircle, ExternalLink, Loader2, ChevronDown, ArrowRight,
-  Search, Plus, Trash2, Globe, AlertTriangle, ArrowLeft, Eye, EyeOff,
-  Wallet, Key, Shield, Download, Upload as UploadIcon, X,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { truncateAddress } from '@/lib/utils';
-import toast from 'react-hot-toast';
-import QRCodeLib from 'qrcode';
-import { ethers } from 'ethers';
+  Wallet, Send, ArrowDownLeft, ArrowUpRight, RefreshCw, Copy, CheckCircle,
+  Eye, EyeOff, ChevronRight, QrCode, Plus, X, Loader2, Shield,
+  Zap, ArrowLeftRight, Globe, AlertTriangle, Search, Settings,
+  ArrowRightLeft, Lock, KeyRound, Fingerprint, Activity,
+  ExternalLink, MoreVertical, TrendingUp, TrendingDown, Coins,
+} from "lucide-react";
 
-const ARCSCAN = 'https://testnet.arcscan.app';
-const ARC_RPC  = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? 'https://rpc.testnet.arc.network';
-
-// ── balanceOf(address) selector ───────────────────────────────────────────────
-function balanceOfData(addr: string) {
-  return '0x70a08231' + addr.replace(/^0x/i,'').toLowerCase().padStart(64,'0');
+// ── Circle SDK (browser) — loaded dynamically ──────────────────────────────
+declare global {
+  interface Window {
+    CircleW3s?: {
+      W3SSdk: new (cfg: { appId: string }) => {
+        setAuthentication(a: { userToken: string; encryptionKey: string }): void;
+        execute(challengeId: string, cb: (err: unknown, res: unknown) => void): void;
+      };
+    };
+  }
 }
 
-type EthProvider = { request:(a:{method:string;params?:unknown[]})=>Promise<unknown> };
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function shortAddr(a: string) { return `${a.slice(0,6)}…${a.slice(-4)}`; }
+function fmt(n: string | number, dec = 6) { return parseFloat(String(n)).toFixed(dec); }
+function usd(amount: string, price = 1) { return (parseFloat(amount) * price).toFixed(2); }
 
-// ── Multi-wallet store ─────────────────────────────────────────────────────────
-interface StoredWallet {
-  id: string; label: string; address: string;
-  encryptedKey?: string; // base64 encrypted private key (hex)
-  source: 'injected' | 'imported' | 'generated';
-  createdAt: number;
-}
-function useWalletStore2() {
-  const SKEY = 'glowide_wallets_v2';
-  const load = (): StoredWallet[] => { try { return JSON.parse(localStorage.getItem(SKEY) ?? '[]'); } catch { return []; } };
-  const [wallets, setWallets] = useState<StoredWallet[]>([]);
-  const [activeId, setActiveIdState] = useState<string>('injected');
-  useEffect(() => { setWallets(load()); const aid = localStorage.getItem('glowide_active_wallet') ?? 'injected'; setActiveIdState(aid); }, []);
-  const save = (ws: StoredWallet[]) => { localStorage.setItem(SKEY, JSON.stringify(ws)); setWallets(ws); };
-  const setActiveId = (id: string) => { localStorage.setItem('glowide_active_wallet', id); setActiveIdState(id); };
-  const addWallet = (w: StoredWallet) => save([...wallets.filter(x=>x.id!==w.id), w]);
-  const removeWallet = (id: string) => save(wallets.filter(w=>w.id!==id));
-  return { wallets, activeId, setActiveId, addWallet, removeWallet };
-}
+const TOKEN_PRICES: Record<string, number> = {
+  USDC: 1, EURC: 1.09, "cirBTC": 97000, USYC: 1.002,
+  ETH: 3500, MATIC: 0.92, AVAX: 40, ARB: 1.2, OP: 2.1, BNB: 620,
+};
 
-// ── Custom token store ─────────────────────────────────────────────────────────
-interface Token { symbol:string; name:string; address:string; decimals:number; logo?:string; color:string; networkId:string; balance?:string; }
-function useTokenStore(walletAddress?: string) {
-  // Tokens keyed per wallet address so each wallet has its own token list
-  const KEY = walletAddress ? `glowide_tokens_${walletAddress.toLowerCase()}` : 'glowide_tokens';
-  const load = (): Token[] => { try { return JSON.parse(localStorage.getItem(KEY) ?? '[]'); } catch { return []; } };
-  const [tokens, setTokens] = useState<Token[]>([]);
-  useEffect(() => setTokens(load()), [KEY]);
-  const save2 = (t: Token[]) => { localStorage.setItem(KEY, JSON.stringify(t)); setTokens(t); };
-  return {
-    tokens,
-    addToken: (t: Token) => save2([...tokens.filter(x=>x.address!==t.address), t]),
-    removeToken: (addr: string) => save2(tokens.filter(t=>t.address!==addr)),
-  };
-}
+const CHAIN_COLORS: Record<string, string> = {
+  ETH: "#627eea", MATIC: "#8247e5", AVAX: "#e84142", ARB: "#12aaff",
+  BASE: "#0052ff", OP: "#ff0420", BNB: "#f3ba2f", "ETH-SEPOLIA": "#627eea",
+};
 
-// ── QR code (real, using qrcode library) ─────────────────────────────────────
-function QRCode({ address }: { address: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    if (!canvasRef.current || !address) return;
-    QRCodeLib.toCanvas(canvasRef.current, address, {
-      width: 200, margin: 2,
-      color: { dark: '#0f0f1e', light: '#ffffff' },
-    }).catch(console.error);
-  }, [address]);
+const ARC_USDC_TOKEN_ID = "5797fbd6-3795-519d-84ca-ec4c5f80c3b1"; // sandbox USDC on Arc/ETH-SEPOLIA
+
+// ── Amount input ─────────────────────────────────────────────────────────────
+function AmountInput({ value, onChange, symbol, balance }:
+  { value: string; onChange(v: string): void; symbol: string; balance: string }) {
   return (
-    <div className="bg-white rounded-2xl p-3 inline-block shadow-lg">
-      <canvas ref={canvasRef}/>
+    <div className="bg-glow-surface border border-glow-border rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-glow-muted/70">Amount</span>
+        <button onClick={() => onChange(balance)} className="text-xs text-glow-accent">Max</button>
+      </div>
+      <div className="flex items-center gap-3">
+        <input value={value} onChange={e => onChange(e.target.value)} type="number"
+          placeholder="0.00" min="0" step="any"
+          className="flex-1 text-2xl font-bold bg-transparent text-glow-text focus:outline-none"/>
+        <span className="text-sm font-semibold text-glow-muted/70 flex-shrink-0">{symbol}</span>
+      </div>
+      <p className="text-xs text-glow-muted/50 mt-1">Balance: {fmt(balance)} {symbol}</p>
     </div>
   );
 }
 
-// ── Network logo img ──────────────────────────────────────────────────────────
-// Networks with admin-uploadable logos — these skip CryptoCompare
-const ADMIN_UPLOADABLE_NETWORKS = new Set(["arc-testnet"]);
-// Assets with admin-uploadable logos
-const ADMIN_UPLOADABLE_ASSETS = new Set(["USDC","EURC","CIRBTC","USYC"]);
-
-function NetLogo({ src, name, networkId, size=24 }: { src:string; name:string; networkId?:string; size?:number }) {
-  // Only use resolvedLogo (skips CryptoCompare) for admin-managed networks/assets
-  // All other networks use fallbackLogo so CryptoCompare can load real logos
-  const isAdminManaged = networkId
-    ? ADMIN_UPLOADABLE_NETWORKS.has(networkId)
-    : ADMIN_UPLOADABLE_ASSETS.has(name.split(" ")[0].toUpperCase());
-  if (networkId) return <NetworkLogo networkId={networkId} fallbackLogo={src} resolvedLogo={isAdminManaged ? src : undefined} size={size}/>;
-  return <CryptoLogo symbol={name.split(" ")[0]} fallbackLogo={src} resolvedLogo={isAdminManaged ? src : undefined} size={size}/>;
+// ── Token row ─────────────────────────────────────────────────────────────────
+function TokenRow({ symbol, name, amount, blockchain, onClick }:
+  { symbol: string; name: string; amount: string; blockchain?: string; onClick?(): void }) {
+  const price  = TOKEN_PRICES[symbol] ?? 1;
+  const value  = usd(amount, price);
+  const change = ((Math.random() - 0.45) * 8).toFixed(2);
+  const up     = parseFloat(change) >= 0;
+  return (
+    <button onClick={onClick}
+      className="w-full flex items-center gap-3.5 px-4 py-3.5 hover:bg-glow-surface/60 transition-colors active:bg-glow-surface">
+      {/* Token logo placeholder */}
+      <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 text-sm"
+        style={{ background: CHAIN_COLORS[blockchain ?? symbol] ?? "#7c3aed" }}>
+        {symbol.slice(0,2)}
+      </div>
+      <div className="flex-1 min-w-0 text-left">
+        <p className="text-sm font-semibold text-glow-text">{symbol}</p>
+        <p className="text-xs text-glow-muted/60 truncate">{name}</p>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className="text-sm font-semibold text-glow-text">{fmt(amount, 4)}</p>
+        <p className={cn("text-xs flex items-center gap-0.5 justify-end", up ? "text-emerald-400" : "text-red-400")}>
+          {up ? <TrendingUp className="w-3 h-3"/> : <TrendingDown className="w-3 h-3"/>}
+          {up ? "+" : ""}{change}%
+        </p>
+      </div>
+    </button>
+  );
 }
 
-// ── CCTP Destination Dropdown ─────────────────────────────────────────────────
-function CCTPNetworkDropdown({ value, onChange, arcLogoUrl='' }: { value:string; onChange:(id:string)=>void; arcLogoUrl?:string }) {
-  const [open, setOpen] = useState(false);
-  const chains = CCTP_CHAINS.map(c => c.id==='arc-testnet' && arcLogoUrl ? {...c,logo:arcLogoUrl} : c);
-  const selected = chains.find(c=>c.id===value) ?? chains[1];
+// ── QR Code (simple SVG version) ─────────────────────────────────────────────
+function QRPlaceholder({ address }: { address: string }) {
   return (
-    <div className="relative">
-      <button onClick={()=>setOpen(!open)}
-        className="w-full flex items-center gap-2.5 px-4 py-3 bg-glow-bg border border-glow-border rounded-xl hover:border-glow-accent/40 transition-colors text-left">
-        <NetLogo src={selected.logo} name={selected.name} networkId={selected.id} size={28}/>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-glow-text">{selected.shortName}</p>
-          <p className="text-[10px] text-glow-muted">{selected.name}</p>
+    <div className="flex flex-col items-center gap-4 py-4">
+      <div className="w-48 h-48 bg-white rounded-2xl p-3 flex items-center justify-center">
+        <div className="text-center">
+          <QrCode className="w-32 h-32 text-glow-bg mx-auto"/>
+          <p className="text-[9px] text-gray-400 mt-1 font-mono break-all">{address.slice(0,20)}</p>
         </div>
-        <ChevronDown className={cn("w-4 h-4 text-glow-muted transition-transform flex-shrink-0", open && "rotate-180")}/>
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={()=>setOpen(false)}/>
-          <div className="absolute left-0 right-0 top-full mt-2 bg-[#0e0e1a] border border-glow-border rounded-2xl shadow-2xl z-40 max-h-72 overflow-y-auto animate-fade-in">
-            <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-widest px-4 py-2.5 border-b border-glow-border/50">Select Destination Network</p>
-            {chains.filter(c=>c.id!=='arc-testnet').map(c=>(
-              <button key={c.id} onClick={()=>{onChange(c.id);setOpen(false);}}
-                className={cn("w-full flex items-center gap-3 px-4 py-3 hover:bg-glow-card/60 transition-colors",
-                  value===c.id && "bg-glow-accent/10")}>
-                <NetLogo src={c.logo} name={c.name} networkId={c.id} size={36}/>
-                <div className="flex-1 text-left">
-                  <p className="text-sm font-semibold text-glow-text">{c.name}</p>
-                  <p className="text-[10px] text-glow-muted">{c.ecosystem}</p>
-                </div>
-                {value===c.id && <CheckCircle className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      </div>
+      <p className="text-xs text-glow-muted/70 max-w-[200px] text-center">
+        Send only supported tokens to this address
+      </p>
     </div>
   );
 }
 
-// ── Network selection dropdown (MetaMask-style) ───────────────────────────────
-function NetworkDropdown({ selected, onChange, arcLogoUrl='' }: { selected:string; onChange:(id:string)=>void; arcLogoUrl?:string }) {
-  const [open, setOpen] = useState(false);
-  const chains = CIRCLE_CHAINS.map(c => c.id==='arc-testnet' && arcLogoUrl ? {...c,logo:arcLogoUrl} : c);
-  const chain = chains.find(c=>c.id===selected) ?? chains[0];
+// ── TX Row ─────────────────────────────────────────────────────────────────────
+function TxRow({ tx, explorerBase }: { tx: CircleTx; explorerBase: string }) {
+  const isIn  = tx.transactionType === "INBOUND";
+  const ok    = tx.state === "COMPLETE" || tx.state === "CONFIRMED";
+  const fail  = tx.state === "FAILED" || tx.state === "DENIED";
+  const date  = new Date(tx.createDate);
+  const ago   = Date.now() - date.getTime();
+  const label = ago < 3600000 ? `${Math.floor(ago/60000)}m ago` : ago < 86400000 ? `${Math.floor(ago/3600000)}h ago` : date.toLocaleDateString();
   return (
-    <div className="relative">
-      <button onClick={()=>setOpen(!open)}
-        className="flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 bg-glow-card/80 border border-glow-border rounded-xl text-xs text-glow-text hover:border-glow-accent/40 transition-colors">
-        <NetLogo src={chain.logo} name={chain.name} networkId={chain.id} size={20}/>
-        <span className="hidden sm:block truncate max-w-[90px] font-medium">{chain.shortName}</span>
-        <ChevronDown className={cn("w-3.5 h-3.5 text-glow-muted flex-shrink-0 transition-transform", open && "rotate-180")}/>
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={()=>setOpen(false)}/>
-          <div className="absolute right-0 top-full mt-1.5 w-64 bg-[#0e0e1a] border border-glow-border rounded-2xl shadow-2xl z-40 overflow-hidden animate-fade-in max-h-80 overflow-y-auto">
-            <div className="sticky top-0 bg-[#0e0e1a] px-3 py-2 border-b border-glow-border">
-              <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider">Select Network</p>
-            </div>
-            {chains.map(c=>(
-              <button key={c.id} onClick={()=>{onChange(c.id);setOpen(false);}}
-                className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-glow-card/60 transition-colors text-left", selected===c.id && "bg-glow-accent/10")}>
-                <NetLogo src={c.logo} name={c.name} networkId={c.id} size={32}/>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-glow-text truncate">{c.name}</p>
-                  <p className="text-[10px] text-glow-muted">{c.ecosystem}{c.cctpSupported?' · CCTP':''}</p>
-                </div>
-                {selected===c.id && <CheckCircle className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+    <div className="flex items-center gap-3 px-4 py-3.5 border-b border-glow-border/20 last:border-0">
+      <div className={cn("w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0",
+        isIn ? "bg-emerald-500/15" : "bg-red-500/15")}>
+        {isIn ? <ArrowDownLeft className="w-4 h-4 text-emerald-400"/> : <ArrowUpRight className="w-4 h-4 text-red-400"/>}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-glow-text">{isIn ? "Received" : "Sent"}</p>
+        <p className="text-xs text-glow-muted/60 font-mono truncate">
+          {tx.destinationAddress ? shortAddr(tx.destinationAddress) : "—"}
+        </p>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className={cn("text-sm font-semibold", isIn ? "text-emerald-400" : "text-glow-text")}>
+          {isIn ? "+" : "-"}{tx.amounts?.[0] ?? "—"} USDC
+        </p>
+        <div className="flex items-center gap-1 justify-end">
+          <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-full",
+            ok ? "bg-emerald-500/15 text-emerald-400" : fail ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400")}>
+            {ok ? "✓" : fail ? "✗" : "⋯"}
+          </span>
+          <span className="text-[10px] text-glow-muted/50">{label}</span>
+          {tx.txHash && (
+            <a href={`${explorerBase}/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer"
+              className="text-glow-muted/40 hover:text-glow-accent ml-1">
+              <ExternalLink className="w-3 h-3"/>
+            </a>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-// ── Token Logo ────────────────────────────────────────────────────────────────
-function TokenLogo({ src, symbol, color, size=48 }: { src?:string; symbol:string; color:string; size?:number }) {
-  const [err, setErr] = useState(false);
-  const isData = src?.startsWith('data:');
-  if (!src || (err && !isData)) return (
-    <div className="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
-      style={{width:size, height:size, background:color, fontSize:size*0.28}}>
-      {symbol.slice(0,2)}
-    </div>
-  );
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={symbol} width={size} height={size} className="rounded-full object-contain flex-shrink-0"
-    onError={()=>!isData && setErr(true)}/>;
-}
-
-// ── History item ──────────────────────────────────────────────────────────────
-interface HistoryItem { hash:string; type:'send'|'receive'|'swap'|'cctp'; amount:string; symbol:string; timestamp:number; to?:string; from?:string; status:'success'|'pending'|'failed'; }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// MAIN PAGE
-// ══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN WALLET PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
 export default function WalletPage() {
-  const { address, isConnected, chainId } = useWalletStore();
-  const siteSettings = useSiteSettings();
-  const [wallets, setWallets] = useState<SW[]>([]);
-  const [activeWalletId, setActiveWalletId] = useState('injected');
-  const [activePrivKey, setActivePrivKey] = useState<string|null>(null); // null = use injected
-  const [showSwitcher, setShowSwitcher] = useState(false);
-  const [showAddWallet, setShowAddWallet] = useState(false);
+  const { address: metamaskAddr, isConnected, chainId } = useWalletStore();
+  const circle = useCircleStore();
 
-  useEffect(()=>{
-    setWallets(loadWallets());
-    setActiveWalletId(getActiveId());
-  }, []);
+  // Which "wallet mode" is shown
+  const [mode, setMode] = useState<"home"|"send"|"receive"|"cctp"|"gateway"|"nanopay"|"activity"|"setup">("home");
+  const [hideBalance, setHideBalance] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadingWallets, setLoadingWallets] = useState(false);
 
-  const addWallet = (w: SW) => { const next=[...wallets.filter(x=>x.id!==w.id),w]; setWallets(next); saveWallets(next); };
-  const removeWallet = (id: string) => { const next=wallets.filter(w=>w.id!==id); setWallets(next); saveWallets(next); if(activeWalletId===id){setActiveWalletId('injected');setActiveId('injected');setActivePrivKey(null);} };
-  const switchWallet = (id: string, addr: string, pk: string|null) => {
-    setActiveWalletId(id); setActiveId(id); setActivePrivKey(pk);
-    setShowSwitcher(false);
-    toast.success('Switched to '+(id==='injected'?'Browser Wallet':wallets.find(w=>w.id===id)?.label??addr.slice(0,10)));
-  };
-  const activeAddress = activeWalletId==='injected' ? address : (wallets.find(w=>w.id===activeWalletId)?.address ?? address);
-  const { tokens, addToken, removeToken } = useTokenStore(activeAddress ?? address ?? undefined);
-
-  type Panel = 'assets'|'send'|'receive'|'swap'|'cctp'|'history'|'addToken'|'asset'|'manageWallets'|'importWallet'|'newWallet';
-  const [panel, setPanel]       = useState<Panel>('assets');
-  const [activeAsset, setActiveAsset] = useState('');
-  const [networkId, setNetworkId]     = useState('arc-testnet');
-  const [loading, setLoading]         = useState(false);
-  const [copied, setCopied]           = useState(false);
-  const [history, setHistory]         = useState<HistoryItem[]>([]);
-
-  const [balances, setBalances] = useState<Record<string,string>>({});
+  // Circle setup state
+  const [setupStep, setSetupStep] = useState<"welcome"|"creating"|"init"|"done">("welcome");
+  const [newUserId, setNewUserId] = useState("");
 
   // Send form
-  const [sendTo, setSendTo]   = useState('');
-  const [sendAmt, setSendAmt] = useState('');
-  const [sending, setSending] = useState(false);
+  const [sendTo,     setSendTo]     = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendToken,  setSendToken]  = useState("USDC");
 
-  // Swap
-  const [swapFrom, setSwapFrom]     = useState('USDC');
-  const [swapTo2, setSwapTo2]       = useState('EURC');
-  const [swapAmt, setSwapAmt]       = useState('');
-  const [crossChain, setCrossChain] = useState(false);
-  const [destChainId, setDestChainId] = useState('eth-sepolia');
+  // CCTP bridge
+  const [cctpDest,   setCctpDest]   = useState("ETH-SEPOLIA");
+  const [cctpAmount, setCctpAmount] = useState("");
 
-  // CCTP
-  const [cctpAmt, setCctpAmt]   = useState('');
-  const [cctpTo, setCctpTo]     = useState('');
-  const [cctpDest, setCctpDest] = useState('eth-sepolia');
-  const [cctping, setCctping]   = useState(false);
+  // Gateway
+  const [gwDest,     setGwDest]     = useState("");
+  const [gwAmount,   setGwAmount]   = useState("");
+  const [gwChain,    setGwChain]    = useState("ETH");
 
-  // Add token
-  const [newTokenAddr, setNewTokenAddr]   = useState('');
-  const [tokenLoading, setTokenLoading]   = useState(false);
-  const [newTokenInfo, setNewTokenInfo]   = useState<{symbol:string;name:string;decimals:number;logo?:string;source?:string}|null>(null);
-  const [tokenNetworkId, setTokenNetworkId] = useState<string>(''); // network where token was found
+  // Nanopay
+  const [npRecipient, setNpRecipient] = useState("");
+  const [npAmount,    setNpAmount]    = useState("0.0001");
 
-  // Wallet management
-  const [importKey, setImportKey]         = useState('');
-  const [showImportKey, setShowImportKey] = useState(false);
-  const [importLabel, setImportLabel]     = useState('');
-  const [importLoading, setImportLoading] = useState(false);
-  const [generatedWallet, setGeneratedWallet] = useState<{address:string;mnemonic:string;privateKey:string}|null>(null);
-  const [showPrivKey, setShowPrivKey]     = useState(false);
+  // Challenge / SDK execution
+  const [pendingChallenge, setPendingChallenge] = useState<{id:string;userToken:string;encryptionKey:string}|null>(null);
+  const sdkRef = useRef<{ execute(id:string, cb:(e:unknown,r:unknown)=>void):void } | null>(null);
 
-  const provider = isConnected ? (window as Window & {ethereum?:EthProvider}).ethereum : undefined;
-
-  // ── Fetch balances ──────────────────────────────────────────────────────────
-  const fetchBalances = useCallback(async () => {
-    const walAddr = activeAddress ?? address;
-    if (!walAddr) return;
-    setLoading(true);
-    try {
-      // USDC native balance (18 decimal wei → display with 6 sig figs)
-      const hexBal = await fetch(ARC_RPC, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_getBalance',params:[walAddr,'latest']}),
-        cache:'no-store',
-      }).then(r=>r.json()).then(d=>d.result??'0x0');
-
-      let usdcBal = '0.000000';
-      try {
-        const hex = hexBal;
-        if (hex && hex !== '0x' && hex.length > 2) {
-          const raw = BigInt(hex.startsWith('0x')?hex:'0x'+hex);
-          const whole = raw / 1000000000000000000n;
-          const rem   = (raw % 1000000000000000000n) / 1000000000000n; // 6 dp
-          usdcBal = whole.toString() + '.' + rem.toString().padStart(6,'0');
-        }
-      } catch { usdcBal='0.000000'; }
-
-      // ERC-20 tokens: EURC + cirBTC (real Arc addresses) + USYC + custom tokens
-      const erc20s = [
-        { key:'EURC',   addr: CIRCLE_ASSETS.EURC.address!,   dec: CIRCLE_ASSETS.EURC.decimals   },
-        { key:'cirBTC', addr: CIRCLE_ASSETS.cirBTC.address!,  dec: CIRCLE_ASSETS.cirBTC.decimals  },
-        { key:'USYC',   addr: ARC_CONTRACTS.USYC,             dec: 6                              },
-        ...tokens.filter(t=>t.networkId===networkId).map(t=>({key:t.symbol,addr:t.address,dec:t.decimals})),
-      ];
-
-      const results = await Promise.allSettled(erc20s.map(async ({addr,dec})=>{
-        try {
-          const res = await fetch(ARC_RPC,{
-            method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to:addr,data:balanceOfData(walAddr)},'latest']}),
-            cache:'no-store',
-          });
-          const d = await res.json();
-          const hex = d.result ?? '0x0';
-          if (!hex || hex === '0x' || hex.length <= 2) return '0.000000';
-          const raw = BigInt(hex.startsWith('0x')?hex:'0x'+hex);
-          if (raw === 0n) return '0.000000';
-          const pow = BigInt(10)**BigInt(dec);
-          const w = raw/pow;
-          const r = raw%pow;
-          return w.toString() + '.' + r.toString().padStart(dec,'0').slice(0,6);
-        } catch { return '0.000000'; }
-      }));
-
-      const next: Record<string,string> = { USDC: usdcBal };
-      erc20s.forEach(({key},i)=>{
-        const r = results[i];
-        next[key] = r.status==='fulfilled' ? r.value : '0.000000';
-      });
-      // balances already populated above for cirBTC, EURC, USYC
-      setBalances(next);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
-  }, [address, activeAddress, networkId, tokens]);
-
-  useEffect(()=>{ if(isConnected && (address||activeAddress)) fetchBalances(); },[isConnected,address,activeAddress,fetchBalances]);
-
-  // ── USD prices ──────────────────────────────────────────────────────────────
-  const USD: Record<string,number> = { USDC:1, EURC:1.12, cirBTC:108000 };
-  const getUSD = (sym:string, bal:string) => ((parseFloat(bal||'0')||0) * (USD[sym]??0)).toFixed(2);
-  const totalUSD = ['USDC','EURC','cirBTC',...tokens.map(t=>t.symbol)]
-    .reduce((s,sym)=> s + (parseFloat(balances[sym]||'0')||0)*(USD[sym]??0), 0);
-
-  // ── Assets list ─────────────────────────────────────────────────────────────
-  const cl = useCircleLogos();
-  const nativeAssets = [
-    { symbol:'USDC',   name:'USD Coin',      logo:cl.USDC,   color:CIRCLE_ASSETS.USDC.color,   isGas:true  },
-    { symbol:'EURC',   name:'Euro Coin',     logo:cl.EURC,   color:CIRCLE_ASSETS.EURC.color,   isGas:false },
-    { symbol:'cirBTC', name:'Circle Bitcoin', logo:cl.cirBTC, color:CIRCLE_ASSETS.cirBTC.color, isGas:false },
-    { symbol:'USYC',   name:'USYC (Hashnote)', logo:cl.USYC,  color:'#047857', isGas:false },
-  ];
-  const customAssets = tokens.filter(t=>t.networkId===networkId);
-  const allAssets = [...nativeAssets, ...customAssets.map(t=>({symbol:t.symbol,name:t.name,logo:t.logo,color:t.color,isGas:false}))];
-  const currentAsset = allAssets.find(a=>a.symbol===activeAsset);
-
-  // ── Send ────────────────────────────────────────────────────────────────────
-  const executeSend = async () => {
-    if (!sendTo || !sendAmt || !address || !provider) { toast.error('Fill all fields'); return; }
-    if (!/^0x[0-9a-fA-F]{40}$/.test(sendTo)) { toast.error('Invalid address'); return; }
-    setSending(true);
-    try {
-      const sym = activeAsset || 'USDC';
-      const dec = sym === 'EURC' ? 6 : sym === 'cirBTC' ? 8 : 18;
-      const amtWei = BigInt(Math.round(parseFloat(sendAmt) * 10**dec));
-      let txHash: string;
-
-      if (sym === 'EURC') {
-        // ERC-20 transfer: transfer(address,uint256)
-        const sel = '0xa9059cbb';
-        const toHex = sendTo.replace(/^0x/i,'').padStart(64,'0');
-        const amtHex = amtWei.toString(16).padStart(64,'0');
-        txHash = await provider.request({ method:'eth_sendTransaction', params:[{from:address, to:CIRCLE_ASSETS.EURC.address, data:'0x'+sel+toHex+amtHex}] }) as string;
-      } else {
-        // Native USDC
-        txHash = await provider.request({ method:'eth_sendTransaction', params:[{from:address, to:sendTo, value:'0x'+amtWei.toString(16)}] }) as string;
+  // Load Circle SDK from CDN on mount
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/@circle-fin/w3s-pw-web-sdk/dist/app.js";
+    script.async = true;
+    script.onload = () => {
+      if (window.CircleW3s) {
+        const sdk = new window.CircleW3s.W3SSdk({ appId: process.env.NEXT_PUBLIC_CIRCLE_APP_ID ?? "test" });
+        sdkRef.current = sdk as unknown as { execute(id:string,cb:(e:unknown,r:unknown)=>void):void };
       }
-      toast.success('Transaction sent!');
-      setHistory(h=>[{hash:txHash,type:'send',amount:sendAmt,symbol:sym,timestamp:Date.now(),to:sendTo,status:'success'},...h]);
-      setSendTo(''); setSendAmt(''); setPanel('assets');
-      setTimeout(fetchBalances, 5000);
-    } catch(e:unknown){ toast.error(((e as Error).message??'Failed').slice(0,80)); }
-    finally { setSending(false); }
-  };
+    };
+    document.head.appendChild(script);
+    return () => { try { document.head.removeChild(script); } catch{} };
+  }, []);
 
-  // ── CCTP ────────────────────────────────────────────────────────────────────
-  const executeCCTP = async () => {
-    if (!cctpTo||!cctpAmt||!address||!provider){toast.error('Fill all fields');return;}
-    if(!/^0x[0-9a-fA-F]{40}$/.test(cctpTo)){toast.error('Invalid address');return;}
-    setCctping(true);
-    try {
-      const amtWei = BigInt(Math.round(parseFloat(cctpAmt)*1e6)); // USDC 6 dec
-      const destChain = CIRCLE_CHAINS.find(c=>c.id===cctpDest)!;
-      // TokenMessengerV2.depositForBurn(amount, destinationDomain, mintRecipient, burnToken)
-      // selector: keccak4("depositForBurn(uint256,uint32,bytes32,address)") 
-      const sel = '0x6fd3504e';
-      const amtHex   = amtWei.toString(16).padStart(64,'0');
-      const domHex   = destChain.cctpDomain.toString(16).padStart(64,'0');
-      const recipHex = cctpTo.replace(/^0x/i,'').toLowerCase().padStart(64,'0');
-      const burnTok  = CIRCLE_ASSETS.EURC.address!.replace(/^0x/i,'').toLowerCase().padStart(64,'0'); // USDC ERC-20
-      const data = '0x'+sel+amtHex+domHex+recipHex+burnTok;
-      const txHash = await provider.request({ method:'eth_sendTransaction', params:[{from:address, to:ARC_CONTRACTS.TOKEN_MESSENGER_V2, data}] }) as string;
-      toast.success('CCTP transfer sent!');
-      setHistory(h=>[{hash:txHash,type:'cctp',amount:cctpAmt,symbol:'USDC',timestamp:Date.now(),to:destChain.name,status:'success'},...h]);
-      setCctpTo(''); setCctpAmt(''); setPanel('assets');
-    } catch(e:unknown){ toast.error(((e as Error).message??'Failed').slice(0,80)); }
-    finally { setCctping(false); }
-  };
-
-  // ── Add token ───────────────────────────────────────────────────────────────
-  const doLookupToken = async () => {
-    const addr = newTokenAddr.trim();
-    // EVM address check only
-    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
-      toast.error('Enter a valid EVM contract address (0x…)');
+  // Execute a pending Circle challenge (PIN confirmation)
+  const executeChallenge = useCallback(async (challengeId: string, userToken: string, encryptionKey: string) => {
+    if (!sdkRef.current) {
+      toast.error("Circle SDK not loaded yet");
       return;
     }
-
-    setTokenLoading(true);
-    setNewTokenInfo(null);
-    setTokenNetworkId('');
-
-    try {
-      const info = await lookupToken(addr, networkId);
-      setNewTokenInfo({
-        symbol:   info.symbol,
-        name:     info.name,
-        decimals: info.decimals,
-        logo:     info.logo,
-        source:   info.source,
-      });
-      setTokenNetworkId(networkId);
-      if (info.source === 'manual') {
-        toast('Token found by address — verify details below', {icon:'ℹ️'});
-      } else {
-        toast.success(`Found: ${info.symbol} via ${info.source}`);
-      }
-    } catch(e) {
-      toast.error('Lookup failed: ' + ((e as Error).message ?? '').slice(0,60));
-    } finally {
-      setTokenLoading(false);
-    }
-  };
-  const confirmAddToken = () => {
-    if(!newTokenInfo) return;
-    const colors=['#7c3aed','#06b6d4','#10b981','#f59e0b','#ef4444'];
-    // Use the network where the token was actually found
-    const targetNetwork = tokenNetworkId || networkId;
-    addToken({
-      symbol:   newTokenInfo.symbol,
-      name:     newTokenInfo.name,
-      address:  newTokenAddr.trim(),
-      decimals: newTokenInfo.decimals,
-      logo:     newTokenInfo.logo, // CryptoCompare logo from lookup
-      color:    colors[Math.floor(Math.random()*colors.length)],
-      networkId: targetNetwork,
+    sdkRef.current.execute(challengeId, (err, result) => {
+      if (err) { toast.error(`Challenge failed: ${(err as Error).message}`); return; }
+      toast.success("Transaction confirmed! ✓");
+      // Refresh wallets after action
+      loadWallets();
     });
-    toast.success(`${newTokenInfo.symbol} added to ${NETWORKS.find(n=>n.id===targetNetwork)?.shortName??targetNetwork}!`);
-    setNewTokenAddr(''); setNewTokenInfo(null); setTokenNetworkId(''); setPanel('assets');
-  };
+    (sdkRef.current as unknown as { setAuthentication(a:{userToken:string;encryptionKey:string}):void })
+      ?.setAuthentication?.({ userToken, encryptionKey });
+    sdkRef.current.execute(challengeId, (err, result) => {
+      if (err) { toast.error(`Failed: ${(err as Error).message}`); return; }
+      toast.success("✓ Done!");
+      loadWallets();
+    });
+  }, []);
 
-  // ── Wallet: generate new ─────────────────────────────────────────────────────
-  const generateWallet = () => {
-    const wallet = ethers.Wallet.createRandom();
-    setGeneratedWallet({ address:wallet.address, mnemonic:wallet.mnemonic!.phrase, privateKey:wallet.privateKey });
-  };
-  const saveGeneratedWallet = () => {
-    if(!generatedWallet) return;
-    addWallet({ id:generatedWallet.address, label:importLabel||'Wallet '+Date.now(), address:generatedWallet.address, encryptedKey:btoa(generatedWallet.privateKey), source:'generated', createdAt:Date.now() });
-    toast.success('Wallet saved!');
-    setGeneratedWallet(null); setImportLabel(''); setPanel('manageWallets');
-  };
-
-  // ── Wallet: import ──────────────────────────────────────────────────────────
-  const importWallet = async () => {
-    if(!importKey.trim()){toast.error('Enter private key or seed phrase');return;}
-    setImportLoading(true);
+  // Load wallets from Circle
+  const loadWallets = useCallback(async () => {
+    if (!circle.userToken) return;
+    setLoadingWallets(true);
     try {
-      let wallet: ethers.Wallet | ethers.HDNodeWallet;
-      const k = importKey.trim();
-      // Check if it's a mnemonic (12/24 words) or private key
-      if (k.split(' ').length >= 12) {
-        wallet = ethers.Wallet.fromPhrase(k);
-      } else {
-        const pk = k.startsWith('0x') ? k : '0x'+k;
-        wallet = new ethers.Wallet(pk);
+      const res  = await fetch(`/api/circle/wallets?userToken=${circle.userToken}&action=list`);
+      const data = await res.json() as { wallets?: CircleWalletEntry[] };
+      if (data.wallets?.length) {
+        circle.setWallets(data.wallets);
+        circle.setActive(data.wallets[0].id);
+        circle.setInit(true);
+        // Load balances for active wallet
+        const bRes = await fetch(`/api/circle/wallets?userToken=${circle.userToken}&action=balances&walletId=${data.wallets[0].id}`);
+        const bData = await bRes.json() as { tokenBalances?: Array<{token:{symbol:string;name:string;decimals:number};amount:string}> };
+        if (bData.tokenBalances) {
+          const updated = { ...data.wallets[0], balances: bData.tokenBalances };
+          circle.setWallets([updated, ...data.wallets.slice(1)]);
+        }
       }
-      addWallet({ id:wallet.address, label:importLabel||'Imported Wallet', address:wallet.address, encryptedKey:btoa(wallet.privateKey), source:'imported', createdAt:Date.now() });
-      setActiveId(wallet.address);
-      toast.success('Wallet imported: '+wallet.address.slice(0,10)+'…');
-      setImportKey(''); setImportLabel(''); setPanel('manageWallets');
-    } catch(e:unknown){ toast.error('Invalid key or mnemonic'); }
-    finally { setImportLoading(false); }
+    } catch (e) { console.error(e); }
+    finally { setLoadingWallets(false); }
+  }, [circle]);
+
+  // Load tx history
+  const loadTxHistory = useCallback(async () => {
+    if (!circle.userToken || !circle.activeWalletId) return;
+    try {
+      const res  = await fetch(`/api/circle/transactions?userToken=${circle.userToken}&walletId=${circle.activeWalletId}`);
+      const data = await res.json() as { transactions?: CircleTx[] };
+      if (data.transactions) data.transactions.forEach(tx => circle.appendTx(tx));
+    } catch {}
+  }, [circle]);
+
+  useEffect(() => {
+    if (circle.userToken && circle.isInitialized) { loadWallets(); loadTxHistory(); }
+  }, [circle.userToken, circle.isInitialized]);
+
+  // Create Circle user + get token
+  const setupCircleWallet = async () => {
+    setLoading(true); setSetupStep("creating");
+    try {
+      const uid = `glow-${metamaskAddr?.toLowerCase() ?? Date.now()}`;
+      // Create user
+      const cRes = await fetch("/api/circle/users", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ action: "create", userId: uid, email: metamaskAddr ?? "" }),
+      });
+      const cData = await cRes.json() as { user?: { id: string }; error?: string };
+      const userId = cData.user?.id ?? uid;
+      setNewUserId(userId);
+
+      // Get session token
+      const tRes = await fetch("/api/circle/users", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ action: "token", userId }),
+      });
+      const tData = await tRes.json() as { userToken?: string; encryptionKey?: string; error?: string };
+      if (!tData.userToken) throw new Error(tData.error ?? "Could not get user token");
+
+      circle.setSession(userId, tData.userToken, tData.encryptionKey ?? "", Date.now() + 3600000);
+
+      // Initialize user (creates wallet, triggers PIN setup in Circle SDK)
+      setSetupStep("init");
+      const iRes = await fetch("/api/circle/users", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ action: "initialize", userToken: tData.userToken }),
+      });
+      const iData = await iRes.json() as { challengeId?: string; error?: string };
+      if (!iData.challengeId) throw new Error(iData.error ?? "Init failed");
+
+      // Execute challenge (PIN setup popup)
+      setPendingChallenge({ id: iData.challengeId, userToken: tData.userToken, encryptionKey: tData.encryptionKey ?? "" });
+      if (sdkRef.current) {
+        (sdkRef.current as unknown as {setAuthentication(a:{userToken:string;encryptionKey:string}):void})
+          .setAuthentication({ userToken: tData.userToken, encryptionKey: tData.encryptionKey ?? "" });
+        sdkRef.current.execute(iData.challengeId, (err) => {
+          if (err) { toast.error(`Setup failed: ${(err as Error).message}`); return; }
+          circle.setInit(true); circle.setPinSet(true);
+          setSetupStep("done"); setMode("home");
+          toast.success("✓ Circle Wallet created!");
+          loadWallets();
+        });
+      } else {
+        // SDK not loaded — mark as done anyway so user can try PIN later
+        circle.setInit(true); setSetupStep("done"); setMode("home");
+        toast("Wallet created — install Circle SDK to set PIN", { icon: "ℹ️" });
+        loadWallets();
+      }
+    } catch (e) {
+      toast.error(String(e));
+      setSetupStep("welcome");
+    } finally { setLoading(false); }
   };
 
-  // ── Not connected ───────────────────────────────────────────────────────────
-  if (!isConnected) {
+  // Send USDC via Circle
+  const handleSend = async () => {
+    if (!circle.userToken || !circle.activeWalletId || !sendTo || !sendAmount) {
+      toast.error("Fill all fields and connect Circle Wallet"); return;
+    }
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/circle/transactions", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          action: "transfer", userToken: circle.userToken,
+          walletId: circle.activeWalletId,
+          destinationAddress: sendTo,
+          amounts: [sendAmount],
+          tokenId: ARC_USDC_TOKEN_ID,
+          blockchain: "ETH-SEPOLIA",
+        }),
+      });
+      const data = await res.json() as { challengeId?: string; error?: string };
+      if (!data.challengeId) throw new Error(data.error ?? "No challenge");
+      // Execute PIN confirmation
+      if (sdkRef.current && circle.encryptionKey) {
+        (sdkRef.current as unknown as {setAuthentication(a:{userToken:string;encryptionKey:string}):void})
+          .setAuthentication({ userToken: circle.userToken, encryptionKey: circle.encryptionKey });
+        sdkRef.current.execute(data.challengeId, (err) => {
+          if (err) { toast.error("PIN rejected"); return; }
+          toast.success("✓ Sent!");
+          setSendTo(""); setSendAmount(""); setMode("home");
+          loadWallets(); loadTxHistory();
+        });
+      } else {
+        toast("Challenge ID: " + data.challengeId + " — confirm with Circle SDK", { icon: "🔑" });
+      }
+    } catch (e) { toast.error(String(e)); }
+    finally { setLoading(false); }
+  };
+
+  // Gateway instant cross-chain transfer
+  const handleGatewayTransfer = async () => {
+    if (!gwDest || !gwAmount) { toast.error("Fill destination and amount"); return; }
+    setLoading(true);
+    try {
+      const activeWallet = circle.wallets.find(w => w.id === circle.activeWalletId);
+      const res = await fetch("/api/circle/gateway", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          action: "transfer",
+          sourceAddress: activeWallet?.address ?? metamaskAddr ?? "",
+          destinationAddress: gwDest,
+          amount: gwAmount,
+          sourceBlockchain: "ETH-SEPOLIA",
+          destinationBlockchain: gwChain,
+        }),
+      });
+      const data = await res.json() as { transactionId?: string; state?: string; error?: string };
+      if (data.error) throw new Error(data.error);
+      toast.success(`✓ Gateway transfer initiated! ID: ${data.transactionId?.slice(0,8)}`);
+      setMode("home"); setGwDest(""); setGwAmount("");
+    } catch (e) { toast.error(String(e)); }
+    finally { setLoading(false); }
+  };
+
+  // Nanopayment send (gas-free, sub-cent)
+  const handleNanopay = async () => {
+    if (!npRecipient || !npAmount) { toast.error("Fill recipient and amount"); return; }
+    setLoading(true);
+    try {
+      const activeWallet = circle.wallets.find(w => w.id === circle.activeWalletId);
+      const now = Math.floor(Date.now() / 1000);
+      const res = await fetch("/api/circle/nanopay", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          action: "settle",
+          payerAddress:  activeWallet?.address ?? metamaskAddr,
+          payeeAddress:  npRecipient,
+          amount: npAmount,
+          validAfter:  now - 60,
+          validBefore: now + 3600,
+          nonce: `0x${Math.random().toString(16).slice(2).padEnd(64, "0")}`,
+        }),
+      });
+      const data = await res.json() as { settlementId?: string; error?: string };
+      if (data.error) throw new Error(data.error);
+      toast.success(`✓ Nanopayment sent! $${npAmount} USDC (gas-free)`);
+      setMode("home");
+    } catch (e) { toast.error(String(e)); }
+    finally { setLoading(false); }
+  };
+
+  const copyAddr = async (a: string) => {
+    await navigator.clipboard.writeText(a);
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Derived values
+  const activeWallet     = circle.wallets.find(w => w.id === circle.activeWalletId);
+  const displayAddress   = activeWallet?.address ?? metamaskAddr ?? "";
+  const hasCircleWallet  = circle.isInitialized && circle.wallets.length > 0;
+  const totalUSD         = activeWallet?.balances?.reduce((acc, b) => {
+    return acc + parseFloat(b.amount) * (TOKEN_PRICES[b.token.symbol] ?? 1);
+  }, 0) ?? 0;
+
+  // ── SETUP SCREEN ───────────────────────────────────────────────────────────
+  if (mode === "setup" || (!hasCircleWallet && !isConnected)) {
     return (
       <AppLayout title="Wallet">
-        <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center gap-5">
-          <div className="relative">
-            <div className="w-20 h-20 rounded-3xl bg-glow-gradient flex items-center justify-center shadow-glow-lg">
-              <Wallet className="w-10 h-10 text-white"/>
+        <div className="max-w-sm mx-auto p-4 space-y-6 pt-8">
+          <div className="text-center space-y-2">
+            <div className="w-20 h-20 rounded-3xl bg-glow-gradient flex items-center justify-center mx-auto shadow-glow-lg">
+              <Shield className="w-10 h-10 text-white"/>
             </div>
-            <div className="absolute inset-0 rounded-3xl bg-glow-accent/15 animate-ping"/>
+            <h1 className="text-2xl font-bold text-glow-text">GlowIDE Wallet</h1>
+            <p className="text-sm text-glow-muted/70">Powered by Circle MPC — you hold your keys</p>
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-glow-text">{siteSettings.siteName} Wallet</h2>
-            <p className="text-sm text-glow-muted mt-1.5">USDC · EURC · cirBTC · CCTP Cross-Chain</p>
+
+          <div className="space-y-3">
+            {[
+              { icon: KeyRound,    title: "Non-custodial MPC",    desc: "2-of-2 MPC. Circle never holds your full key." },
+              { icon: Fingerprint, title: "Social / PIN auth",    desc: "Google, Apple, email OTP, or PIN with biometrics." },
+              { icon: Zap,         title: "Gasless USDC pays",    desc: "Pay gas in USDC via Circle Paymaster — no ETH needed." },
+              { icon: Globe,       title: "Unified cross-chain",  desc: "Gateway: move USDC across chains in <500ms." },
+              { icon: Coins,       title: "Nanopayments",         desc: "Send as little as $0.000001 USDC — gas-free." },
+            ].map(f => (
+              <div key={f.title} className="flex items-start gap-3 p-3 bg-glow-card border border-glow-border rounded-xl">
+                <f.icon className="w-5 h-5 text-glow-accent mt-0.5 flex-shrink-0"/>
+                <div>
+                  <p className="text-sm font-semibold text-glow-text">{f.title}</p>
+                  <p className="text-xs text-glow-muted/70">{f.desc}</p>
+                </div>
+              </div>
+            ))}
           </div>
-          <WalletButton/>
+
+          {setupStep === "welcome" && (
+            <div className="space-y-3">
+              <button onClick={setupCircleWallet} disabled={loading}
+                className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 text-base disabled:opacity-60">
+                {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Plus className="w-5 h-5"/>}
+                Create Circle Wallet
+              </button>
+              {isConnected && (
+                <button onClick={() => { circle.setInit(true); setMode("home"); }}
+                  className="w-full py-3 border border-glow-border text-glow-muted rounded-2xl text-sm">
+                  Use MetaMask only
+                </button>
+              )}
+            </div>
+          )}
+          {(setupStep === "creating" || setupStep === "init") && (
+            <div className="text-center space-y-3 py-4">
+              <Loader2 className="w-10 h-10 animate-spin text-glow-accent mx-auto"/>
+              <p className="text-sm text-glow-text font-medium">
+                {setupStep === "creating" ? "Creating your MPC wallet…" : "Initializing — set your PIN in the popup…"}
+              </p>
+            </div>
+          )}
         </div>
       </AppLayout>
     );
   }
 
-  const inputCls = "w-full bg-glow-bg border border-glow-border rounded-xl px-4 py-2.5 text-sm text-glow-text placeholder-glow-muted/50 focus:outline-none focus:border-glow-accent/60 transition-colors";
-
   return (
     <AppLayout title="Wallet">
-      <div className="flex h-[calc(100dvh-56px)] overflow-hidden">
+      <div className="max-w-sm mx-auto flex flex-col min-h-[calc(100dvh-56px)]">
 
-        {/* ── Desktop Left Sidebar ─────────────────────────────────── */}
-        <div className="hidden md:flex flex-col w-80 flex-shrink-0 border-r border-glow-border bg-[#080812]">
-          <div className="px-4 pt-5 pb-4 border-b border-glow-border/50">
-            <div className="flex items-center justify-between mb-3">
-              <button onClick={()=>setShowSwitcher(true)} className="flex-1 text-left hover:opacity-80 transition-opacity">
-                <p className="text-[10px] text-glow-muted font-semibold uppercase tracking-widest">{siteSettings.siteName} Wallet</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <p className="text-xs font-mono text-glow-text/70">{truncateAddress(activeAddress??address??'',8)}</p>
-                  {activeWalletId!=='injected' && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded-full">{wallets.find(w=>w.id===activeWalletId)?.label?.slice(0,10)}</span>}
+        {/* ── HOME ─────────────────────────────────────────────────────── */}
+        {mode === "home" && (
+          <>
+            {/* Balance card */}
+            <div className="bg-glow-gradient mx-4 mt-4 rounded-3xl p-5 text-white shadow-glow-lg">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm opacity-80">Total balance</span>
+                  {loadingWallets && <Loader2 className="w-3.5 h-3.5 animate-spin opacity-60"/>}
                 </div>
-              </button>
-              <div className="flex items-center gap-1.5">
-                <button onClick={()=>setPanel('manageWallets')} className="w-8 h-8 rounded-xl bg-white/8 flex items-center justify-center border border-white/10 text-white/60 hover:text-white transition-colors" title="Wallet Settings">
-                  <Key className="w-3.5 h-3.5"/>
+                <div className="flex gap-2">
+                  <button onClick={() => setHideBalance(!hideBalance)} className="opacity-70 hover:opacity-100">
+                    {hideBalance ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
+                  </button>
+                  <button onClick={loadWallets} className="opacity-70 hover:opacity-100">
+                    <RefreshCw className={cn("w-4 h-4", loadingWallets && "animate-spin")}/>
+                  </button>
+                </div>
+              </div>
+              <p className="text-3xl font-bold">
+                {hideBalance ? "••••••" : `$${totalUSD.toFixed(2)}`}
+              </p>
+              {displayAddress && (
+                <button onClick={() => copyAddr(displayAddress)}
+                  className="flex items-center gap-1.5 mt-2 opacity-70 hover:opacity-100 transition-opacity">
+                  <span className="text-xs font-mono">{shortAddr(displayAddress)}</span>
+                  {copied ? <CheckCircle className="w-3.5 h-3.5"/> : <Copy className="w-3.5 h-3.5"/>}
                 </button>
-                <button onClick={fetchBalances} className={cn("w-8 h-8 rounded-xl bg-white/8 flex items-center justify-center border border-white/10",loading&&"opacity-60")}>
-                  <RefreshCw className={cn("w-3.5 h-3.5 text-white/70",loading&&"animate-spin")}/>
+              )}
+              {hasCircleWallet && (
+                <div className="flex items-center gap-1.5 mt-2">
+                  <Shield className="w-3.5 h-3.5 opacity-60"/>
+                  <span className="text-xs opacity-60">Circle MPC Secured</span>
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="grid grid-cols-4 gap-3 mx-4 mt-4">
+              {[
+                { icon: Send,            label: "Send",     action: () => setMode("send")     },
+                { icon: ArrowDownLeft,   label: "Receive",  action: () => setMode("receive")  },
+                { icon: ArrowLeftRight,  label: "CCTP",     action: () => setMode("cctp")     },
+                { icon: Globe,           label: "Gateway",  action: () => setMode("gateway")  },
+              ].map(b => (
+                <button key={b.label} onClick={b.action}
+                  className="flex flex-col items-center gap-1.5 py-3 bg-glow-card border border-glow-border rounded-2xl hover:border-glow-accent/40 transition-all active:scale-95">
+                  <b.icon className="w-5 h-5 text-glow-accent"/>
+                  <span className="text-[11px] text-glow-muted font-medium">{b.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Nanopay button */}
+            <button onClick={() => setMode("nanopay")}
+              className="mx-4 mt-3 p-3 bg-glow-card border border-glow-border rounded-2xl flex items-center gap-3 hover:border-glow-accent/40 transition-all">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-emerald-400"/>
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-semibold text-glow-text">Nanopayments</p>
+                <p className="text-xs text-glow-muted/70">Gas-free · $0.000001 min · x402 protocol</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-glow-muted/40 ml-auto"/>
+            </button>
+
+            {/* Tokens */}
+            <div className="mx-4 mt-4 bg-glow-card border border-glow-border rounded-2xl overflow-hidden flex-1 mb-4">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-glow-border/40">
+                <span className="text-sm font-semibold text-glow-text">Assets</span>
+                <div className="flex gap-2">
+                  <button onClick={() => setMode("activity")} className="text-xs text-glow-accent hover:underline">History</button>
+                  <button onClick={() => setMode("setup")}
+                    className="p-1 text-glow-muted/50 hover:text-glow-text"><Settings className="w-4 h-4"/></button>
+                </div>
+              </div>
+
+              {activeWallet?.balances?.length ? (
+                activeWallet.balances.map(b => (
+                  <TokenRow key={b.token.symbol} symbol={b.token.symbol} name={b.token.name}
+                    amount={b.amount} blockchain={activeWallet.blockchain}
+                    onClick={() => { setSendToken(b.token.symbol); setMode("send"); }}/>
+                ))
+              ) : (
+                // Fallback: MetaMask balances
+                [
+                  { symbol: "USDC", name: "USD Coin", amount: "0.000000" },
+                  { symbol: "EURC", name: "Euro Coin", amount: "0.000000" },
+                  { symbol: "cirBTC", name: "Circle Bitcoin", amount: "0.000000" },
+                ].map(t => (
+                  <TokenRow key={t.symbol} symbol={t.symbol} name={t.name} amount={t.amount}
+                    onClick={() => setMode("send")}/>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── SEND ─────────────────────────────────────────────────────── */}
+        {mode === "send" && (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setMode("home")} className="p-2 text-glow-muted hover:text-glow-text">
+                <X className="w-5 h-5"/>
+              </button>
+              <h2 className="text-lg font-bold text-glow-text">Send {sendToken}</h2>
+            </div>
+
+            {!hasCircleWallet && (
+              <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-400">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0"/>
+                Create a Circle Wallet to send with MPC security. Using MetaMask only.
+              </div>
+            )}
+
+            <AmountInput value={sendAmount} onChange={setSendAmount} symbol={sendToken}
+              balance={activeWallet?.balances?.find(b=>b.token.symbol===sendToken)?.amount ?? "0"}/>
+
+            <div className="bg-glow-surface border border-glow-border rounded-2xl p-4">
+              <p className="text-xs text-glow-muted/70 mb-2">To address</p>
+              <input value={sendTo} onChange={e => setSendTo(e.target.value)}
+                placeholder="0x… or ENS name"
+                className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+            </div>
+
+            <button onClick={handleSend} disabled={loading || !sendTo || !sendAmount}
+              className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5"/>}
+              Send {sendAmount || "0"} {sendToken}
+            </button>
+            <p className="text-center text-xs text-glow-muted/50">
+              {hasCircleWallet ? "Requires PIN confirmation via Circle MPC" : "Will open MetaMask"}
+            </p>
+          </div>
+        )}
+
+        {/* ── RECEIVE ──────────────────────────────────────────────────── */}
+        {mode === "receive" && (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setMode("home")} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
+              <h2 className="text-lg font-bold text-glow-text">Receive</h2>
+            </div>
+            <div className="bg-glow-card border border-glow-border rounded-2xl p-4">
+              <QRPlaceholder address={displayAddress}/>
+              <div className="flex items-center gap-2 justify-center mt-2">
+                <span className="text-xs font-mono text-glow-text">{shortAddr(displayAddress)}</span>
+                <button onClick={() => copyAddr(displayAddress)}>
+                  {copied ? <CheckCircle className="w-4 h-4 text-emerald-400"/> : <Copy className="w-4 h-4 text-glow-muted"/>}
                 </button>
               </div>
             </div>
-            <NetworkDropdown selected={networkId} onChange={setNetworkId} arcLogoUrl={siteSettings.arcLogoUrl}/>
+            <button onClick={() => copyAddr(displayAddress)}
+              className="w-full py-3 bg-glow-card border border-glow-border rounded-2xl text-sm font-medium text-glow-text">
+              Copy Address
+            </button>
           </div>
-          <div className="px-4 py-4 border-b border-glow-border/30">
-            <p className="text-[11px] text-glow-muted mb-1">Total Portfolio</p>
-            <p className="text-3xl font-bold text-white">${totalUSD.toFixed(2)}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 px-4 py-3 border-b border-glow-border/30">
-            {[{icon:Send,label:'Send',p:'send'},{icon:QrCode,label:'Receive',p:'receive'},{icon:Zap,label:'CCTP',p:'cctp'},{icon:History,label:'History',p:'history'}].map(({icon:Icon,label,p})=>(
-              <button key={label} onClick={()=>setPanel(panel===p?'assets':p as Panel)}
-                className={cn("flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all",panel===p?"bg-glow-accent/20 border-glow-accent/40 text-glow-accent-light":"bg-white/5 border-white/8 text-white/70 hover:bg-white/10")}>
-                <Icon className="w-4 h-4"/><span className="text-[11px] font-medium">{label}</span>
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 overflow-y-auto py-2">
-            <div className="flex items-center justify-between px-4 py-1.5">
-              <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider">Assets</p>
-              <button onClick={()=>setPanel('addToken')} className="p-1 text-glow-muted hover:text-glow-accent"><Plus className="w-3.5 h-3.5"/></button>
+        )}
+
+        {/* ── CCTP BRIDGE ──────────────────────────────────────────────── */}
+        {mode === "cctp" && (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setMode("home")} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
+              <h2 className="text-lg font-bold text-glow-text">CCTP Bridge</h2>
             </div>
-            {allAssets.map(asset=>(
-              <button key={asset.symbol} onClick={()=>{setActiveAsset(asset.symbol);setPanel('asset');}}
-                className={cn("w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors",panel==='asset'&&activeAsset===asset.symbol&&"bg-glow-accent/10")}>
-                <TokenLogo src={asset.logo} symbol={asset.symbol} color={asset.color} size={36}/>
-                <div className="flex-1 min-w-0 text-left">
-                  <p className="text-sm font-semibold text-white">{asset.symbol}</p>
-                  <p className="text-[11px] text-glow-muted truncate">{asset.name}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-white">{parseFloat(balances[asset.symbol]||'0').toFixed(asset.symbol==='cirBTC'?6:2)}</p>
-                  <p className="text-[11px] text-glow-muted">${getUSD(asset.symbol,balances[asset.symbol]||'0')}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Main Content ─────────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-glow-surface">
-          {/* Mobile header */}
-          <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-glow-border bg-[#080812] flex-shrink-0">
-            <button onClick={()=>setShowSwitcher(true)} className="flex-1 text-left">
-              <p className="text-[10px] text-glow-muted uppercase tracking-widest">{siteSettings.siteName}</p>
-              <div className="flex items-center gap-1.5">
-                <p className="text-xs font-mono text-glow-text/70">{truncateAddress(activeAddress??address??'',6)}</p>
-                {activeWalletId!=='injected' && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/25 px-1.5 py-0.5 rounded-full">{wallets.find(w=>w.id===activeWalletId)?.label?.slice(0,8)}</span>}
+            <div className="p-3 bg-glow-accent/8 border border-glow-accent/20 rounded-xl text-xs text-glow-accent">
+              Cross-Chain Transfer Protocol — native USDC burn + mint across chains. No wrapped tokens.
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-glow-muted/70">From</p>
+              <div className="p-3 bg-glow-surface border border-glow-border rounded-xl text-sm font-medium text-glow-text">
+                Arc Testnet (Domain 26)
               </div>
-            </button>
-            <NetworkDropdown selected={networkId} onChange={setNetworkId} arcLogoUrl={siteSettings.arcLogoUrl}/>
-            <button onClick={()=>setPanel('manageWallets')} className="w-9 h-9 rounded-xl bg-white/8 flex items-center justify-center border border-white/10 text-white/60"><Key className="w-3.5 h-3.5"/></button>
-            <button onClick={fetchBalances} className={cn("w-9 h-9 rounded-xl bg-white/8 flex items-center justify-center border border-white/10",loading&&"opacity-60")}>
-              <RefreshCw className={cn("w-4 h-4 text-white/70",loading&&"animate-spin")}/>
-            </button>
-          </div>
-          <div className="md:hidden bg-[#080812] px-4 pb-3">
-            <p className="text-[10px] text-glow-muted mb-0.5">Total Portfolio</p>
-            <p className="text-2xl font-bold text-white">${totalUSD.toFixed(2)}</p>
-          </div>
-          <div className="md:hidden grid grid-cols-4 gap-1.5 px-3 py-2.5 bg-[#080812] border-b border-glow-border flex-shrink-0">
-            {[{icon:Send,label:'Send',p:'send'},{icon:QrCode,label:'Receive',p:'receive'},{icon:Zap,label:'CCTP',p:'cctp'},{icon:History,label:'History',p:'history'}].map(({icon:Icon,label,p})=>(
-              <button key={label} onClick={()=>setPanel(panel===p?'assets':p as Panel)}
-                className={cn("flex flex-col items-center gap-1 py-2.5 rounded-xl border text-center transition-all",panel===p?"bg-glow-accent/20 border-glow-accent/40 text-glow-accent-light":"bg-white/5 border-white/8 text-white/60")}>
-                <Icon className="w-4 h-4"/><span className="text-[10px] font-medium">{label}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-
-            {/* ASSETS panel */}
-            {panel==='assets' && (
-              <div className="p-4 space-y-2">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-base font-bold text-glow-text">Assets</h2>
-                  <button onClick={()=>setPanel('addToken')} className="flex items-center gap-1 text-xs text-glow-accent hover:text-glow-accent-light">
-                    <Plus className="w-3.5 h-3.5"/>Add Token
-                  </button>
-                </div>
-                {allAssets.map(asset=>(
-                  <button key={asset.symbol} onClick={()=>{setActiveAsset(asset.symbol);setPanel('asset');}}
-                    className="w-full flex items-center gap-3 p-3.5 bg-glow-card border border-glow-border rounded-2xl hover:border-glow-accent/30 transition-all text-left">
-                    <TokenLogo src={asset.logo} symbol={asset.symbol} color={asset.color} size={48}/>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-base font-bold text-glow-text">{asset.symbol}</p>
-                        {asset.isGas && <span className="text-[9px] bg-glow-accent/15 text-glow-accent-light border border-glow-accent/25 px-1.5 py-0.5 rounded-full">GAS</span>}
-                        {asset.symbol==='cirBTC' && <span className="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/25 px-1.5 py-0.5 rounded-full">Soon</span>}
-                      </div>
-                      <p className="text-xs text-glow-muted">{asset.name}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-base font-bold text-glow-text">{parseFloat(balances[asset.symbol]||'0').toFixed(asset.symbol==='cirBTC'?6:4)}</p>
-                      <p className="text-xs text-glow-muted">${getUSD(asset.symbol,balances[asset.symbol]||'0')}</p>
-                    </div>
-                  </button>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-glow-muted/70">To</p>
+              <select value={cctpDest} onChange={e => setCctpDest(e.target.value)}
+                className="w-full p-3 bg-glow-surface border border-glow-border rounded-xl text-sm text-glow-text focus:outline-none">
+                {[["ETH-SEPOLIA","Ethereum Sepolia"],["ETH","Ethereum"],["MATIC","Polygon"],
+                  ["AVAX","Avalanche"],["ARB","Arbitrum"],["BASE","Base"],["OP","Optimism"]].map(([v,l])=>(
+                  <option key={v} value={v}>{l}</option>
                 ))}
-              </div>
-            )}
-
-            {/* ASSET detail */}
-            {panel==='asset' && currentAsset && (
-              <div className="p-4 space-y-4">
-                <button onClick={()=>setPanel('assets')} className="flex items-center gap-1.5 text-sm text-glow-muted hover:text-glow-text"><ArrowLeft className="w-4 h-4"/>Back</button>
-                <div className="flex items-center gap-4 p-4 bg-glow-card border border-glow-border rounded-2xl">
-                  <TokenLogo src={currentAsset.logo} symbol={currentAsset.symbol} color={currentAsset.color} size={56}/>
-                  <div>
-                    <p className="text-xl font-bold text-glow-text">{parseFloat(balances[currentAsset.symbol]||'0').toFixed(currentAsset.symbol==='cirBTC'?8:4)}</p>
-                    <p className="text-sm text-glow-muted">{currentAsset.name}</p>
-                    <p className="text-sm text-glow-cyan font-semibold">${getUSD(currentAsset.symbol,balances[currentAsset.symbol]||'0')}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {[{icon:Send,label:'Send',fn:()=>{setSendAmt('');setSendTo('');setPanel('send');}},{icon:QrCode,label:'Receive',fn:()=>setPanel('receive')},{icon:ArrowLeftRight,label:'Swap',fn:()=>{setSwapFrom(currentAsset.symbol);setPanel('swap');}},{icon:Zap,label:'CCTP Transfer',fn:()=>setPanel('cctp')}].map(({icon:Icon,label,fn})=>(
-                    <button key={label} onClick={fn} className="flex items-center gap-2 p-3 bg-glow-card border border-glow-border rounded-xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-all text-sm text-glow-muted hover:text-glow-text">
-                      <Icon className="w-4 h-4 text-glow-accent flex-shrink-0"/>{label}
-                    </button>
-                  ))}
-                </div>
-                {/* Price Chart */}
-                <TokenChart
-                  symbol={currentAsset.symbol}
-                  address={customAssets.find(t=>t.symbol===currentAsset.symbol)?.address}
-                  name={currentAsset.name}
-                  compact
-                />
-                {customAssets.find(t=>t.symbol===currentAsset.symbol) && (
-                  <button onClick={()=>{removeToken(customAssets.find(t=>t.symbol===currentAsset.symbol)!.address);setPanel('assets');}} className="flex items-center gap-2 text-xs text-red-400 hover:text-red-300">
-                    <Trash2 className="w-3.5 h-3.5"/>Remove token
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* SEND — advanced with summary */}
-            {panel==='send' && (
-              <div className="p-4 space-y-4 max-w-md mx-auto">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel(activeAsset?'asset':'assets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <h2 className="text-base font-bold text-glow-text">Send</h2>
-                </div>
-                {/* Asset selector pills */}
-                <div className="flex gap-2 flex-wrap">
-                  {allAssets.filter(a=>a.symbol!=='cirBTC').map(a=>(
-                    <button key={a.symbol} onClick={()=>setActiveAsset(a.symbol)}
-                      className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",activeAsset===a.symbol?"bg-glow-accent/20 border-glow-accent/40 text-glow-accent-light":"bg-glow-card border-glow-border text-glow-muted hover:text-glow-text")}>
-                      <TokenLogo src={a.logo} symbol={a.symbol} color={a.color} size={16}/>{a.symbol}
-                    </button>
-                  ))}
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Recipient</label>
-                    <input value={sendTo} onChange={e=>setSendTo(e.target.value)} placeholder="0x… address" className={cn(inputCls,'font-mono text-xs')}/>
-                    {sendTo && !/^0x[0-9a-fA-F]{40}$/.test(sendTo) && <p className="text-xs text-amber-400 mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/>Invalid address</p>}
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Amount</label>
-                    <div className="relative">
-                      <input value={sendAmt} onChange={e=>setSendAmt(e.target.value)} type="number" placeholder="0.00" min="0" className={cn(inputCls,'text-lg font-bold pr-20')}/>
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-glow-cyan font-bold">{activeAsset||'USDC'}</span>
-                    </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <p className="text-xs text-glow-muted">Balance: <span className="text-glow-text font-semibold">{parseFloat(balances[activeAsset||'USDC']||'0').toFixed(4)} {activeAsset||'USDC'}</span></p>
-                      <button onClick={()=>setSendAmt(balances[activeAsset||'USDC']||'0')} className="text-xs text-glow-accent hover:text-glow-accent-light">MAX</button>
-                    </div>
-                  </div>
-                </div>
-                {/* Summary */}
-                {sendTo && sendAmt && parseFloat(sendAmt) > 0 && /^0x[0-9a-fA-F]{40}$/.test(sendTo) && (
-                  <div className="bg-glow-card border border-glow-accent/20 rounded-2xl p-4 space-y-2.5">
-                    <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">Transaction Summary</p>
-                    {[
-                      ['Sending', `${sendAmt} ${activeAsset||'USDC'}`],
-                      ['To',       truncateAddress(sendTo,10)],
-                      ['Network', 'Arc Testnet'],
-                      ['USD Value', `≈ $${getUSD(activeAsset||'USDC',sendAmt)}`],
-                      ['Gas', 'Paid in USDC (Arc Testnet)'],
-                    ].map(([k,v])=>(
-                      <div key={k} className="flex justify-between items-center text-sm">
-                        <span className="text-glow-muted">{k}</span>
-                        <span className="text-glow-text font-semibold font-mono text-xs">{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button onClick={executeSend} disabled={sending||!sendTo||!sendAmt||!/^0x[0-9a-fA-F]{40}$/.test(sendTo)}
-                  className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
-                  {sending?<Loader2 className="w-4 h-4 animate-spin"/>:<Send className="w-4 h-4"/>}
-                  {sending?'Sending…':`Send ${activeAsset||'USDC'}`}
-                </button>
-              </div>
-            )}
-
-            {/* RECEIVE — with real QR code */}
-            {panel==='receive' && (
-              <div className="p-4 space-y-4 max-w-md mx-auto text-center">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel('assets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <h2 className="text-base font-bold text-glow-text">Receive</h2>
-                </div>
-                <div className="flex justify-center"><QRCode address={address!}/></div>
-                <div>
-                  <p className="text-xs text-glow-muted mb-2">Your Arc Testnet Address</p>
-                  <p className="text-xs font-mono text-glow-text bg-glow-card rounded-xl px-4 py-3 break-all border border-glow-border">{address}</p>
-                </div>
-                <button onClick={async()=>{await navigator.clipboard.writeText(address!);setCopied(true);setTimeout(()=>setCopied(false),2000);}}
-                  className="w-full py-3 bg-glow-gradient text-white font-bold rounded-xl flex items-center justify-center gap-2">
-                  {copied?<CheckCircle className="w-4 h-4"/>:<Copy className="w-4 h-4"/>}
-                  {copied?'Copied!':'Copy Address'}
-                </button>
-                <p className="text-xs text-glow-muted">Only send Arc Testnet assets to this address. USDC, EURC supported.</p>
-              </div>
-            )}
-
-            {/* SWAP — Arc native currency swap using ERC-20 transfers + price oracle */}
-            {panel==='swap' && (
-              <SwapPanel
-                allAssets={allAssets}
-                balances={balances}
-                address={address!}
-                swapFrom={swapFrom} setSwapFrom={setSwapFrom}
-                swapTo={swapTo2}   setSwapTo={setSwapTo2}
-                onBack={()=>setPanel(activeAsset?'asset':'assets')}
-                onSuccess={(hash,fromSym,toSym,amt)=>{
-                  setHistory(h=>[{hash,type:'swap',amount:amt,symbol:fromSym+' → '+toSym,timestamp:Date.now(),status:'success'},...h]);
-                  setTimeout(fetchBalances,4000);
-                  setPanel('assets');
-                }}
-              />
-            )}
-
-            {/* CCTP — with dropdown */}
-            {panel==='cctp' && (
-              <div className="p-4 space-y-4 max-w-md mx-auto">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel('assets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <div>
-                    <h2 className="text-base font-bold text-glow-text">CCTP Transfer</h2>
-                    <p className="text-xs text-glow-muted">Burn on Arc → Mint on destination</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2 p-3 bg-glow-accent/8 border border-glow-accent/20 rounded-xl">
-                  <Zap className="w-4 h-4 text-glow-accent flex-shrink-0 mt-0.5"/>
-                  <p className="text-xs text-glow-muted">Circle's Cross-Chain Transfer Protocol burns USDC on Arc and natively mints it on the destination — no bridges, no wrapping. Powered by TokenMessengerV2 (Domain 26).</p>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-2">Destination Network</label>
-                    <CCTPNetworkDropdown value={cctpDest} onChange={setCctpDest} arcLogoUrl={siteSettings.arcLogoUrl}/>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Recipient Address</label>
-                    <input value={cctpTo} onChange={e=>setCctpTo(e.target.value)} placeholder="0x…" className={cn(inputCls,'font-mono text-xs')}/>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Amount (USDC)</label>
-                    <div className="relative">
-                      <input value={cctpAmt} onChange={e=>setCctpAmt(e.target.value)} type="number" placeholder="0.00" min="0" className={cn(inputCls,'text-lg font-bold pr-16')}/>
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-glow-cyan font-bold">USDC</span>
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <p className="text-xs text-glow-muted">Balance: {parseFloat(balances.USDC||'0').toFixed(4)} USDC</p>
-                      <button onClick={()=>setCctpAmt(balances.USDC||'0')} className="text-xs text-glow-accent">MAX</button>
-                    </div>
-                  </div>
-                </div>
-                {/* Route summary */}
-                {cctpAmt && parseFloat(cctpAmt)>0 && (
-                  <div className="bg-glow-card border border-glow-border rounded-xl p-3 space-y-2">
-                    <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">Route</p>
-                    <div className="flex items-center gap-2">
-                      <NetLogo src={siteSettings.arcLogoUrl||CIRCLE_CHAINS[0].logo} name="Arc" networkId="arc-testnet" size={20}/>
-                      <span className="text-xs text-glow-text font-semibold">Arc Testnet</span>
-                      <span className="text-glow-muted/40 text-xs flex-1 text-center">·····→</span>
-                      <NetLogo src={CCTP_CHAINS.find(c=>c.id===cctpDest)?.logo||''} name={cctpDest} networkId={cctpDest} size={20}/>
-                      <span className="text-xs text-glow-text font-semibold">{CCTP_CHAINS.find(c=>c.id===cctpDest)?.shortName}</span>
-                    </div>
-                    <div className="flex justify-between text-xs"><span className="text-glow-muted">Amount</span><span className="text-glow-cyan font-bold">{cctpAmt} USDC</span></div>
-                  </div>
-                )}
-                <button onClick={executeCCTP} disabled={cctping||!cctpTo||!cctpAmt}
-                  className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
-                  {cctping?<Loader2 className="w-4 h-4 animate-spin"/>:<Zap className="w-4 h-4"/>}
-                  {cctping?'Initiating…':'Start CCTP Transfer'}
-                </button>
-              </div>
-            )}
-
-            {/* HISTORY */}
-            {panel==='history' && (
-              <div className="p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel('assets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <h2 className="text-base font-bold text-glow-text">History</h2>
-                </div>
-                {history.length===0 ? (
-                  <div className="flex flex-col items-center py-16 gap-3">
-                    <History className="w-12 h-12 text-glow-muted/30"/>
-                    <p className="text-glow-muted text-sm">No transactions yet</p>
-                    <a href={`${ARCSCAN}/address/${address}`} target="_blank" rel="noopener noreferrer" className="text-xs text-glow-cyan flex items-center gap-1"><ExternalLink className="w-3.5 h-3.5"/>Full history on ArcScan</a>
-                  </div>
-                ) : (
-                  <>
-                    {history.map((tx,i)=>(
-                      <div key={i} className="flex items-center gap-3 p-3.5 bg-glow-card border border-glow-border rounded-2xl">
-                        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0",tx.type==='send'?"bg-red-500/15":tx.type==='cctp'?"bg-glow-accent/15":"bg-glow-cyan/15")}>
-                          {tx.type==='send'?<Send className="w-5 h-5 text-red-400"/>:tx.type==='cctp'?<Zap className="w-5 h-5 text-glow-accent"/>:<ArrowRight className="w-5 h-5 text-glow-cyan"/>}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-glow-text capitalize">{tx.type==='cctp'?'CCTP Transfer':tx.type}</p>
-                          <p className="text-xs text-glow-muted font-mono truncate">{truncateAddress(tx.hash,10)}</p>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="text-sm font-bold text-glow-text">{tx.amount} {tx.symbol}</p>
-                          <a href={`${ARCSCAN}/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-glow-cyan">View ↗</a>
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* ADD TOKEN */}
-            {panel==='addToken' && (
-              <div className="p-4 space-y-4 max-w-md mx-auto">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel('assets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <h2 className="text-base font-bold text-glow-text">Add Token</h2>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Contract Address</label>
-                    <div className="flex gap-2">
-                      <input value={newTokenAddr} onChange={e=>{setNewTokenAddr(e.target.value);setNewTokenInfo(null);}} placeholder="0x…" className={cn(inputCls,'font-mono text-xs flex-1')}/>
-                      <button onClick={doLookupToken} disabled={tokenLoading} className="px-4 py-2.5 bg-glow-accent/20 border border-glow-accent/30 text-glow-accent-light text-xs font-semibold rounded-xl disabled:opacity-50 flex items-center gap-1">
-                        {tokenLoading?<Loader2 className="w-3.5 h-3.5 animate-spin"/>:<Search className="w-3.5 h-3.5"/>}Lookup
-                      </button>
-                    </div>
-                  </div>
-                  {newTokenInfo && (
-                    <div className="p-4 bg-glow-card border border-emerald-500/25 rounded-xl space-y-2">
-                      <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-emerald-400"/><p className="text-sm font-semibold text-emerald-400">Token found</p></div>
-                      {[['Name',newTokenInfo.name],['Symbol',newTokenInfo.symbol],['Decimals',String(newTokenInfo.decimals)]].map(([k,v])=>(
-                        <div key={k} className="flex justify-between text-sm"><span className="text-glow-muted">{k}</span><span className="text-glow-text font-mono">{v}</span></div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button onClick={confirmAddToken} disabled={!newTokenInfo} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
-                  <Plus className="w-4 h-4"/>Add {newTokenInfo?.symbol??'Token'}
-                </button>
-              </div>
-            )}
-
-            {/* MANAGE WALLETS */}
-            {panel==='manageWallets' && (
-              <div className="p-4 space-y-4 max-w-md mx-auto">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel('assets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <h2 className="text-base font-bold text-glow-text">Wallets</h2>
-                </div>
-                {/* Connected injected wallet */}
-                <div className={cn("flex items-center gap-3 p-4 bg-glow-card border rounded-2xl",activeWalletId==='injected'?"border-glow-accent/40 bg-glow-accent/5":"border-glow-border")}>
-                  <div className="w-10 h-10 rounded-xl bg-glow-accent/20 flex items-center justify-center flex-shrink-0"><Wallet className="w-5 h-5 text-glow-accent"/></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-glow-text">Connected Wallet</p>
-                    <p className="text-xs font-mono text-glow-muted truncate">{address}</p>
-                    <p className="text-[10px] text-glow-muted">MetaMask / Browser Wallet</p>
-                  </div>
-                  {activeWalletId==='injected' && <span className="text-[10px] text-glow-accent bg-glow-accent/15 border border-glow-accent/30 px-2 py-0.5 rounded-full">Active</span>}
-                </div>
-                {/* Stored wallets */}
-                {wallets.map(w=>(
-                  <div key={w.id} className={cn("flex items-center gap-3 p-4 bg-glow-card border rounded-2xl",activeWalletId===w.id?"border-glow-accent/40 bg-glow-accent/5":"border-glow-border")}>
-                    <div className="w-10 h-10 rounded-xl bg-glow-surface flex items-center justify-center flex-shrink-0">
-                      {w.source==='generated'?<Shield className="w-5 h-5 text-emerald-400"/>:<Key className="w-5 h-5 text-amber-400"/>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-glow-text">{w.label}</p>
-                      <p className="text-xs font-mono text-glow-muted truncate">{truncateAddress(w.address,12)}</p>
-                      <p className="text-[10px] text-glow-muted capitalize">{w.source}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {activeWalletId===w.id && <span className="text-[10px] text-glow-accent bg-glow-accent/15 border border-glow-accent/30 px-2 py-0.5 rounded-full">Active</span>}
-                      <button onClick={()=>navigator.clipboard.writeText(w.address)} className="p-1.5 text-glow-muted hover:text-glow-text"><Copy className="w-3.5 h-3.5"/></button>
-                      <button onClick={()=>removeWallet(w.id)} className="p-1.5 text-glow-muted hover:text-red-400"><Trash2 className="w-3.5 h-3.5"/></button>
-                    </div>
-                  </div>
-                ))}
-                <div className="grid grid-cols-2 gap-3">
-                  <button onClick={()=>setPanel('importWallet')} className="flex items-center justify-center gap-2 py-3 bg-glow-card border border-glow-border rounded-xl text-sm text-glow-muted hover:text-glow-text hover:border-glow-accent/30 transition-all">
-                    <UploadIcon className="w-4 h-4 text-glow-accent"/>Import Wallet
-                  </button>
-                  <button onClick={()=>{setPanel('newWallet');generateWallet();}} className="flex items-center justify-center gap-2 py-3 bg-glow-gradient text-white text-sm font-semibold rounded-xl">
-                    <Plus className="w-4 h-4"/>New Wallet
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* IMPORT WALLET */}
-            {panel==='importWallet' && (
-              <div className="p-4 space-y-4 max-w-md mx-auto">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel('manageWallets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <h2 className="text-base font-bold text-glow-text">Import Wallet</h2>
-                </div>
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2">
-                  <Shield className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"/>
-                  <p className="text-xs text-amber-300">Your key is stored encrypted in browser localStorage only. Never shared or sent to any server.</p>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Label</label>
-                    <input value={importLabel} onChange={e=>setImportLabel(e.target.value)} placeholder="My Wallet" className={inputCls}/>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Private Key or Seed Phrase</label>
-                    <div className="relative">
-                      <textarea value={importKey} onChange={e=>setImportKey(e.target.value)} rows={3}
-                        placeholder="0x private key or 12/24 word seed phrase…"
-                        className={cn(inputCls,'resize-none font-mono text-xs pr-10')}
-                        style={{type:showImportKey?'text':'password'} as React.CSSProperties}/>
-                      <button onClick={()=>setShowImportKey(!showImportKey)} className="absolute right-3 top-3 text-glow-muted hover:text-glow-text">
-                        {showImportKey?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <button onClick={importWallet} disabled={importLoading||!importKey.trim()} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
-                  {importLoading?<Loader2 className="w-4 h-4 animate-spin"/>:<UploadIcon className="w-4 h-4"/>}Import Wallet
-                </button>
-              </div>
-            )}
-
-            {/* NEW WALLET */}
-            {panel==='newWallet' && (
-              <div className="p-4 space-y-4 max-w-md mx-auto">
-                <div className="flex items-center gap-2">
-                  <button onClick={()=>setPanel('manageWallets')} className="p-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card"><ArrowLeft className="w-4 h-4"/></button>
-                  <h2 className="text-base font-bold text-glow-text">New Wallet</h2>
-                  <button onClick={generateWallet} className="ml-auto p-2 text-glow-muted hover:text-glow-text"><RefreshCw className="w-4 h-4"/></button>
-                </div>
-                {generatedWallet && (
-                  <>
-                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/>
-                      <p className="text-xs text-emerald-300 font-mono truncate">{generatedWallet.address}</p>
-                    </div>
-                    <div className="bg-glow-card border border-glow-border rounded-2xl p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">Seed Phrase</p>
-                        <button onClick={()=>navigator.clipboard.writeText(generatedWallet.mnemonic)} className="text-xs text-glow-accent flex items-center gap-1"><Copy className="w-3 h-3"/>Copy</button>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {generatedWallet.mnemonic.split(' ').map((w,i)=>(
-                          <div key={i} className="bg-glow-surface border border-glow-border rounded-lg px-2 py-1 text-xs font-mono text-glow-text flex items-center gap-1">
-                            <span className="text-glow-muted text-[9px] w-4">{i+1}.</span>{w}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">Private Key</p>
-                        <button onClick={()=>setShowPrivKey(!showPrivKey)} className="text-xs text-glow-muted flex items-center gap-1">
-                          {showPrivKey?<><EyeOff className="w-3 h-3"/>Hide</>:<><Eye className="w-3 h-3"/>Show</>}
-                        </button>
-                      </div>
-                      {showPrivKey && (
-                        <div className="bg-glow-surface border border-glow-border rounded-lg p-2 flex items-center gap-2">
-                          <code className="text-xs font-mono text-amber-400 flex-1 break-all">{generatedWallet.privateKey}</code>
-                          <button onClick={()=>navigator.clipboard.writeText(generatedWallet.privateKey)} className="text-glow-muted hover:text-glow-text flex-shrink-0"><Copy className="w-3.5 h-3.5"/></button>
-                        </div>
-                      )}
-                      <p className="text-[10px] text-amber-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/>Write down the seed phrase and store it safely. It cannot be recovered if lost.</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-glow-muted uppercase tracking-wider block mb-1.5">Label</label>
-                      <input value={importLabel} onChange={e=>setImportLabel(e.target.value)} placeholder="My New Wallet" className={inputCls}/>
-                    </div>
-                    <button onClick={saveGeneratedWallet} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-xl flex items-center justify-center gap-2">
-                      <Download className="w-4 h-4"/>Save Wallet
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
+              </select>
+            </div>
+            <AmountInput value={cctpAmount} onChange={setCctpAmount} symbol="USDC"
+              balance={activeWallet?.balances?.find(b=>b.token.symbol==="USDC")?.amount ?? "0"}/>
+            <button disabled={loading || !cctpAmount}
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  if (!circle.userToken || !circle.activeWalletId) {
+                    toast.error("Connect Circle Wallet first"); return;
+                  }
+                  // CCTP via contract execution (burn on source, mint on dest)
+                  const res = await fetch("/api/circle/transactions", {
+                    method: "POST", headers: {"Content-Type":"application/json"},
+                    body: JSON.stringify({
+                      action: "contract", userToken: circle.userToken,
+                      walletId: circle.activeWalletId, blockchain: "ETH-SEPOLIA",
+                      contractAddress: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+                      abiFunctionSignature: "depositForBurn(uint256,uint32,bytes32,address)",
+                      abiParameters: [cctpAmount, 0, displayAddress.padStart(64,"0"), displayAddress],
+                    }),
+                  });
+                  const d = await res.json() as { challengeId?: string; error?: string };
+                  if (d.challengeId && sdkRef.current && circle.encryptionKey) {
+                    (sdkRef.current as unknown as {setAuthentication(a:{userToken:string;encryptionKey:string}):void})
+                      .setAuthentication({ userToken: circle.userToken, encryptionKey: circle.encryptionKey });
+                    sdkRef.current.execute(d.challengeId, (err) => {
+                      if (err) { toast.error("PIN rejected"); return; }
+                      toast.success(`✓ Bridging ${cctpAmount} USDC via CCTP!`);
+                      setMode("home");
+                    });
+                  } else {
+                    toast.success("CCTP transfer initiated");
+                    setMode("home");
+                  }
+                } catch(e) { toast.error(String(e)); }
+                finally { setLoading(false); }
+              }}
+              className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <ArrowLeftRight className="w-5 h-5"/>}
+              Bridge via CCTP
+            </button>
           </div>
-        </div>
+        )}
+
+        {/* ── GATEWAY ──────────────────────────────────────────────────── */}
+        {mode === "gateway" && (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setMode("home")} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
+              <h2 className="text-lg font-bold text-glow-text">Gateway Transfer</h2>
+            </div>
+            <div className="p-3 bg-emerald-500/8 border border-emerald-500/20 rounded-xl text-xs text-emerald-400">
+              Unified cross-chain USDC balance. Transfers settle in &lt;500ms after balance established.
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-glow-muted/70">Destination Chain</p>
+              <select value={gwChain} onChange={e => setGwChain(e.target.value)}
+                className="w-full p-3 bg-glow-surface border border-glow-border rounded-xl text-sm text-glow-text focus:outline-none">
+                {["ETH","MATIC","AVAX","ARB","BASE","OP"].map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-glow-muted/70">Destination Address</p>
+              <input value={gwDest} onChange={e => setGwDest(e.target.value)}
+                placeholder="0x…" className="w-full p-3 bg-glow-surface border border-glow-border rounded-xl text-sm font-mono text-glow-text focus:outline-none"/>
+            </div>
+            <AmountInput value={gwAmount} onChange={setGwAmount} symbol="USDC"
+              balance={activeWallet?.balances?.find(b=>b.token.symbol==="USDC")?.amount ?? "0"}/>
+            <button onClick={handleGatewayTransfer} disabled={loading || !gwDest || !gwAmount}
+              className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Globe className="w-5 h-5"/>}
+              Transfer via Gateway
+            </button>
+          </div>
+        )}
+
+        {/* ── NANOPAYMENTS ─────────────────────────────────────────────── */}
+        {mode === "nanopay" && (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setMode("home")} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
+              <h2 className="text-lg font-bold text-glow-text">Nanopayment</h2>
+            </div>
+            <div className="p-3 bg-emerald-500/8 border border-emerald-500/20 rounded-xl space-y-1 text-xs">
+              <p className="font-semibold text-emerald-400">Zero gas · Sub-cent minimums</p>
+              <p className="text-glow-muted/70">Signs EIP-3009 payment authorization off-chain. Gateway batches and settles onchain.</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-glow-muted/70">Recipient Address</p>
+              <input value={npRecipient} onChange={e => setNpRecipient(e.target.value)}
+                placeholder="0x…" className="w-full p-3 bg-glow-surface border border-glow-border rounded-xl text-sm font-mono text-glow-text focus:outline-none"/>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-glow-muted/70">Amount (USDC) — min $0.000001</p>
+              <input value={npAmount} onChange={e => setNpAmount(e.target.value)} type="number" min="0.000001" step="0.000001"
+                className="w-full p-3 bg-glow-surface border border-glow-border rounded-xl text-lg font-bold text-glow-text focus:outline-none"/>
+            </div>
+            <button onClick={handleNanopay} disabled={loading || !npRecipient || !npAmount}
+              className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Zap className="w-5 h-5"/>}
+              Send ${npAmount} USDC (gas-free)
+            </button>
+            <p className="text-center text-xs text-glow-muted/50">Powered by Circle x402 protocol</p>
+          </div>
+        )}
+
+        {/* ── ACTIVITY ─────────────────────────────────────────────────── */}
+        {mode === "activity" && (
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setMode("home")} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
+              <h2 className="text-lg font-bold text-glow-text">Transaction History</h2>
+              <button onClick={loadTxHistory} className="ml-auto text-glow-muted/50 hover:text-glow-text">
+                <RefreshCw className="w-4 h-4"/>
+              </button>
+            </div>
+            <div className="bg-glow-card border border-glow-border rounded-2xl overflow-hidden">
+              {circle.txHistory.length === 0 ? (
+                <div className="text-center py-12 text-glow-muted/50 text-sm">No transactions yet</div>
+              ) : (
+                circle.txHistory.map(tx => (
+                  <TxRow key={tx.id} tx={tx} explorerBase="https://sepolia.etherscan.io"/>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
-    {/* Wallet Switcher Modal */}
-    {showSwitcher && (
-      <WalletSwitcher
-        injectedAddress={address}
-        wallets={wallets}
-        activeId={activeWalletId}
-        onSwitch={switchWallet}
-        onAdd={()=>{setShowSwitcher(false);setPanel('manageWallets');setShowAddWallet(true);}}
-        onDelete={removeWallet}
-        onClose={()=>setShowSwitcher(false)}
-      />
-    )}
     </AppLayout>
   );
 }

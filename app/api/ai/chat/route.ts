@@ -3,32 +3,140 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "edge";
 export const maxDuration = 60;
 
-const EDITOR_CONTEXT = `
-## Editor Integration Commands
-When the user asks you to edit code, fix errors, or write code for specific files:
-- For single .sol file: wrap code in \`\`\`solidity filename.sol ... \`\`\`  
-- For multiple files: wrap each in \`\`\`solidity Filename.sol ... \`\`\` and \`\`\`typescript deploy.ts ... \`\`\`
-- The IDE will detect these code blocks and show "Compile" (for .sol) or "Create Project" (for multiple files)
-- When fixing an error at a specific line, always output the FULL corrected file (not a diff)
-- Label each code block clearly with its filename after the language tag
-
-When outputting code that should be loaded into the editor:
-- Single contract: \`\`\`solidity ContractName.sol\n// full code here
-\`\`\`
-- Multiple files (project): use multiple blocks each with filename
-- The user can click "Compile" or "Create Project" to instantly load your code
-`;
-
 const CIRCLE_CONTEXT = `
-Arc Testnet (Chain 5042002) — Circle assets:
-- USDC: 0x3600000000000000000000000000000000000000 (native gas, 18 dec internal / 6 dec ERC-20)
-- EURC: 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a (6 dec)
-- cirBTC: 0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF (8 dec)
-- USYC: 0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C (6 dec)
-- TokenMessengerV2 CCTP: 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA (domain 26)
-- CCTP domains: ETH=0, AVAX=1, OP=2, ARB=3, Stellar=4, SOL=5, Base=6, Polygon=7, Arc=26
-Always use USDC for gas. Use CCTP for cross-chain, not bridges.
+You are GlowIDE AI — a senior Web3 engineer with full Circle integration.
+
+## Circle Programmable Wallets
+User has a Circle MPC wallet (non-custodial, 2-of-2 MPC).
+- User-controlled: user holds keys, protected by PIN
+- To send USDC: use circle_transfer tool
+- To execute contract: use circle_contract_execute tool
+- To bridge cross-chain: use circle_cctp_bridge tool
+- To send nanopayment (<$0.01, gas-free): use circle_nanopayment tool
+
+## Arc Testnet (Chain 5042002)
+- USDC: 0x3600000000000000000000000000000000000000 (native gas)
+- EURC: 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a
+- cirBTC: 0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF
+- USYC: 0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C
+- TokenMessengerV2: 0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA
+
+## Gateway (Unified balance, <500ms cross-chain)
+Use circle_gateway_transfer for instant USDC moves across chains.
+
+## CCTP Domains
+ETH=0, AVAX=1, OP=2, ARB=3, Base=6, Polygon=7, Arc=26
+
+## Capabilities
+- Write, audit, deploy Solidity contracts on any EVM chain
+- Execute on-chain transactions with user PIN approval
+- Send USDC anywhere, bridge cross-chain, nanopay sub-cent
+- Analyze token data, explain DeFi protocols
+
+Always be explicit about what you're doing before executing any transaction.
+Confirm amounts and addresses with the user before calling transaction tools.
 `;
+
+const TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "circle_transfer",
+      description: "Send USDC or other Circle-supported tokens to an address using the user's Circle MPC wallet. Requires user PIN confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          to:       { type: "string", description: "Destination wallet address (0x...)" },
+          amount:   { type: "string", description: "Amount to send (e.g. '10.5')" },
+          token:    { type: "string", description: "Token symbol: USDC, EURC, cirBTC", enum: ["USDC","EURC","cirBTC","USYC"] },
+          blockchain: { type: "string", description: "Target blockchain (ETH-SEPOLIA, ETH, MATIC, AVAX, ARB, BASE, OP)" },
+          reason: { type: "string", description: "Why this transfer is being made" },
+        },
+        required: ["to", "amount"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "circle_contract_execute",
+      description: "Execute a smart contract function using the user's Circle MPC wallet. Requires user PIN confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          contractAddress:       { type: "string", description: "Contract address to call" },
+          abiFunctionSignature:  { type: "string", description: "Function signature e.g. 'transfer(address,uint256)'" },
+          abiParameters:         { type: "array",  description: "Function arguments array", items: {} },
+          blockchain:            { type: "string", description: "Blockchain to execute on" },
+          value:                 { type: "string", description: "Native token value to send (usually '0')" },
+          reason: { type: "string", description: "Why this contract call is being made" },
+        },
+        required: ["contractAddress", "abiFunctionSignature"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "circle_cctp_bridge",
+      description: "Bridge USDC cross-chain via Circle's CCTP protocol. Burns on source, natively mints on destination.",
+      parameters: {
+        type: "object",
+        properties: {
+          amount:              { type: "string", description: "USDC amount to bridge" },
+          destinationChain:    { type: "string", description: "Destination blockchain" },
+          destinationAddress:  { type: "string", description: "Recipient address on destination chain" },
+        },
+        required: ["amount", "destinationChain"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "circle_gateway_transfer",
+      description: "Instant cross-chain USDC transfer via Circle Gateway (<500ms). Uses unified balance model.",
+      parameters: {
+        type: "object",
+        properties: {
+          amount:               { type: "string", description: "USDC amount" },
+          destinationChain:     { type: "string", description: "Target blockchain" },
+          destinationAddress:   { type: "string", description: "Recipient address" },
+        },
+        required: ["amount", "destinationChain", "destinationAddress"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "circle_nanopayment",
+      description: "Send a gas-free nanopayment ($0.000001 minimum) via Circle Gateway x402 protocol. No gas needed.",
+      parameters: {
+        type: "object",
+        properties: {
+          to:     { type: "string", description: "Recipient address" },
+          amount: { type: "string", description: "USDC amount (can be tiny, e.g. 0.000001)" },
+          reason: { type: "string", description: "What this payment is for" },
+        },
+        required: ["to", "amount"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_wallet_balance",
+      description: "Check the user's current wallet balances across all tokens and chains.",
+      parameters: {
+        type: "object",
+        properties: {
+          chain: { type: "string", description: "Optional: specific chain to check" },
+        },
+      },
+    },
+  },
+];
 
 async function fetchDB(supabaseUrl: string, sKey: string, path: string) {
   const res = await fetch(`${supabaseUrl}/rest/v1${path}`, {
@@ -41,89 +149,115 @@ async function fetchDB(supabaseUrl: string, sKey: string, path: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, model, sessionId, temperature, maxTokens } = await req.json();
-    void sessionId;
+    const body = await req.json() as {
+      messages: Array<{ role: string; content: string }>;
+      model?: string;
+      walletContext?: {
+        circleUserId?: string;
+        userToken?: string;
+        wallets?: Array<{ id: string; address: string; blockchain: string }>;
+        address?: string;
+      };
+      editorContext?: { fileName?: string; fileContent?: string; errors?: string[] };
+    };
 
-    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-    const sKey        = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+    const { messages, model, walletContext, editorContext } = body;
 
-    // Defaults
-    let apiKey     = process.env.OPENROUTER_API_KEY ?? "";
-    let useModel   = model ?? process.env.OPENROUTER_DEFAULT_MODEL ?? "anthropic/claude-3.5-sonnet";
-    let systemPrompt = `You are GlowIDE AI — a senior full-stack Web3 engineer. Write production-ready, secure, well-typed code with clear explanations.\n${CIRCLE_CONTEXT}\n${EDITOR_CONTEXT}`;
-    let temp       = temperature ?? 0.7;
-    let maxTok     = maxTokens ?? 4096;
-    let trainingMessages: Array<{role:string;content:string}> = [];
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    const sKey        = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+    const openRouterKey = process.env.OPENROUTER_API_KEY ?? "";
+    if (!openRouterKey) return NextResponse.json({ error: "OpenRouter API key not set" }, { status: 500 });
 
-    // Load settings + training from DB in parallel
+    // Fetch system prompt + training examples from DB
+    let systemPrompt = CIRCLE_CONTEXT;
     if (supabaseUrl && sKey) {
-      const [settings, training] = await Promise.allSettled([
-        fetchDB(supabaseUrl, sKey, "/system_settings?select=key,value&key=in.(openrouter_api_key,default_model,system_prompt,temperature,max_tokens)"),
-        fetchDB(supabaseUrl, sKey, "/ai_training_examples?select=user_message,assistant_response,enabled&enabled=eq.true&limit=20"),
-      ]);
+      const map = await fetchDB(supabaseUrl, sKey, "/system_settings?key=eq.ai_system_prompt&select=value&limit=1");
+      if (Array.isArray(map) && map[0]?.value) systemPrompt = map[0].value + "\n\n" + CIRCLE_CONTEXT;
+    }
 
-      if (settings.status === "fulfilled" && Array.isArray(settings.value)) {
-        const map = Object.fromEntries((settings.value as Array<{key:string;value:string}>).map(s => [s.key, s.value]));
-        if (map.openrouter_api_key) apiKey   = map.openrouter_api_key;
-        if (map.default_model)      useModel = model ?? map.default_model;
-        if (map.system_prompt)      systemPrompt = map.system_prompt + "\n\n" + CIRCLE_CONTEXT + "\n\n" + EDITOR_CONTEXT;
-        if (map.temperature)        temp     = parseFloat(map.temperature) || 0.7;
-        if (map.max_tokens)         maxTok   = parseInt(map.max_tokens) || 4096;
+    // Inject wallet context into system prompt
+    if (walletContext?.wallets?.length) {
+      systemPrompt += `\n\n## User's Active Wallets\n`;
+      walletContext.wallets.forEach(w => {
+        systemPrompt += `- ${w.blockchain}: ${w.address} (walletId: ${w.id})\n`;
+      });
+      systemPrompt += `Circle userId: ${walletContext.circleUserId ?? "unknown"}\n`;
+    } else if (walletContext?.address) {
+      systemPrompt += `\n\nUser's MetaMask address: ${walletContext.address}\n`;
+    }
+
+    // Inject editor context
+    if (editorContext?.fileName) {
+      systemPrompt += `\n\n## Active Editor File: ${editorContext.fileName}\n`;
+      if (editorContext.fileContent) {
+        systemPrompt += `\`\`\`solidity\n${editorContext.fileContent.slice(0, 6000)}\n\`\`\`\n`;
       }
-
-      if (training.status === "fulfilled" && Array.isArray(training.value)) {
-        // Inject training examples as few-shot pairs before the conversation
-        for (const ex of training.value as Array<{user_message:string;assistant_response:string}>) {
-          if (ex.user_message && ex.assistant_response) {
-            trainingMessages.push({ role: "user",      content: ex.user_message });
-            trainingMessages.push({ role: "assistant", content: ex.assistant_response });
-          }
-        }
+      if (editorContext.errors?.length) {
+        systemPrompt += `### Compile Errors:\n${editorContext.errors.join("\n")}\n`;
       }
     }
 
-    if (!apiKey) {
-      return NextResponse.json({ error: "OpenRouter API key not configured. Visit Admin → AI Config." }, { status: 503 });
-    }
-
-    // Build message array: system + few-shot training + conversation
-    const allMessages = [
-      { role: "system", content: systemPrompt },
-      ...trainingMessages,
-      ...messages,
-    ];
+    const useModel = model ?? "openai/gpt-4o";
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "https://glowide.app",
-        "X-Title": "GlowIDE",
+        "Authorization": `Bearer ${openRouterKey}`,
+        "Content-Type":  "application/json",
+        "HTTP-Referer":  "https://glowaide.com",
+        "X-Title":       "GlowIDE",
       },
       body: JSON.stringify({
         model: useModel,
-        messages: allMessages,
-        temperature: temp,
-        max_tokens: maxTok,
-        stream: true,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages.slice(-20),
+        ],
+        tools: TOOLS,
+        tool_choice: "auto",
+        stream: false,
+        max_tokens: 2000,
       }),
     });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: { message: "AI service error" } }));
-      return NextResponse.json({ error: err.error?.message ?? "AI service error" }, { status: response.status });
+    const data = await response.json() as {
+      choices?: Array<{
+        message: {
+          role: string;
+          content: string | null;
+          tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+        };
+        finish_reason?: string;
+      }>;
+      error?: { message: string };
+    };
+
+    if (!response.ok || data.error) {
+      return NextResponse.json({ error: data.error?.message ?? "AI error" }, { status: 500 });
     }
 
-    return new Response(response.body, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-      },
-    });
+    const choice  = data.choices?.[0];
+    const message = choice?.message;
+
+    // If AI wants to call a tool, return the tool call info for the frontend to confirm
+    if (message?.tool_calls?.length) {
+      const toolCall = message.tool_calls[0];
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(toolCall.function.arguments); } catch {}
+
+      return NextResponse.json({
+        content: message.content ?? `I'll ${toolCall.function.name.replace(/_/g, " ")} for you. Please confirm below.`,
+        toolCall: {
+          id:   toolCall.id,
+          name: toolCall.function.name,
+          args,
+        },
+      });
+    }
+
+    return NextResponse.json({ content: message?.content ?? "" });
   } catch (err) {
-    console.error("[ai/chat]", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    console.error("[AI chat]", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

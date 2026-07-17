@@ -1,4 +1,6 @@
 "use client";
+import React from "react";
+import { useCircleStore } from "@/store/circleStore";
 import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -7,7 +9,9 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   Copy, Check, Edit3, RotateCcw, Eye,
   ChevronDown, Terminal, Code2, X, ExternalLink,
-  Hammer, FolderPlus,
+  Hammer, FileCode, FolderOpen,
+  CheckCircle, AlertTriangle, Loader2,
+  Zap, Send, Globe, ArrowLeftRight, FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/types";
@@ -186,6 +190,126 @@ function AIAvatar({ isStreaming }: { isStreaming?:boolean }) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
+
+// ── Transaction Confirmation Card ────────────────────────────────────────────
+const TOOL_ICONS: Record<string, React.ElementType> = {
+  circle_transfer:         Send,
+  circle_contract_execute: Zap,
+  circle_cctp_bridge:      ArrowLeftRight,
+  circle_gateway_transfer: Globe,
+  circle_nanopayment:      Zap,
+  get_wallet_balance:      CheckCircle,
+};
+
+const TOOL_LABELS: Record<string, string> = {
+  circle_transfer:         "Send USDC",
+  circle_contract_execute: "Execute Contract",
+  circle_cctp_bridge:      "CCTP Bridge",
+  circle_gateway_transfer: "Gateway Transfer",
+  circle_nanopayment:      "Nanopayment",
+  get_wallet_balance:      "Check Balance",
+};
+
+function TxConfirmCard({ toolCall, onExecute, onReject }:{
+  toolCall: { id: string; name: string; args: Record<string, unknown> };
+  onExecute(r: { success: boolean; message: string; txId?: string }): void;
+  onReject(): void;
+}) {
+  const [loading, setLoading] = React.useState(false);
+  const [result,  setResult]  = React.useState<{ success: boolean; message: string; txId?: string } | null>(null);
+  const circle = useCircleStore();
+  const Icon   = TOOL_ICONS[toolCall.name] ?? Zap;
+  const label  = TOOL_LABELS[toolCall.name] ?? toolCall.name;
+
+  const execute = async () => {
+    setLoading(true);
+    try {
+      const { name, args } = toolCall;
+      let endpoint = "/api/circle/transactions";
+      let body: Record<string, unknown> = {
+        userToken: circle.userToken,
+        walletId:  circle.activeWalletId,
+      };
+
+      if (name === "circle_transfer") {
+        body = { ...body, action: "transfer", destinationAddress: args.to, amounts: [args.amount as string], blockchain: args.blockchain ?? "ETH-SEPOLIA" };
+      } else if (name === "circle_contract_execute") {
+        body = { ...body, action: "contract", contractAddress: args.contractAddress, abiFunctionSignature: args.abiFunctionSignature, abiParameters: args.abiParameters ?? [], blockchain: args.blockchain ?? "ETH-SEPOLIA" };
+      } else if (name === "circle_cctp_bridge") {
+        body = { ...body, action: "contract", contractAddress: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA", abiFunctionSignature: "depositForBurn(uint256,uint32,bytes32,address)", abiParameters: [args.amount, 0, args.destinationAddress, args.destinationAddress], blockchain: "ETH-SEPOLIA" };
+      } else if (name === "circle_gateway_transfer") {
+        endpoint = "/api/circle/gateway";
+        body = { action: "transfer", sourceAddress: circle.wallets[0]?.address, destinationAddress: args.destinationAddress, amount: args.amount, sourceBlockchain: "ETH-SEPOLIA", destinationBlockchain: args.destinationChain };
+      } else if (name === "circle_nanopayment") {
+        endpoint = "/api/circle/nanopay";
+        const now = Math.floor(Date.now()/1000);
+        body = { action: "settle", payerAddress: circle.wallets[0]?.address, payeeAddress: args.to, amount: args.amount, validAfter: now - 60, validBefore: now + 3600, nonce: "0x" + Math.random().toString(16).slice(2).padEnd(64,"0") };
+      } else if (name === "get_wallet_balance") {
+        const res = await fetch(`/api/circle/wallets?userToken=${circle.userToken}&action=list`);
+        const d = await res.json() as { wallets?: unknown[] };
+        const r = { success: true, message: `Found ${d.wallets?.length ?? 0} wallet(s)` };
+        setResult(r); onExecute(r); setLoading(false); return;
+      }
+
+      const res  = await fetch(endpoint, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      const data = await res.json() as { challengeId?: string; transactionId?: string; error?: string; success?: boolean };
+
+      if (data.error) throw new Error(data.error);
+
+      const r = {
+        success: true,
+        message: data.challengeId
+          ? `Challenge created: ${data.challengeId.slice(0,16)}… — confirm with your PIN in the Wallet tab`
+          : data.transactionId
+            ? `Transaction submitted: ${data.transactionId.slice(0,16)}…`
+            : "Action completed",
+        txId: data.challengeId ?? data.transactionId,
+      };
+      setResult(r); onExecute(r);
+    } catch (e) {
+      const r = { success: false, message: String(e) };
+      setResult(r); onExecute(r);
+    } finally { setLoading(false); }
+  };
+
+  if (result) return (
+    <div className={cn("flex items-start gap-2 p-3 rounded-xl border text-xs mt-2",
+      result.success ? "bg-emerald-500/8 border-emerald-500/20" : "bg-red-500/8 border-red-500/20")}>
+      {result.success ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/> : <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0"/>}
+      <p className={result.success ? "text-emerald-400" : "text-red-400"}>{result.message}</p>
+    </div>
+  );
+
+  return (
+    <div className="mt-3 bg-glow-card border border-glow-accent/30 rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 bg-glow-accent/10 border-b border-glow-accent/20">
+        <Icon className="w-4 h-4 text-glow-accent"/>
+        <span className="text-sm font-semibold text-glow-accent-light">{label}</span>
+        <span className="text-xs text-glow-muted/60 ml-auto">Requires confirmation</span>
+      </div>
+      <div className="px-4 py-3 space-y-2">
+        {Object.entries(toolCall.args).map(([k, v]) => (
+          <div key={k} className="flex items-center gap-2 text-xs">
+            <span className="text-glow-muted/60 w-28 flex-shrink-0 capitalize">{k.replace(/_/g," ")}</span>
+            <span className="text-glow-text font-mono break-all">{String(v)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 px-4 pb-4">
+        <button onClick={execute} disabled={loading}
+          className="flex-1 py-2 bg-glow-gradient text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60">
+          {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle className="w-4 h-4"/>}
+          Confirm
+        </button>
+        <button onClick={onReject} disabled={loading}
+          className="px-4 py-2 bg-glow-card border border-glow-border text-glow-muted text-sm rounded-xl hover:border-red-500/30 hover:text-red-400">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessageProps) {
   const [copied, setCopied]   = useState(false);
   const [editing, setEditing] = useState(false);

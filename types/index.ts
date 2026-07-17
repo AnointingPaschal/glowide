@@ -72,6 +72,8 @@ export interface ChatMessage {
   tokens_used?: number;
   created_at: string;
   metadata?: Record<string, unknown>;
+  toolCall?: { id: string; name: string; args: Record<string, unknown> };
+  toolResult?: { success: boolean; message: string; txId?: string };
 }
 
 export interface DeployedContract {
@@ -92,6 +94,8 @@ export interface DeployedContract {
   gas_used?: string;
   created_at: string;
   metadata?: Record<string, unknown>;
+  toolCall?: { id: string; name: string; args: Record<string, unknown> };
+  toolResult?: { success: boolean; message: string; txId?: string };
 }
 
 export interface ContractABI {
@@ -210,6 +214,8 @@ export interface CompileResult {
   errors?: CompileError[];
   warnings?: CompileError[];
   metadata?: Record<string, unknown>;
+  toolCall?: { id: string; name: string; args: Record<string, unknown> };
+  toolResult?: { success: boolean; message: string; txId?: string };
 }
 
 export interface CompileError {
