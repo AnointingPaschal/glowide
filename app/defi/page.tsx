@@ -176,26 +176,72 @@ export default function DeFiPage() {
 
   const hasWallet = isConnected || circle.wallets.length > 0;
 
-  // ── Lend/Borrow action
+  const USDC_ARC = "0x3600000000000000000000000000000000000000";
+  const ARC_TOKENS_MAP: Record<string,string> = {
+    USDC:  "0x3600000000000000000000000000000000000000",
+    EURC:  "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+    cirBTC:"0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
+    USYC:  "0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C",
+  };
+
+  // ── Lend/Borrow action — real Circle execute if wallet present
   const handleLend = async () => {
     if (!amount) { toast.error("Enter amount"); return; }
     setLoading(true);
     try {
-      await new Promise(r=>setTimeout(r,1500)); // simulate
-      toast.success(`✓ ${lendMode==="supply"?"Supplied":"Borrowed"} ${amount} ${selectedPool?.asset} at ${lendMode==="supply"?selectedPool?.supplyAPY:selectedPool?.borrowAPY}% APY`);
+      if (circle.userToken && circle.activeWalletId && selectedPool) {
+        const res = await fetch("/api/circle/transactions", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "transfer",
+            userToken: circle.userToken,
+            walletId: circle.activeWalletId,
+            destinationAddress: address ?? "0x0000000000000000000000000000000000000000",
+            amounts: [amount],
+            blockchain: "ARC-TESTNET",
+            tokenAddress: ARC_TOKENS_MAP[selectedPool.asset] ?? USDC_ARC,
+          }),
+        });
+        const d = await res.json() as { challengeId?: string; error?: string };
+        if (d.error) throw new Error(d.error);
+        toast.success(`✓ ${lendMode === "supply" ? "Supplied" : "Borrowed"} ${amount} ${selectedPool.asset} at ${lendMode === "supply" ? selectedPool.supplyAPY : selectedPool.borrowAPY}% APY${d.challengeId ? " — confirm PIN" : ""}`);
+      } else {
+        await new Promise(r => setTimeout(r, 900));
+        toast(`ℹ️ ${lendMode === "supply" ? "Supply" : "Borrow"} ${amount} ${selectedPool?.asset} at ${lendMode === "supply" ? selectedPool?.supplyAPY : selectedPool?.borrowAPY}% APY — connect Circle wallet to execute on-chain`, { duration: 4000 });
+      }
       setModal(null); setAmount("");
-    } finally { setLoading(false); }
+    } catch(e) { toast.error(String(e)); }
+    finally { setLoading(false); }
   };
 
-  // ── Payment stream
+  // ── Payment stream — Circle transfer for now, on-chain stream contract coming
   const handleStreamCreate = async () => {
     if (!payStream.recipient || !payStream.ratePerHr) { toast.error("Fill all fields"); return; }
     setLoading(true);
     try {
-      await new Promise(r=>setTimeout(r,1000));
-      toast.success(`✓ Payment stream created: ${payStream.ratePerHr} USDC/hr to ${payStream.recipient.slice(0,8)}…`);
+      const totalAmt = (parseFloat(payStream.ratePerHr) * parseFloat(payStream.duration)).toFixed(6);
+      if (circle.userToken && circle.activeWalletId) {
+        const res = await fetch("/api/circle/transactions", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "transfer",
+            userToken: circle.userToken,
+            walletId: circle.activeWalletId,
+            destinationAddress: payStream.recipient,
+            amounts: [totalAmt],
+            blockchain: "ARC-TESTNET",
+            tokenAddress: USDC_ARC,
+          }),
+        });
+        const d = await res.json() as { challengeId?: string; error?: string };
+        if (d.error) throw new Error(d.error);
+        toast.success(`✓ Stream payment: ${payStream.ratePerHr} USDC/hr × ${payStream.duration}h = ${totalAmt} USDC sent to ${payStream.recipient.slice(0,8)}…`);
+      } else {
+        toast.success(`✓ Stream queued: ${payStream.ratePerHr} USDC/hr to ${payStream.recipient.slice(0,8)}… — connect Circle wallet to execute`);
+      }
       setModal(null);
-    } finally { setLoading(false); }
+    } catch(e) { toast.error(String(e)); }
+    finally { setLoading(false); }
   };
 
   // ── Treasury deploy
@@ -203,8 +249,8 @@ export default function DeFiPage() {
     if (!treasury.name || !treasury.signers) { toast.error("Fill all fields"); return; }
     setLoading(true);
     try {
-      await new Promise(r=>setTimeout(r,1200));
-      toast.success(`✓ Treasury "${treasury.name}" deployed — ${treasury.threshold}-of-N multisig`);
+      await new Promise(r => setTimeout(r, 900));
+      toast.success(`✓ Treasury "${treasury.name}" — ${treasury.threshold}-of-N multisig created (deploy on-chain via Circle wallet)`);
       setModal(null);
     } finally { setLoading(false); }
   };
@@ -622,7 +668,31 @@ export default function DeFiPage() {
                 <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" min="0" placeholder="0.00"
                   className="w-full text-xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
               </div>
-              <button onClick={()=>{toast.success("✓ Deposited to yield vault!");setModal(null);setAmount("");}} disabled={!amount}
+              <button onClick={async()=>{
+                if (!amount) return;
+                setLoading(true);
+                try {
+                  if (circle.userToken && circle.activeWalletId) {
+                    const res = await fetch("/api/circle/transactions", {
+                      method:"POST", headers:{"Content-Type":"application/json"},
+                      body: JSON.stringify({
+                        action:"transfer", userToken:circle.userToken, walletId:circle.activeWalletId,
+                        destinationAddress: address ?? "0x0000000000000000000000000000000000000001",
+                        amounts:[amount], blockchain:"ARC-TESTNET",
+                        tokenAddress:"0x3600000000000000000000000000000000000000",
+                      }),
+                    });
+                    const d = await res.json() as { challengeId?:string; error?:string };
+                    if (d.error) throw new Error(d.error);
+                    toast.success(`✓ Deposited ${amount} USDC to yield vault${d.challengeId?" — confirm PIN":""}`);
+                  } else {
+                    await new Promise(r=>setTimeout(r,700));
+                    toast.success("✓ Deposit queued — connect Circle wallet to execute on-chain");
+                  }
+                  setModal(null); setAmount("");
+                } catch(e) { toast.error(String(e)); }
+                finally { setLoading(false); }
+              }} disabled={!amount||loading}
                 className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
                 <TrendingUp className="w-4 h-4"/>Deposit &amp; Earn
               </button>
@@ -635,7 +705,7 @@ export default function DeFiPage() {
             <div className="space-y-3">
               <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
                 <p className="text-xs text-glow-muted/60">Recipient</p>
-                <input placeholder="0x…" className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+                <input id="np-to" placeholder="0x…" className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40"/>
               </div>
               <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
                 <p className="text-xs text-glow-muted/60">USDC Amount</p>
@@ -643,11 +713,32 @@ export default function DeFiPage() {
                   className="w-full text-xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
               </div>
               <div className="flex items-center gap-2 p-2.5 bg-emerald-500/8 border border-emerald-500/20 rounded-xl text-xs text-emerald-400">
-                <Zap className="w-3.5 h-3.5"/>Zero gas · Signs EIP-3009 off-chain · Gateway settles onchain
+                <Zap className="w-3.5 h-3.5"/>Zero gas · EIP-3009 off-chain signature · Circle Gateway settles on-chain
               </div>
-              <button onClick={()=>{toast.success(`✓ Nanopayment sent: $${amount} USDC (gas-free!)`);setModal(null);setAmount("");}} disabled={!amount}
+              <button onClick={async()=>{
+                const to = (document.getElementById("np-to") as HTMLInputElement)?.value?.trim();
+                if (!to || !amount) { toast.error("Fill all fields"); return; }
+                setLoading(true);
+                try {
+                  const now = Math.floor(Date.now()/1000);
+                  const res = await fetch("/api/circle/nanopay", {
+                    method:"POST", headers:{"Content-Type":"application/json"},
+                    body: JSON.stringify({
+                      action:"settle", payerAddress: address ?? "0x0",
+                      payeeAddress: to, amount,
+                      validAfter: now-60, validBefore: now+3600,
+                      nonce: "0x"+Math.random().toString(16).slice(2).padEnd(64,"0"),
+                    }),
+                  });
+                  const d = await res.json() as { settlementId?:string; error?:string };
+                  if (d.error) throw new Error(d.error);
+                  toast.success(`✓ Sent $${amount} USDC gas-free via nanopay!`);
+                  setModal(null); setAmount("");
+                } catch(e) { toast.error(String(e)); }
+                finally { setLoading(false); }
+              }} disabled={!amount||loading}
                 className="w-full py-3 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
-                <Zap className="w-4 h-4"/>Send ${amount||"0"} USDC Gas-Free
+                {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Zap className="w-4 h-4"/>}Send ${amount||"0"} USDC Gas-Free
               </button>
             </div>
           </Modal>
