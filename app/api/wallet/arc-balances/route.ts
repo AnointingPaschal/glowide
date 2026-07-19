@@ -47,8 +47,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Invalid address: "${address}"` }, { status: 400 });
   }
 
-  // First verify the RPC endpoint itself is reachable
-  const chainIdCheck = await rpcCall("eth_chainId", []);
+  // Run chainId check, native balance, and all token balances in parallel (was sequential)
+  const padded = "000000000000000000000000" + address.slice(2);
+  const callData = "0x70a08231" + padded; // balanceOf(address) selector
+
+  const [chainIdCheck, nativeBalCheck, ...tokenResults] = await Promise.all([
+    rpcCall("eth_chainId", []),
+    rpcCall("eth_getBalance", [address, "latest"]),
+    ...TOKENS.map(t => rpcCall("eth_call", [{ to: t.address, data: callData }, "latest"])),
+  ]);
+
   if (chainIdCheck.error) {
     return NextResponse.json({
       error: `Cannot reach Arc Testnet RPC (${ARC_RPC}): ${chainIdCheck.error}`,
@@ -56,8 +64,6 @@ export async function GET(req: NextRequest) {
     }, { status: 502 });
   }
 
-  // Native USDC gas balance — separate from ERC-20 interface, uses 18 decimals
-  const nativeBalCheck = await rpcCall("eth_getBalance", [address, "latest"]);
   let nativeGasUSDC = "0";
   if (!nativeBalCheck.error && nativeBalCheck.result && nativeBalCheck.result !== "0x0") {
     try {
@@ -66,27 +72,22 @@ export async function GET(req: NextRequest) {
     } catch { /* keep "0" */ }
   }
 
-  const padded = "000000000000000000000000" + address.slice(2);
-  const callData = "0x70a08231" + padded; // balanceOf(address) selector
-
-  const results = await Promise.all(
-    TOKENS.map(async (t) => {
-      const { result: raw, error } = await rpcCall("eth_call", [{ to: t.address, data: callData }, "latest"]);
-      if (error) {
-        return { symbol: t.symbol, name: t.name, decimals: t.decimals, amount: "0", error, rawResult: null };
+  const results = TOKENS.map((t, i) => {
+    const { result: raw, error } = tokenResults[i];
+    if (error) {
+      return { symbol: t.symbol, name: t.name, decimals: t.decimals, amount: "0", error, rawResult: null as string | null };
+    }
+    let amount = "0";
+    try {
+      if (raw && raw !== "0x" && raw !== "0x0" && raw.length > 2) {
+        const val = Number(BigInt(raw)) / Math.pow(10, t.decimals);
+        amount = val.toFixed(val > 0 ? Math.min(t.decimals, 6) : 0);
       }
-      let amount = "0";
-      try {
-        if (raw && raw !== "0x" && raw !== "0x0" && raw.length > 2) {
-          const val = Number(BigInt(raw)) / Math.pow(10, t.decimals);
-          amount = val.toFixed(val > 0 ? Math.min(t.decimals, 6) : 0);
-        }
-      } catch (e) {
-        return { symbol: t.symbol, name: t.name, decimals: t.decimals, amount: "0", error: `Parse error: ${(e as Error).message}`, rawResult: raw };
-      }
-      return { symbol: t.symbol, name: t.name, decimals: t.decimals, amount, error: null, rawResult: debug ? raw : undefined };
-    })
-  );
+    } catch (e) {
+      return { symbol: t.symbol, name: t.name, decimals: t.decimals, amount: "0", error: `Parse error: ${(e as Error).message}`, rawResult: raw };
+    }
+    return { symbol: t.symbol, name: t.name, decimals: t.decimals, amount, error: null as string | null, rawResult: debug ? raw : undefined };
+  });
 
   const balances: Record<string, { name: string; amount: string; decimals: number; error?: string | null; rawResult?: string | null }> = {};
   const errors: Record<string, string> = {};

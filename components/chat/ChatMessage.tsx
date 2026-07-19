@@ -192,6 +192,11 @@ function AIAvatar({ isStreaming }: { isStreaming?:boolean }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 // ── Transaction Confirmation Card ────────────────────────────────────────────
+// Sepolia testnet token addresses used by Developer-Controlled wallet transfers
+const TOKEN_ADDR: Record<string, string> = {
+  USDC: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+};
+
 const TOOL_ICONS: Record<string, React.ElementType> = {
   circle_transfer:         Send,
   circle_contract_execute: Zap,
@@ -225,45 +230,68 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
     setLoading(true);
     try {
       const { name, args } = toolCall;
-      let endpoint = "/api/circle/transactions";
-      let body: Record<string, unknown> = {
-        userToken: circle.userToken,
-        walletId:  circle.activeWalletId,
-      };
+      const walletId = circle.activeWalletId ?? circle.wallets[0]?.id;
+
+      if (!walletId && name !== "get_wallet_balance") {
+        throw new Error("No Circle Developer Wallet found — create one in the Wallet tab first.");
+      }
+
+      let body: Record<string, unknown> = { walletId, blockchain: "ETH-SEPOLIA" };
 
       if (name === "circle_transfer") {
-        body = { ...body, action: "transfer", destinationAddress: args.to, amounts: [args.amount as string], blockchain: args.blockchain ?? "ETH-SEPOLIA" };
+        body = { ...body, action: "transfer", to: args.to, amount: args.amount,
+          tokenAddress: TOKEN_ADDR[(args.token as string)?.toUpperCase()] ?? undefined };
       } else if (name === "circle_contract_execute") {
-        body = { ...body, action: "contract", contractAddress: args.contractAddress, abiFunctionSignature: args.abiFunctionSignature, abiParameters: args.abiParameters ?? [], blockchain: args.blockchain ?? "ETH-SEPOLIA" };
+        body = { ...body, action: "contract",
+          contractAddress: args.contractAddress, abiFunctionSignature: args.abiFunctionSignature,
+          abiParameters: args.abiParameters ?? [], value: args.value ?? "0" };
       } else if (name === "circle_cctp_bridge") {
-        body = { ...body, action: "contract", contractAddress: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA", abiFunctionSignature: "depositForBurn(uint256,uint32,bytes32,address)", abiParameters: [args.amount, 0, args.destinationAddress, args.destinationAddress], blockchain: "ETH-SEPOLIA" };
+        body = { ...body, action: "contract",
+          contractAddress: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+          abiFunctionSignature: "depositForBurn(uint256,uint32,bytes32,address)",
+          abiParameters: [args.amount, 0, args.destinationAddress, args.destinationAddress] };
       } else if (name === "circle_gateway_transfer") {
-        endpoint = "/api/circle/gateway";
-        body = { action: "transfer", sourceAddress: circle.wallets[0]?.address, destinationAddress: args.destinationAddress, amount: args.amount, sourceBlockchain: "ETH-SEPOLIA", destinationBlockchain: args.destinationChain };
+        const res = await fetch("/api/circle/gateway", { method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ action: "transfer", sourceAddress: circle.wallets[0]?.address,
+            destinationAddress: args.destinationAddress, amount: args.amount,
+            sourceBlockchain: "ETH-SEPOLIA", destinationBlockchain: args.destinationChain }) });
+        const d = await res.json() as { error?: string; id?: string };
+        if (d.error) throw new Error(d.error);
+        const r = { success: true, message: `Gateway transfer initiated${d.id ? `: ${d.id.slice(0,16)}…` : ""}`, txId: d.id };
+        setResult(r); onExecute(r); setLoading(false); return;
       } else if (name === "circle_nanopayment") {
-        endpoint = "/api/circle/nanopay";
         const now = Math.floor(Date.now()/1000);
-        body = { action: "settle", payerAddress: circle.wallets[0]?.address, payeeAddress: args.to, amount: args.amount, validAfter: now - 60, validBefore: now + 3600, nonce: "0x" + Math.random().toString(16).slice(2).padEnd(64,"0") };
+        const res = await fetch("/api/circle/nanopay", { method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ action: "settle", payerAddress: circle.wallets[0]?.address, payeeAddress: args.to,
+            amount: args.amount, validAfter: now-60, validBefore: now+3600,
+            nonce: "0x" + Math.random().toString(16).slice(2).padEnd(64,"0") }) });
+        const d = await res.json() as { error?: string; settlementId?: string };
+        if (d.error) throw new Error(d.error);
+        const r = { success: true, message: `Nanopayment sent gas-free${d.settlementId ? `: ${d.settlementId.slice(0,16)}…` : ""}`, txId: d.settlementId };
+        setResult(r); onExecute(r); setLoading(false); return;
       } else if (name === "get_wallet_balance") {
-        const res = await fetch(`/api/circle/wallets?userToken=${circle.userToken}&action=list`);
-        const d = await res.json() as { wallets?: unknown[] };
-        const r = { success: true, message: `Found ${d.wallets?.length ?? 0} wallet(s)` };
+        const res = await fetch("/api/circle/dev-wallet", { method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ action: "balances", walletId }) });
+        const d = await res.json() as { tokenBalances?: unknown[] };
+        const r = { success: true, message: `Found ${d.tokenBalances?.length ?? 0} token balance(s)` };
         setResult(r); onExecute(r); setLoading(false); return;
       }
 
-      const res  = await fetch(endpoint, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
-      const data = await res.json() as { challengeId?: string; transactionId?: string; error?: string; success?: boolean };
+      // Real on-chain execution via Circle Developer-Controlled Wallets — server-signed,
+      // no PIN/userToken needed, executes immediately.
+      const res  = await fetch("/api/circle/dev-wallet", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      const data = await res.json() as { id?: string; state?: string; txHash?: string; error?: string };
 
       if (data.error) throw new Error(data.error);
 
       const r = {
         success: true,
-        message: data.challengeId
-          ? `Challenge created: ${data.challengeId.slice(0,16)}… — confirm with your PIN in the Wallet tab`
-          : data.transactionId
-            ? `Transaction submitted: ${data.transactionId.slice(0,16)}…`
+        message: data.txHash
+          ? `✓ Executed on-chain: ${data.txHash.slice(0,16)}…`
+          : data.id
+            ? `✓ Transaction submitted (${data.state ?? "pending"}): ${data.id.slice(0,16)}…`
             : "Action completed",
-        txId: data.challengeId ?? data.transactionId,
+        txId: data.id ?? data.txHash,
       };
       setResult(r); onExecute(r);
     } catch (e) {

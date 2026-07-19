@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const revalidate = 300; // 5 min edge cache — logos rarely change
 import { NextResponse } from "next/server";
 import { supabaseREST } from "@/lib/supabase-server";
 
@@ -10,6 +11,9 @@ const PUBLIC_KEYS = [
 ];
 
 export async function GET() {
+  const headers = {
+    "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=3600",
+  };
   try {
     const keyList = PUBLIC_KEYS.map(k => `"${k}"`).join(",");
     const { data, error } = await supabaseREST(
@@ -20,7 +24,7 @@ export async function GET() {
       const settings = Object.fromEntries(
         (data as { key: string; value: string }[]).map(s => [s.key, s.value])
       );
-      return NextResponse.json(settings);
+      return NextResponse.json(settings, { headers });
     }
   } catch { /* fallthrough */ }
   return NextResponse.json({
@@ -29,5 +33,5 @@ export async function GET() {
     usdc_logo_url: "https://www.circle.com/hubfs/USDC/USDC_icon_1.svg",
     eurc_logo_url: "https://www.circle.com/hubfs/EURC/EURC_icon.svg",
     cirbtc_logo_url: "https://cryptologos.cc/logos/bitcoin-btc-logo.svg",
-  });
+  }, { headers });
 }

@@ -397,6 +397,7 @@ export default function WalletPage() {
   const [livePrices,  setLivePrices]  = useState<Record<string,{price:number;change:number}>>({});
   const [tokenLogos,  setTokenLogos]  = useState<Record<string,string>>({});
   const [onChainBals, setOnChainBals] = useState<Record<string,string>>({});
+  const balCacheRef = useRef<Record<string, { bals: Record<string,string>; nativeGas: string; ts: number }>>({});
   const [selectedAsset, setSelectedAsset] = useState<{symbol:string;name:string;amount:string}|null>(null);
   const [balRefreshTick, setBalRefreshTick] = useState(0);
   const [balError, setBalError] = useState<string | null>(null);
@@ -441,8 +442,18 @@ export default function WalletPage() {
       .catch(() => {}); // silent — defaults already set
   }, []);
 
-  // Fetch token logos from admin settings
+  // Fetch token logos from admin settings — instant from localStorage cache, refresh in background
   useEffect(() => {
+    const CACHE_KEY = "glowide-token-logos-v1";
+    // Show cached logos immediately (no network wait) if we have them
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached) as { logos: Record<string,string>; ts: number };
+        if (parsed.logos && Object.keys(parsed.logos).length) setTokenLogos(parsed.logos);
+      }
+    } catch { /* ignore corrupt cache */ }
+
     fetch("/api/admin/public-settings")
       .then(r => r.json())
       .then(d => {
@@ -452,7 +463,10 @@ export default function WalletPage() {
         if (d.cirbtc_logo_url) logos.cirBTC = d.cirbtc_logo_url;
         if (d.usyc_logo_url)   logos.USYC   = d.usyc_logo_url;
         if (d.arc_logo_url)    logos.ARC    = d.arc_logo_url;
-        if (Object.keys(logos).length) setTokenLogos(logos);
+        if (Object.keys(logos).length) {
+          setTokenLogos(logos);
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ logos, ts: Date.now() })); } catch { /* storage full/blocked */ }
+        }
       })
       .catch(() => {});
   }, []);
@@ -474,10 +488,24 @@ export default function WalletPage() {
       : undefined;
     if (!addr || addr.length < 10) return;
 
+    // Instantly show cached balances for this address (if we've seen it before)
+    // so switching wallets never shows a blank/zero flash while the network call is in flight.
+    const cached = balCacheRef.current[addr];
+    if (cached) {
+      setOnChainBals(cached.bals);
+      setNativeGasBal(cached.nativeGas);
+      setBalTokenErrors({});
+      setBalError(null);
+    } else {
+      // No cache yet for this address — clear stale numbers from the previous wallet
+      setOnChainBals({});
+      setNativeGasBal("0");
+    }
+
     const fetchBalances = async () => {
       try {
         setLoadingBal(true);
-        setBalError(null);
+        if (!cached) setBalError(null);
         const res = await fetch(`/api/wallet/arc-balances?address=${encodeURIComponent(addr)}`);
         const d = await res.json() as {
           balances?: Record<string, { amount: string }>;
@@ -488,7 +516,9 @@ export default function WalletPage() {
           setBalError(d.error ?? `Balance fetch failed (${res.status})`);
           return;
         }
-        if (d.nativeGasUSDC !== undefined) setNativeGasBal(d.nativeGasUSDC);
+        setBalError(null);
+        const nativeGas = d.nativeGasUSDC ?? "0";
+        if (d.nativeGasUSDC !== undefined) setNativeGasBal(nativeGas);
         if (d.errors && Object.keys(d.errors).length > 0) {
           setBalTokenErrors(d.errors);
         } else {
@@ -498,9 +528,11 @@ export default function WalletPage() {
           const bals: Record<string, string> = {};
           Object.entries(d.balances).forEach(([sym, b]) => { bals[sym] = b.amount; });
           setOnChainBals(bals);
+          // Cache for instant display next time this address is selected
+          balCacheRef.current[addr] = { bals, nativeGas, ts: Date.now() };
         }
       } catch (e) {
-        setBalError(`Network error: ${(e as Error).message}`);
+        if (!cached) setBalError(`Network error: ${(e as Error).message}`);
       }
       finally { setLoadingBal(false); }
     };

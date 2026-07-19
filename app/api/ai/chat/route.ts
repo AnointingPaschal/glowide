@@ -35,6 +35,14 @@ ETH=0, AVAX=1, OP=2, ARB=3, Base=6, Polygon=7, Arc=26
 
 Always be explicit about what you're doing before executing any transaction.
 Confirm amounts and addresses with the user before calling transaction tools.
+
+## CRITICAL — Never simulate transactions
+When the user asks you to send, transfer, swap, bridge, pay, or execute anything
+on-chain, you MUST call the matching tool function. Do NOT describe the action
+in plain text as if it happened — that is a simulation and is strictly forbidden.
+Every transaction request requires an actual tool_call in your response. If you
+are unsure of an address or amount, ask a clarifying question instead of calling
+the tool with guessed values — but once confirmed, always call the tool.
 `;
 
 const TOOLS = [
@@ -206,6 +214,13 @@ export async function POST(req: NextRequest) {
 
     const useModel = model ?? "openai/gpt-4o";
 
+    // Detect clear transaction intent in the latest user message so we can force
+    // tool_choice="required" — some OpenRouter models are conservative under "auto"
+    // and will describe an action in prose instead of actually calling the tool.
+    const lastUserMsg = [...messages].reverse().find(m => m.role === "user")?.content ?? "";
+    const TX_INTENT = /\b(send|transfer|pay|bridge|swap|execute|deploy|call the contract|mint|burn)\b.{0,60}\b(usdc|eurc|cirbtc|usyc|to |address|0x[a-f0-9]{6,})/i;
+    const forceToolCall = TX_INTENT.test(lastUserMsg);
+
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -221,7 +236,7 @@ export async function POST(req: NextRequest) {
           ...messages.slice(-20),
         ],
         tools: TOOLS,
-        tool_choice: "auto",
+        tool_choice: forceToolCall ? "required" : "auto",
         stream: false,
         max_tokens: 2000,
       }),
