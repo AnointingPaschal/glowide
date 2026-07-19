@@ -399,6 +399,9 @@ export default function WalletPage() {
   const [onChainBals, setOnChainBals] = useState<Record<string,string>>({});
   const [selectedAsset, setSelectedAsset] = useState<{symbol:string;name:string;amount:string}|null>(null);
   const [balRefreshTick, setBalRefreshTick] = useState(0);
+  const [balError, setBalError] = useState<string | null>(null);
+  const [balTokenErrors, setBalTokenErrors] = useState<Record<string,string>>({});
+  const [nativeGasBal, setNativeGasBal] = useState("0");
   const [newWalletPass, setNewWalletPass] = useState("");
   const [newWalletPass2, setNewWalletPass2] = useState("");
   const [newWalletName, setNewWalletName] = useState("");
@@ -474,15 +477,31 @@ export default function WalletPage() {
     const fetchBalances = async () => {
       try {
         setLoadingBal(true);
+        setBalError(null);
         const res = await fetch(`/api/wallet/arc-balances?address=${encodeURIComponent(addr)}`);
-        if (!res.ok) return;
-        const d = await res.json() as { balances?: Record<string, { amount: string }> };
+        const d = await res.json() as {
+          balances?: Record<string, { amount: string }>;
+          error?: string; errors?: Record<string,string>; rpcUrl?: string;
+          nativeGasUSDC?: string;
+        };
+        if (!res.ok) {
+          setBalError(d.error ?? `Balance fetch failed (${res.status})`);
+          return;
+        }
+        if (d.nativeGasUSDC !== undefined) setNativeGasBal(d.nativeGasUSDC);
+        if (d.errors && Object.keys(d.errors).length > 0) {
+          setBalTokenErrors(d.errors);
+        } else {
+          setBalTokenErrors({});
+        }
         if (d.balances) {
           const bals: Record<string, string> = {};
           Object.entries(d.balances).forEach(([sym, b]) => { bals[sym] = b.amount; });
           setOnChainBals(bals);
         }
-      } catch { /* silent */ }
+      } catch (e) {
+        setBalError(`Network error: ${(e as Error).message}`);
+      }
       finally { setLoadingBal(false); }
     };
 
@@ -1391,7 +1410,7 @@ export default function WalletPage() {
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-2 border-t border-glow-border pt-4">
                   {[
-                    {label:"USDC",    value: hideBalance?"••":balances.find(b=>b.token.symbol==="USDC")?.amount??"0", sub:"Native gas"},
+                    {label:"USDC",    value: hideBalance?"••":nativeGasBal, sub:"Native gas"},
                     {label:"Assets",  value: balances.length.toString(),                                               sub:"tokens"},
                     {label:"Network", value:"Arc",                                                                     sub:"Testnet"},
                   ].map(s=>(
@@ -1403,6 +1422,26 @@ export default function WalletPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Balance error banner — debug visibility instead of silent zeros */}
+              {balError && (
+                <div className="mx-3 bg-red-500/10 border border-red-500/30 rounded-2xl p-3.5 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5"/>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-red-400">Balance fetch failed</p>
+                    <p className="text-[11px] text-red-400/80 mt-0.5 break-words">{balError}</p>
+                    <button onClick={()=>setBalRefreshTick(t=>t+1)} className="text-[11px] text-red-400 underline mt-1.5">Retry</button>
+                  </div>
+                </div>
+              )}
+              {!balError && Object.keys(balTokenErrors).length > 0 && (
+                <div className="mx-3 bg-amber-500/10 border border-amber-500/25 rounded-2xl p-3.5 space-y-1.5">
+                  <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0"/>Some balances failed to load</p>
+                  {Object.entries(balTokenErrors).map(([sym,err])=>(
+                    <p key={sym} className="text-[11px] text-amber-400/80"><span className="font-semibold">{sym}:</span> {err}</p>
+                  ))}
+                </div>
+              )}
 
               {/* Action buttons */}
               <div className="flex items-center justify-around px-4 py-2">
