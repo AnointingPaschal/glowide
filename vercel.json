@@ -1,0 +1,19 @@
+{
+  "crons": [
+    {
+      "path": "/api/launchpad/prices",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/analytics",
+      "schedule": "0 * * * *"
+    }
+  ],
+  "functions": {
+    "app/api/launchpad/prices/route.ts": { "maxDuration": 60 },
+    "app/api/ai/chat/route.ts": { "maxDuration": 60 },
+    "app/api/contracts/compile/route.ts": { "maxDuration": 60 },
+    "app/api/contracts/verify/route.ts": { "maxDuration": 60 },
+    "app/api/contracts/analyze/route.ts": { "maxDuration": 30 }
+  }
+}

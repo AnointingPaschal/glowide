@@ -17,11 +17,12 @@ import {
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const TOKEN_PRICES: Record<string,number> = {
+// Default prices — overwritten by live /api/prices fetch on mount
+const PRICE_DEFAULTS: Record<string,number> = {
   USDC:1, EURC:1.09, cirBTC:97000, USYC:1.002,
-  ETH:3500, MATIC:0.92, AVAX:40, ARB:1.2, OP:2.1, BNB:620, SOL:170,
+  ETH:3200, MATIC:0.55, AVAX:38, ARB:0.95, OP:1.80, BNB:600, SOL:165,
 };
-const TOKEN_CHANGE: Record<string,number> = {
+const CHANGE_DEFAULTS: Record<string,number> = {
   USDC:-0.01, EURC:0.05, cirBTC:2.31, USYC:0.08,
   ETH:-1.24, MATIC:0.87, AVAX:-0.55, ARB:1.42,
 };
@@ -30,7 +31,7 @@ const CHAIN_BG: Record<string,string> = {
   USYC:"#16a34a", MATIC:"#8247e5", AVAX:"#e84142", ARB:"#12aaff",
   BASE:"#0052ff", OP:"#ff0420", BNB:"#f3ba2f",
 };
-const ARC_RPC = "https://rpc.testnet.arc.network";
+const ARC_RPC  = "https://rpc.testnet.arc.network";
 const ARC_USDC = "0x3600000000000000000000000000000000000000";
 
 function shortAddr(a:string) { return a ? `${a.slice(0,6)}…${a.slice(-4)}` : "—"; }
@@ -44,10 +45,10 @@ declare global {
 }
 
 // ── Token row — Trust Wallet style ────────────────────────────────────────────
-function AssetRow({ symbol, name, amount, chainId, onClick }:
-  { symbol:string; name:string; amount:string; chainId?:string; onClick?():void }) {
-  const price  = TOKEN_PRICES[symbol] ?? 1;
-  const change = TOKEN_CHANGE[symbol] ?? 0;
+function AssetRow({ symbol, name, amount, livePrice, liveChange, onClick }:
+  { symbol:string; name:string; amount:string; livePrice?:number; liveChange?:number; onClick?():void }) {
+  const price  = livePrice  ?? PRICE_DEFAULTS[symbol]  ?? 1;
+  const change = liveChange ?? CHANGE_DEFAULTS[symbol]  ?? 0;
   const value  = parseFloat(amount||"0") * price;
   const up     = change >= 0;
   return (
@@ -60,7 +61,7 @@ function AssetRow({ symbol, name, amount, chainId, onClick }:
       <div className="flex-1 min-w-0 text-left">
         <p className="text-sm font-semibold text-white">{name}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-xs text-white/40">${(TOKEN_PRICES[symbol]??1).toFixed(symbol==="USDC"||symbol==="EURC"||symbol==="USYC"?3:2)}</span>
+          <span className="text-xs text-white/40">${(PRICE_DEFAULTS[symbol]??1).toFixed(symbol==="USDC"||symbol==="EURC"||symbol==="USYC"?3:2)}</span>
           <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
             up?"bg-emerald-500/15 text-emerald-400":"bg-red-500/15 text-red-400")}>
             {up?"+":""}{change.toFixed(2)}%
@@ -136,6 +137,7 @@ export default function WalletPage() {
   const [loadingBal,  setLoadingBal]  = useState(false);
   const [importKey,   setImportKey]   = useState("");
   const [importLoading, setImportLoading] = useState(false);
+  const [livePrices,  setLivePrices]  = useState<Record<string,{price:number;change:number}>>({});
 
   const [sendTo,      setSendTo]      = useState("");
   const [sendAmt,     setSendAmt]     = useState("");
@@ -152,6 +154,14 @@ export default function WalletPage() {
   const [swapAmt,     setSwapAmt]     = useState("");
 
   const sdkRef = useRef<{setAuthentication(a:{userToken:string;encryptionKey:string}):void;execute(id:string,cb:(e:unknown,r:unknown)=>void):void}|null>(null);
+
+  // Fetch live prices from /api/prices (CoinGecko, 60s cache)
+  useEffect(() => {
+    fetch("/api/prices")
+      .then(r => r.json())
+      .then(d => { if (d.prices) setLivePrices(d.prices); })
+      .catch(() => {}); // silent — defaults already set
+  }, []);
 
   // Load Circle SDK
   useEffect(() => {
@@ -242,7 +252,9 @@ export default function WalletPage() {
   const activeWallet = circle.wallets.find(w=>w.id===circle.activeWalletId);
   const displayAddr  = activeWallet?.address ?? mmAddr ?? "";
   const hasCircle    = circle.isInitialized && circle.wallets.length > 0;
-  const totalUSD     = activeWallet?.balances?.reduce((a,b)=>a+parseFloat(b.amount||"0")*(TOKEN_PRICES[b.token.symbol]??1),0) ?? 0;
+  const liveP = (sym: string) => livePrices[sym]?.price ?? PRICE_DEFAULTS[sym] ?? 1;
+  const liveC = (sym: string) => livePrices[sym]?.change ?? CHANGE_DEFAULTS[sym] ?? 0;
+  const totalUSD     = activeWallet?.balances?.reduce((a,b)=>a+parseFloat(b.amount||"0")*liveP(b.token.symbol),0) ?? 0;
   const balances     = activeWallet?.balances ?? [
     {token:{symbol:"USDC",name:"USD Coin",decimals:6},amount:"0"},
     {token:{symbol:"EURC",name:"Euro Coin",decimals:6},amount:"0"},
@@ -481,7 +493,7 @@ export default function WalletPage() {
           <p className="text-xs text-white/40">From</p>
           <div className="flex items-center gap-3">
             <select value={swapFrom} onChange={e=>setSwapFrom(e.target.value)} className="bg-white/8 border border-white/10 rounded-xl px-3 py-2 text-sm text-white font-semibold focus:outline-none">
-              {Object.keys(TOKEN_PRICES).map(k=><option key={k}>{k}</option>)}
+              {Object.keys(PRICE_DEFAULTS).map(k=><option key={k}>{k}</option>)}
             </select>
             <input value={swapAmt} onChange={e=>setSwapAmt(e.target.value)} type="number" min="0" placeholder="0.00"
               className="flex-1 text-xl font-bold bg-transparent text-white focus:outline-none placeholder-white/20 text-right"/>
@@ -496,20 +508,20 @@ export default function WalletPage() {
           <p className="text-xs text-white/40">To</p>
           <div className="flex items-center gap-3">
             <select value={swapTo} onChange={e=>setSwapTo(e.target.value)} className="bg-white/8 border border-white/10 rounded-xl px-3 py-2 text-sm text-white font-semibold focus:outline-none">
-              {Object.keys(TOKEN_PRICES).map(k=><option key={k}>{k}</option>)}
+              {Object.keys(PRICE_DEFAULTS).map(k=><option key={k}>{k}</option>)}
             </select>
             <div className="flex-1 text-right">
               <p className="text-xl font-bold text-white/40">
-                {swapAmt&&swapFrom&&swapTo ? ((parseFloat(swapAmt)||0)*(TOKEN_PRICES[swapFrom]??1)/(TOKEN_PRICES[swapTo]??1)).toFixed(6) : "0.000000"}
+                {swapAmt&&swapFrom&&swapTo ? ((parseFloat(swapAmt)||0)*liveP(swapFrom)/liveP(swapTo)).toFixed(6) : "0.000000"}
               </p>
-              <p className="text-xs text-white/30 mt-0.5">≈ ${swapAmt?((parseFloat(swapAmt)||0)*(TOKEN_PRICES[swapFrom]??1)).toFixed(2):"0.00"}</p>
+              <p className="text-xs text-white/30 mt-0.5">≈ ${swapAmt?((parseFloat(swapAmt)||0)*liveP(swapFrom)).toFixed(2):"0.00"}</p>
             </div>
           </div>
         </div>
       </div>
       {swapAmt && (
         <div className="bg-white/3 border border-white/8 rounded-xl p-3 text-xs text-white/50 space-y-1">
-          <div className="flex justify-between"><span>Rate</span><span>1 {swapFrom} = {((TOKEN_PRICES[swapFrom]??1)/(TOKEN_PRICES[swapTo]??1)).toFixed(6)} {swapTo}</span></div>
+          <div className="flex justify-between"><span>Rate</span><span>1 {swapFrom} = {(liveP(swapFrom)/liveP(swapTo)).toFixed(6)} {swapTo}</span></div>
           <div className="flex justify-between"><span>Fee (0.3%)</span><span>{((parseFloat(swapAmt)||0)*0.003).toFixed(4)} {swapFrom}</span></div>
           <div className="flex justify-between"><span>Gas</span><span className="text-emerald-400">Free via Paymaster</span></div>
         </div>
@@ -763,6 +775,7 @@ export default function WalletPage() {
                 <div className="bg-[#1a1b23] border border-white/8 rounded-2xl overflow-hidden">
                   {balances.map(b=>(
                     <AssetRow key={b.token.symbol} symbol={b.token.symbol} name={b.token.name} amount={b.amount}
+                      livePrice={liveP(b.token.symbol)} liveChange={liveC(b.token.symbol)}
                       onClick={()=>toast(`${b.token.symbol}: ${b.amount}`,{icon:"💰"})}/>
                   ))}
                 </div>
