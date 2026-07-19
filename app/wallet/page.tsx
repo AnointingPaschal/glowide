@@ -8,7 +8,7 @@ import type { CircleTx } from "@/store/circleStore";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import {
-  Send, ArrowDownLeft, RefreshCw, Copy, CheckCircle, Eye, EyeOff,
+  Send, ArrowDownLeft, RefreshCw, Copy, CheckCircle, Check, Eye, EyeOff,
   ChevronRight, Plus, X, Loader2, Shield, Zap, ArrowLeftRight,
   Globe, AlertTriangle, Settings, ArrowUpRight,
   TrendingUp, Coins, KeyRound, Fingerprint,

@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { useChatStore } from '@/store/chatStore';
@@ -53,7 +53,7 @@ export default function ChatPage() {
   const isNearBottom = useRef(true);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
-  const messages      = activeSession?.messages ?? [];
+  const messages      = useMemo(() => activeSession?.messages ?? [], [activeSession]);
   const selectedModel = models.find(m => m.id === model) ?? models[0];
 
   // Fetch models + default model from admin settings
