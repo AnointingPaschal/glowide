@@ -1172,12 +1172,33 @@ export default function WalletPage() {
             {createStep==="confirm" && (
               <>
                 <p className="text-xs text-glow-muted">Enter the requested words from your recovery phrase to confirm your backup.</p>
+
+                {/* Masked reference grid — shows exact position of each requested word */}
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-3">Your Phrase (masked)</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {generatedMnemonic.split(" ").map((word,i)=>{
+                      const isRequested = confirmWords.some(c=>c.idx===i);
+                      return (
+                        <div key={i} className={cn("flex items-center gap-1.5 rounded-lg px-2 py-1.5 border",
+                          isRequested ? "bg-glow-accent/15 border-glow-accent/40" : "bg-glow-bg border-glow-border")}>
+                          <span className={cn("text-[10px] w-3", isRequested?"text-glow-accent font-bold":"text-glow-muted/60")}>{i+1}</span>
+                          <span className={cn("text-xs font-mono", isRequested?"text-glow-accent font-semibold":"text-glow-muted/40")}>
+                            {isRequested ? "?" : "•••"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {confirmWords.map((c,i)=>(
                   <div key={c.idx} className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
-                    <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Word #{c.idx+1}</p>
+                    <p className="text-[10px] font-semibold text-glow-accent uppercase tracking-wider mb-2">Word #{c.idx+1} of {generatedMnemonic.split(" ").length}</p>
                     <input value={c.value} onChange={e=>{
                       const updated=[...confirmWords]; updated[i]={...c,value:e.target.value}; setConfirmWords(updated);
-                    }} className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none"/>
+                    }} placeholder={`Enter word ${c.idx+1}...`}
+                      className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/30"/>
                   </div>
                 ))}
                 <button onClick={finalizeNewWallet} disabled={confirmWords.some(c=>!c.value)}
