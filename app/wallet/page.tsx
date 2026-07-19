@@ -601,7 +601,7 @@ export default function WalletPage() {
     try {
       const { ethers } = await import("ethers");
       const input = importPhraseOrKey.trim();
-      let wallet: InstanceType<typeof ethers.Wallet>;
+      let wallet: InstanceType<typeof ethers.Wallet> | InstanceType<typeof ethers.HDNodeWallet>;
       if (importMethod === "phrase") {
         if (input.split(/\s+/).length < 12) throw new Error("Seed phrase must be 12+ words");
         wallet = ethers.Wallet.fromPhrase(input);
