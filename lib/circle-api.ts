@@ -28,10 +28,12 @@ async function getCirclePublicKey(): Promise<string> {
 }
 
 export async function getEntitySecretCiphertext(): Promise<string> {
-  const pubKey = await getCirclePublicKey();
-  // Circle expects: RSA-OAEP + SHA-256, result base64url-encoded
+  const pubKeyPem = await getCirclePublicKey();
+  // Normalize key format via createPublicKey — required for OpenSSL 3 / Node 20+
+  // Avoids "DECODER routines::unsupported" on legacy PEM headers
+  const keyObject = crypto.createPublicKey({ key: pubKeyPem, format: "pem" });
   const encrypted = crypto.publicEncrypt(
-    { key: pubKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
+    { key: keyObject, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
     Buffer.from(ENTITY_SECRET, "hex")
   );
   return encrypted.toString("base64");

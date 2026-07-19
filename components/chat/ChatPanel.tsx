@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useEditorStore } from "@/store/editorStore";
 import { useFileSystemStore } from "@/store/fileSystemStore";
 import { terminalLog } from "@/components/editor/Terminal";
@@ -32,7 +32,7 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
-  const messages = activeSession?.messages || [];
+  const messages = useMemo(() => activeSession?.messages || [], [activeSession]);
   const activeTab = tabs.find(t => t.id === activeTabId);
   const selectedModel = models.find(m => m.id === model) ?? models[0];
 

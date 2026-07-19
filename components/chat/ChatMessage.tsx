@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useCircleStore } from "@/store/circleStore";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -317,7 +317,9 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
   const isUser = message.role === "user";
 
   // Detect all code blocks in this message
-  const blocks = !isUser && !isStreaming ? detectBlocks(message.content) : [];
+  const blocks = useMemo(() =>
+    !isUser && !isStreaming ? detectBlocks(message.content) : [],
+  [isUser, isStreaming, message.content]);
 
   // Check if there's a .sol block
   const solBlocks   = blocks.filter(b => b.lang.toLowerCase() === "sol" || b.lang.toLowerCase() === "solidity");

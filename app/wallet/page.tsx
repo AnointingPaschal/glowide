@@ -188,7 +188,8 @@ export default function WalletPage() {
 
   // Read on-chain ERC-20 balances directly from Arc Testnet RPC
   useEffect(() => {
-    const addr = (activeWallet?.address ?? mmAddr)?.toLowerCase();
+    const circleAddr = circle.wallets.find(w => w.id === circle.activeWalletId)?.address;
+    const addr = (circleAddr ?? mmAddr)?.toLowerCase();
     if (!addr) return;
     const ARC_TOKENS_LIST = [
       { symbol:"USDC",   address:"0x3600000000000000000000000000000000000000", decimals:18 },
@@ -217,7 +218,8 @@ export default function WalletPage() {
       results.forEach(r => { bals[r.symbol] = r.amount; });
       setOnChainBals(bals);
     });
-  }, [mmAddr, activeWallet?.address]); // eslint-disable-line
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mmAddr, circle.activeWalletId]);
 
   // Load Circle SDK
   useEffect(() => {
