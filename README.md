@@ -9,7 +9,7 @@
 ---
 
 ## ✨ Core Features
-
+ 
 * **Monaco Editor** — A premium, desktop-grade editor running entirely in the browser. Supports full syntax highlighting and intelligent autocompletion for Solidity, TypeScript, JavaScript, Python, and HTML/CSS.
 * **Context-Aware AI Assistant** — Powered by OpenRouter for multi-model streaming responses. Synced with the target infrastructure’s network rules and pre-trained on Arc documentation and USDC gas mechanics to support automated audits and 1-click complex architecture injections.
 * **Smart Contract Tools** — A complete suite that abstracts away infrastructure bottlenecks. Allows builders to compile, deploy, verify, and interact with Solidity contracts on Arc Testnet instantly.
