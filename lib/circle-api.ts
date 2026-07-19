@@ -39,13 +39,14 @@ export async function getEntitySecretCiphertext(): Promise<string> {
   const der = Buffer.from(pemBody, "base64");
 
   // Try DER with explicit types — bypasses PEM DECODER entirely (fixes OpenSSL 3 / Node 24 compat)
-  const attempts: Array<() => crypto.KeyObject> = [
+  type KeyObject = ReturnType<typeof crypto.createPublicKey>;
+  const attempts: Array<() => KeyObject> = [
     () => crypto.createPublicKey({ key: der, format: "der", type: "spki"   }),
     () => crypto.createPublicKey({ key: der, format: "der", type: "pkcs1"  }),
     () => crypto.createPublicKey({ key: pubKeyPem, format: "pem" }),
   ];
 
-  let keyObj: crypto.KeyObject | null = null;
+  let keyObj: KeyObject | null = null;
   let lastErr: unknown;
   for (const attempt of attempts) {
     try { keyObj = attempt(); break; } catch (e) { lastErr = e; }
