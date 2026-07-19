@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/launchpad/prices",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/analytics",
-      "schedule": "0 * * * *"
+      "schedule": "0 1 * * *"
     }
   ]
 }
