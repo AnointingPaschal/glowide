@@ -512,9 +512,8 @@ export default function WalletPage() {
           id: d.wallet.id,
           address: d.wallet.address,
           blockchain: d.wallet.blockchain,
-          state: "LIVE",
-          walletSetId: "",
-          custodyType: "DEVELOPER",
+          accountType: "EOA",
+          name: "Circle Dev Wallet",
           balances: [],
         }]);
         circle.setActive(d.wallet.id);
