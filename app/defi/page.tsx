@@ -1,0 +1,658 @@
+"use client";
+export const dynamic = "force-dynamic";
+import { useState } from "react";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { useWalletStore } from "@/store/walletStore";
+import { useCircleStore } from "@/store/circleStore";
+import { cn } from "@/lib/utils";
+import toast from "react-hot-toast";
+import {
+  TrendingUp, Coins, ArrowLeftRight, Droplets, Zap, Shield,
+  Globe, BarChart2, Plus, Minus, ChevronRight, Info, Lock,
+  Loader2, CheckCircle, AlertTriangle, RefreshCw, ArrowUpRight,
+  Wallet, PiggyBank, Building2,
+} from "lucide-react";
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const ARC_TOKENS = [
+  { symbol:"USDC",  name:"USD Coin",      address:"0x3600000000000000000000000000000000000000", decimals:6,  price:1.000  },
+  { symbol:"EURC",  name:"Euro Coin",     address:"0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a", decimals:6,  price:1.090  },
+  { symbol:"cirBTC",name:"Circle Bitcoin",address:"0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF", decimals:8,  price:97000  },
+  { symbol:"USYC",  name:"US Yield Coin", address:"0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C", decimals:6,  price:1.002  },
+];
+
+const LENDING_POOLS = [
+  { asset:"USDC",  supplyAPY:4.82, borrowAPY:7.21, totalSupply:"$2.4M", totalBorrow:"$1.1M", utilization:45.8, ltv:80 },
+  { asset:"EURC",  supplyAPY:3.95, borrowAPY:5.90, totalSupply:"$980K", totalBorrow:"$410K", utilization:41.8, ltv:75 },
+  { asset:"USYC",  supplyAPY:5.21, borrowAPY:8.10, totalSupply:"$720K", totalBorrow:"$280K", utilization:38.9, ltv:70 },
+  { asset:"cirBTC",supplyAPY:1.20, borrowAPY:3.40, totalSupply:"$340K", totalBorrow:"$98K",  utilization:28.8, ltv:65 },
+];
+
+const YIELD_VAULTS = [
+  { name:"USDC Savings",  token:"USDC", apy:4.82, tvl:"$2.4M",  badge:"Stable",      color:"#2775CA" },
+  { name:"USYC Yield",    token:"USYC", apy:5.21, tvl:"$720K",   badge:"T-Bill",      color:"#16a34a" },
+  { name:"EURC Earn",     token:"EURC", apy:3.95, tvl:"$980K",   badge:"Stable",      color:"#7c3aed" },
+  { name:"BTC Yield",     token:"cirBTC",apy:1.20,tvl:"$340K",   badge:"Low Risk",    color:"#f7931a" },
+];
+
+const LIQUIDITY_PAIRS = [
+  { pair:"USDC/EURC",   fee:0.01, apy:12.4, tvl:"$1.2M",  vol24h:"$340K"  },
+  { pair:"USDC/USYC",  fee:0.01, apy:8.9,  tvl:"$890K",   vol24h:"$210K"  },
+  { pair:"USDC/cirBTC",fee:0.05, apy:18.2,  tvl:"$560K",   vol24h:"$180K"  },
+  { pair:"EURC/USYC",  fee:0.05, apy:14.1,  tvl:"$420K",   vol24h:"$95K"   },
+];
+
+const STATS_CARDS = [
+  { label:"Total Value Locked", value:"$8.4M",  icon:Lock,       color:"text-glow-accent"  },
+  { label:"Total Volume 24h",   value:"$1.2M",  icon:BarChart2,  color:"text-blue-400"     },
+  { label:"Active Users",       value:"2,841",  icon:Wallet,     color:"text-emerald-400"  },
+  { label:"Avg APY",            value:"5.84%",  icon:TrendingUp, color:"text-amber-400"    },
+];
+
+// ── Sub-page types ────────────────────────────────────────────────────────────
+type DeFiView = "overview"|"lend"|"borrow"|"swap"|"liquidity"|"yield"|"payments"|"treasury";
+
+// ── Token badge ───────────────────────────────────────────────────────────────
+const TOKEN_BG: Record<string,string> = { USDC:"#2775CA", EURC:"#7c3aed", cirBTC:"#f7931a", USYC:"#16a34a" };
+function TokenBadge({ symbol, size=8 }: { symbol:string; size?:number }) {
+  return (
+    <div className={`w-${size} h-${size} rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0`}
+      style={{ background: TOKEN_BG[symbol] ?? "#7c3aed" }}>
+      {symbol.slice(0,2)}
+    </div>
+  );
+}
+
+// ── Pool Row ──────────────────────────────────────────────────────────────────
+function PoolRow({ pool, mode, onAction }:
+  { pool:typeof LENDING_POOLS[0]; mode:"supply"|"borrow"; onAction(p:typeof LENDING_POOLS[0]):void }) {
+  const apy = mode==="supply" ? pool.supplyAPY : pool.borrowAPY;
+  return (
+    <div className="flex items-center gap-3 p-4 bg-glow-card border border-glow-border rounded-2xl hover:border-glow-accent/30 transition-all">
+      <TokenBadge symbol={pool.asset}/>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-sm font-semibold text-glow-text">{pool.asset}</span>
+          <span className="text-sm font-bold text-emerald-400">{apy}% APY</span>
+        </div>
+        <div className="flex items-center justify-between text-xs text-glow-muted/60">
+          <span>{mode==="supply"?"Total Supply":"Total Borrow"}: {mode==="supply"?pool.totalSupply:pool.totalBorrow}</span>
+          <span>LTV: {pool.ltv}%</span>
+        </div>
+        <div className="mt-2 h-1.5 bg-glow-surface rounded-full overflow-hidden">
+          <div className="h-full bg-glow-accent rounded-full" style={{width:`${pool.utilization}%`}}/>
+        </div>
+        <p className="text-[10px] text-glow-muted/50 mt-0.5">Utilization: {pool.utilization}%</p>
+      </div>
+      <button onClick={()=>onAction(pool)}
+        className="flex-shrink-0 px-3 py-2 bg-glow-accent/15 text-glow-accent-light text-xs font-semibold rounded-xl hover:bg-glow-accent/25 transition-colors border border-glow-accent/25">
+        {mode==="supply"?"Supply":"Borrow"}
+      </button>
+    </div>
+  );
+}
+
+// ── Yield Vault Card ──────────────────────────────────────────────────────────
+function VaultCard({ vault, onClick }: { vault:typeof YIELD_VAULTS[0]; onClick():void }) {
+  return (
+    <button onClick={onClick}
+      className="text-left bg-glow-card border border-glow-border rounded-2xl p-4 hover:border-glow-accent/30 transition-all group">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold text-white"
+            style={{background:vault.color}}>{vault.token.slice(0,2)}</div>
+          <div>
+            <p className="text-sm font-semibold text-glow-text">{vault.name}</p>
+            <span className="text-[10px] bg-glow-surface border border-glow-border px-1.5 py-0.5 rounded-full text-glow-muted/70">{vault.badge}</span>
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-glow-muted/40 group-hover:text-glow-accent transition-colors"/>
+      </div>
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-[10px] text-glow-muted/60 uppercase tracking-wider mb-0.5">APY</p>
+          <p className="text-2xl font-bold text-emerald-400">{vault.apy}%</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] text-glow-muted/60 uppercase tracking-wider mb-0.5">TVL</p>
+          <p className="text-sm font-bold text-glow-text">{vault.tvl}</p>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ── Liquidity Pair Row ────────────────────────────────────────────────────────
+function LiqRow({ pair, onClick }: { pair:typeof LIQUIDITY_PAIRS[0]; onClick():void }) {
+  const [t0, t1] = pair.pair.split("/");
+  return (
+    <button onClick={onClick}
+      className="w-full flex items-center gap-3 p-4 bg-glow-card border border-glow-border rounded-2xl hover:border-glow-accent/30 transition-all text-left">
+      <div className="flex -space-x-2 flex-shrink-0">
+        <TokenBadge symbol={t0} size={8}/>
+        <TokenBadge symbol={t1} size={8}/>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-glow-text">{pair.pair}</p>
+        <p className="text-xs text-glow-muted/60">{(pair.fee*100).toFixed(2)}% fee · Vol: {pair.vol24h}</p>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className="text-sm font-bold text-emerald-400">{pair.apy}% APY</p>
+        <p className="text-xs text-glow-muted/60">TVL: {pair.tvl}</p>
+      </div>
+    </button>
+  );
+}
+
+// ── Modal Shell ───────────────────────────────────────────────────────────────
+function Modal({ title, desc, children, onClose }:
+  { title:string; desc?:string; children:React.ReactNode; onClose():void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-md bg-glow-card border border-glow-border rounded-3xl overflow-hidden shadow-2xl">
+        <div className="px-5 py-4 border-b border-glow-border/50">
+          <h3 className="font-bold text-glow-text">{title}</h3>
+          {desc && <p className="text-xs text-glow-muted/60 mt-0.5">{desc}</p>}
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+export default function DeFiPage() {
+  const { isConnected, address } = useWalletStore();
+  const circle = useCircleStore();
+  const [view, setView]   = useState<DeFiView>("overview");
+  const [modal, setModal] = useState<string|null>(null);
+  const [amount, setAmount] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [selectedPool, setSelectedPool] = useState<typeof LENDING_POOLS[0]|null>(null);
+  const [lendMode, setLendMode] = useState<"supply"|"borrow">("supply");
+  const [payStream, setPayStream] = useState({ recipient:"", ratePerHr:"", duration:"24" });
+  const [treasury, setTreasury] = useState({ signers:"", threshold:"2", name:"" });
+
+  const hasWallet = isConnected || circle.wallets.length > 0;
+
+  // ── Lend/Borrow action
+  const handleLend = async () => {
+    if (!amount) { toast.error("Enter amount"); return; }
+    setLoading(true);
+    try {
+      await new Promise(r=>setTimeout(r,1500)); // simulate
+      toast.success(`✓ ${lendMode==="supply"?"Supplied":"Borrowed"} ${amount} ${selectedPool?.asset} at ${lendMode==="supply"?selectedPool?.supplyAPY:selectedPool?.borrowAPY}% APY`);
+      setModal(null); setAmount("");
+    } finally { setLoading(false); }
+  };
+
+  // ── Payment stream
+  const handleStreamCreate = async () => {
+    if (!payStream.recipient || !payStream.ratePerHr) { toast.error("Fill all fields"); return; }
+    setLoading(true);
+    try {
+      await new Promise(r=>setTimeout(r,1000));
+      toast.success(`✓ Payment stream created: ${payStream.ratePerHr} USDC/hr to ${payStream.recipient.slice(0,8)}…`);
+      setModal(null);
+    } finally { setLoading(false); }
+  };
+
+  // ── Treasury deploy
+  const handleTreasury = async () => {
+    if (!treasury.name || !treasury.signers) { toast.error("Fill all fields"); return; }
+    setLoading(true);
+    try {
+      await new Promise(r=>setTimeout(r,1200));
+      toast.success(`✓ Treasury "${treasury.name}" deployed — ${treasury.threshold}-of-N multisig`);
+      setModal(null);
+    } finally { setLoading(false); }
+  };
+
+  // ── Nav items
+  const NAV: Array<{id:DeFiView; icon:React.ElementType; label:string}> = [
+    {id:"overview",   icon:BarChart2,     label:"Overview"  },
+    {id:"lend",       icon:PiggyBank,     label:"Lend"      },
+    {id:"borrow",     icon:Coins,         label:"Borrow"    },
+    {id:"swap",       icon:ArrowLeftRight,label:"Swap"      },
+    {id:"liquidity",  icon:Droplets,      label:"Liquidity" },
+    {id:"yield",      icon:TrendingUp,    label:"Yield"     },
+    {id:"payments",   icon:Zap,           label:"Payments"  },
+    {id:"treasury",   icon:Building2,     label:"Treasury"  },
+  ];
+
+  return (
+    <AppLayout title="DeFi">
+      <div className="max-w-4xl mx-auto">
+
+        {/* ── Header ─────────────────────────────────────────────────── */}
+        <div className="px-4 pt-5 pb-4">
+          <h1 className="text-2xl font-bold text-glow-text">Stablecoin DeFi</h1>
+          <p className="text-sm text-glow-muted/60 mt-1">USDC-native DeFi on Arc · Circle Wallets · Sub-second settlement</p>
+        </div>
+
+        {/* ── Horizontal nav ─────────────────────────────────────────── */}
+        <div className="flex gap-1 px-4 overflow-x-auto pb-1 hide-scrollbar">
+          {NAV.map(n=>(
+            <button key={n.id} onClick={()=>setView(n.id)}
+              className={cn("flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all flex-shrink-0",
+                view===n.id?"bg-glow-accent/20 text-glow-accent-light border border-glow-accent/30":"text-glow-muted/70 hover:text-glow-text hover:bg-glow-card border border-transparent")}>
+              <n.icon className="w-3.5 h-3.5"/>{n.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4 space-y-4">
+
+          {/* ── OVERVIEW ─────────────────────────────────────────────── */}
+          {view==="overview" && (
+            <div className="space-y-4">
+              {/* Stats row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {STATS_CARDS.map(s=>(
+                  <div key={s.label} className="bg-glow-card border border-glow-border rounded-2xl p-4">
+                    <s.icon className={cn("w-5 h-5 mb-2", s.color)}/>
+                    <p className="text-[10px] text-glow-muted/60 uppercase tracking-wider">{s.label}</p>
+                    <p className="text-xl font-bold text-glow-text mt-0.5">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Why Arc DeFi */}
+              <div className="bg-glow-gradient rounded-2xl p-5 text-white">
+                <h3 className="font-bold text-base mb-2">Why stablecoins on Arc?</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                  {[
+                    {icon:Zap,    title:"Sub-second",  desc:"Transactions settle in <500ms — ideal for payments and DeFi"},
+                    {icon:Coins,  title:"USDC gas",    desc:"Fees paid in USDC via Paymaster — no native token needed"},
+                    {icon:Globe,  title:"CCTP native", desc:"Bridge USDC across 8 chains natively — no wrapped tokens"},
+                  ].map(f=>(
+                    <div key={f.title} className="flex items-start gap-2.5 bg-white/10 rounded-xl p-3">
+                      <f.icon className="w-4 h-4 mt-0.5 flex-shrink-0"/>
+                      <div>
+                        <p className="font-semibold text-sm">{f.title}</p>
+                        <p className="text-white/70 text-xs mt-0.5 leading-relaxed">{f.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick action tiles */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  {icon:PiggyBank,    label:"Supply USDC", sub:"4.82% APY", action:()=>{setView("lend");   setLendMode("supply")}},
+                  {icon:Coins,        label:"Borrow",      sub:"vs USDC col.",action:()=>setView("borrow")},
+                  {icon:TrendingUp,   label:"Earn Yield",  sub:"USYC 5.21%", action:()=>setView("yield") },
+                  {icon:Droplets,     label:"Add Liquidity",sub:"Up to 18% APY",action:()=>setView("liquidity")},
+                ].map(a=>(
+                  <button key={a.label} onClick={a.action}
+                    className="bg-glow-card border border-glow-border rounded-2xl p-4 text-left hover:border-glow-accent/40 transition-all group">
+                    <a.icon className="w-6 h-6 text-glow-accent mb-3 group-hover:scale-110 transition-transform"/>
+                    <p className="text-sm font-semibold text-glow-text">{a.label}</p>
+                    <p className="text-xs text-glow-muted/60 mt-0.5">{a.sub}</p>
+                  </button>
+                ))}
+              </div>
+
+              {/* Top lending pools preview */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-glow-text">Top Pools</h3>
+                  <button onClick={()=>setView("lend")} className="text-xs text-glow-accent hover:underline flex items-center gap-1">
+                    View all<ChevronRight className="w-3 h-3"/>
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {LENDING_POOLS.slice(0,2).map(pool=>(
+                    <PoolRow key={pool.asset} pool={pool} mode="supply"
+                      onAction={p=>{setSelectedPool(p);setLendMode("supply");setModal("lend");}}/>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── LEND ─────────────────────────────────────────────────── */}
+          {view==="lend" && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 p-3 bg-emerald-500/8 border border-emerald-500/20 rounded-xl text-xs text-emerald-400">
+                <Info className="w-4 h-4 flex-shrink-0"/>
+                Supply stablecoins to earn yield. Funds are immediately available as collateral for borrowers.
+              </div>
+              {LENDING_POOLS.map(pool=>(
+                <PoolRow key={pool.asset} pool={pool} mode="supply"
+                  onAction={p=>{setSelectedPool(p);setLendMode("supply");setModal("lend");}}/>
+              ))}
+            </div>
+          )}
+
+          {/* ── BORROW ───────────────────────────────────────────────── */}
+          {view==="borrow" && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 p-3 bg-amber-500/8 border border-amber-500/20 rounded-xl text-xs text-amber-400">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0"/>
+                Borrow against your collateral. Maintain health factor above 1.0 to avoid liquidation.
+              </div>
+              {LENDING_POOLS.map(pool=>(
+                <PoolRow key={pool.asset} pool={pool} mode="borrow"
+                  onAction={p=>{setSelectedPool(p);setLendMode("borrow");setModal("lend");}}/>
+              ))}
+            </div>
+          )}
+
+          {/* ── SWAP ─────────────────────────────────────────────────── */}
+          {view==="swap" && (
+            <div className="space-y-4">
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5 space-y-4">
+                <h3 className="font-semibold text-glow-text">Swap Stablecoins</h3>
+                <div className="space-y-2">
+                  <div className="bg-glow-surface border border-glow-border rounded-xl p-3">
+                    <p className="text-xs text-glow-muted/60 mb-1.5">From</p>
+                    <div className="flex items-center gap-3">
+                      <select className="bg-transparent text-sm font-semibold text-glow-text focus:outline-none">
+                        {ARC_TOKENS.map(t=><option key={t.symbol}>{t.symbol}</option>)}
+                      </select>
+                      <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" min="0" placeholder="0.00"
+                        className="flex-1 text-right text-xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
+                    </div>
+                  </div>
+                  <div className="flex justify-center">
+                    <div className="w-8 h-8 rounded-xl bg-glow-card border border-glow-border flex items-center justify-center">
+                      <ArrowLeftRight className="w-4 h-4 text-glow-muted/60 rotate-90"/>
+                    </div>
+                  </div>
+                  <div className="bg-glow-surface border border-glow-border rounded-xl p-3">
+                    <p className="text-xs text-glow-muted/60 mb-1.5">To</p>
+                    <div className="flex items-center gap-3">
+                      <select className="bg-transparent text-sm font-semibold text-glow-text focus:outline-none">
+                        {ARC_TOKENS.map(t=><option key={t.symbol}>{t.symbol}</option>)}
+                      </select>
+                      <span className="flex-1 text-right text-xl font-bold text-glow-muted/40">0.000000</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-glow-surface/50 rounded-xl p-3 text-xs text-glow-muted/60 space-y-1">
+                  <div className="flex justify-between"><span>Rate</span><span className="text-glow-text">1 USDC = 0.9174 EURC</span></div>
+                  <div className="flex justify-between"><span>Price impact</span><span className="text-emerald-400">&lt;0.01%</span></div>
+                  <div className="flex justify-between"><span>Gas fee</span><span className="text-emerald-400">Free (Paymaster)</span></div>
+                </div>
+                <button onClick={()=>toast("Swap via Circle Programmable Wallets — approve in wallet",{icon:"🔄"})}
+                  disabled={!amount}
+                  className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                  <ArrowLeftRight className="w-4 h-4"/>Swap Stablecoins
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  {icon:Shield,  label:"Audited",    desc:"Battle-tested contracts"},
+                  {icon:Zap,     label:"Instant",    desc:"&lt;500ms on Arc"},
+                  {icon:Coins,   label:"Deep liquidity",desc:"$8.4M TVL"},
+                ].map(f=>(
+                  <div key={f.label} className="bg-glow-card border border-glow-border rounded-xl p-3 text-center">
+                    <f.icon className="w-4 h-4 text-glow-accent mx-auto mb-1.5"/>
+                    <p className="text-xs font-semibold text-glow-text">{f.label}</p>
+                    <p className="text-[10px] text-glow-muted/60 mt-0.5" dangerouslySetInnerHTML={{__html:f.desc}}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── LIQUIDITY ───────────────────────────────────────────── */}
+          {view==="liquidity" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-glow-muted/70">Provide liquidity and earn fees + incentives</p>
+                <button onClick={()=>setModal("add-liq")} className="flex items-center gap-1.5 px-3 py-2 bg-glow-gradient text-white text-xs font-semibold rounded-xl">
+                  <Plus className="w-3.5 h-3.5"/>Add
+                </button>
+              </div>
+              {LIQUIDITY_PAIRS.map(pair=>(
+                <LiqRow key={pair.pair} pair={pair} onClick={()=>{setModal("add-liq");}}/>
+              ))}
+            </div>
+          )}
+
+          {/* ── YIELD ────────────────────────────────────────────────── */}
+          {view==="yield" && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 p-3 bg-glow-accent/8 border border-glow-accent/20 rounded-xl text-xs text-glow-accent">
+                <Info className="w-4 h-4 flex-shrink-0"/>
+                USYC generates yield from US T-Bills. All vaults are non-custodial and powered by Circle Wallets.
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {YIELD_VAULTS.map(vault=>(
+                  <VaultCard key={vault.name} vault={vault} onClick={()=>setModal("yield-deposit")}/>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── PAYMENTS ─────────────────────────────────────────────── */}
+          {view==="payments" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  {icon:Zap,         title:"Nanopayments",   desc:"Gas-free $0.000001+ via x402",                  action:()=>setModal("nanopay")   },
+                  {icon:RefreshCw,   title:"Payment Streams", desc:"Stream USDC per second/hour",                   action:()=>setModal("stream")    },
+                  {icon:Globe,       title:"Cross-chain Pay", desc:"Pay anyone on 8+ chains via CCTP+Gateway",      action:()=>setModal("xchain-pay")},
+                ].map(p=>(
+                  <button key={p.title} onClick={p.action}
+                    className="bg-glow-card border border-glow-border rounded-2xl p-5 text-left hover:border-glow-accent/30 transition-all">
+                    <p.icon className="w-6 h-6 text-glow-accent mb-3"/>
+                    <p className="font-semibold text-glow-text text-sm">{p.title}</p>
+                    <p className="text-xs text-glow-muted/60 mt-1 leading-relaxed">{p.desc}</p>
+                    <div className="mt-3 flex items-center gap-1 text-xs text-glow-accent font-semibold">
+                      Get started<ChevronRight className="w-3.5 h-3.5"/>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Conditional payments */}
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-5">
+                <h3 className="font-semibold text-glow-text mb-1">Conditional Payments</h3>
+                <p className="text-xs text-glow-muted/60 mb-4">Escrow USDC, release on condition (oracle, signature, time)</p>
+                <div className="space-y-2">
+                  {[
+                    {label:"On-chain oracle",      desc:"Release when Chainlink price reaches target"},
+                    {label:"Multi-sig release",    desc:"Release when N-of-M signers approve"},
+                    {label:"Time-locked escrow",   desc:"Release after timestamp or block number"},
+                  ].map(c=>(
+                    <div key={c.label} className="flex items-center gap-3 p-3 bg-glow-surface border border-glow-border/50 rounded-xl">
+                      <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-glow-text">{c.label}</p>
+                        <p className="text-[10px] text-glow-muted/60">{c.desc}</p>
+                      </div>
+                      <button onClick={()=>toast("Conditional payment — coming with smart contract integration",{icon:"⏳"})}
+                        className="text-xs text-glow-accent flex-shrink-0">Set up →</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── TREASURY ─────────────────────────────────────────────── */}
+          {view==="treasury" && (
+            <div className="space-y-4">
+              <div className="bg-glow-gradient rounded-2xl p-5 text-white">
+                <Building2 className="w-8 h-8 mb-3 opacity-90"/>
+                <h3 className="font-bold text-lg mb-1">USDC Treasury Management</h3>
+                <p className="text-sm text-white/80 leading-relaxed">Multi-sig treasury for DAOs, teams, and protocols. Powered by Circle Programmable Wallets. Native USDC operations with Paymaster gas sponsorship.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  {icon:Shield,      title:"Multi-sig Safe",    desc:"N-of-M threshold sigs. Deploy in one click.",    action:()=>setModal("treasury-deploy")},
+                  {icon:TrendingUp,  title:"Yield on reserves", desc:"Put idle USDC to work: lending pools + USYC.",    action:()=>setModal("yield-deposit")  },
+                  {icon:Globe,       title:"Payroll in USDC",   desc:"Stream salary globally — no banks, no FX fees.",   action:()=>setModal("stream")          },
+                  {icon:BarChart2,   title:"Spending limits",   desc:"Set per-wallet and per-category budgets.",         action:()=>toast("Coming soon",{icon:"🔧"})},
+                ].map(t=>(
+                  <button key={t.title} onClick={t.action}
+                    className="bg-glow-card border border-glow-border rounded-2xl p-4 text-left hover:border-glow-accent/30 transition-all">
+                    <t.icon className="w-5 h-5 text-glow-accent mb-2.5"/>
+                    <p className="text-sm font-semibold text-glow-text">{t.title}</p>
+                    <p className="text-xs text-glow-muted/60 mt-1 leading-relaxed">{t.desc}</p>
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-glow-card border border-glow-border rounded-2xl p-4">
+                <h3 className="font-semibold text-glow-text text-sm mb-3">Your Treasuries</h3>
+                <div className="text-center py-8 text-glow-muted/50 text-sm">
+                  <Building2 className="w-10 h-10 mx-auto mb-2 text-glow-muted/20"/>
+                  No treasuries deployed yet
+                  <button onClick={()=>setModal("treasury-deploy")}
+                    className="mt-3 mx-auto flex items-center gap-1.5 px-4 py-2 bg-glow-accent/15 text-glow-accent text-xs font-semibold rounded-xl border border-glow-accent/25">
+                    <Plus className="w-3.5 h-3.5"/>Deploy Treasury
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Modals ───────────────────────────────────────────────── */}
+        {modal==="lend" && selectedPool && (
+          <Modal title={`${lendMode==="supply"?"Supply":"Borrow"} ${selectedPool.asset}`}
+            desc={`${lendMode==="supply"?selectedPool.supplyAPY:selectedPool.borrowAPY}% APY · LTV ${selectedPool.ltv}%`}
+            onClose={()=>setModal(null)}>
+            <div className="space-y-4">
+              <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs text-glow-muted/60">
+                  <span>Amount</span><button className="text-glow-accent">Max</button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" min="0" placeholder="0.00"
+                    className="flex-1 text-xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
+                  <span className="text-sm font-semibold text-glow-muted">{selectedPool.asset}</span>
+                </div>
+              </div>
+              <div className="space-y-1.5 text-xs text-glow-muted/70">
+                <div className="flex justify-between"><span>APY</span><span className="text-emerald-400">{lendMode==="supply"?selectedPool.supplyAPY:selectedPool.borrowAPY}%</span></div>
+                <div className="flex justify-between"><span>Utilization</span><span>{selectedPool.utilization}%</span></div>
+                <div className="flex justify-between"><span>Pool Total</span><span>{lendMode==="supply"?selectedPool.totalSupply:selectedPool.totalBorrow}</span></div>
+              </div>
+              <button onClick={handleLend} disabled={loading||!amount}
+                className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                {loading?<Loader2 className="w-4 h-4 animate-spin"/>:<CheckCircle className="w-4 h-4"/>}
+                {lendMode==="supply"?"Supply":"Borrow"} {amount||"0"} {selectedPool.asset}
+              </button>
+            </div>
+          </Modal>
+        )}
+
+        {modal==="stream" && (
+          <Modal title="Create Payment Stream" desc="USDC streamed per second · gas-free via Paymaster" onClose={()=>setModal(null)}>
+            <div className="space-y-3">
+              <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
+                <p className="text-xs text-glow-muted/60">Recipient</p>
+                <input value={payStream.recipient} onChange={e=>setPayStream(s=>({...s,recipient:e.target.value}))} placeholder="0x…"
+                  className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
+                  <p className="text-xs text-glow-muted/60">USDC per hour</p>
+                  <input value={payStream.ratePerHr} onChange={e=>setPayStream(s=>({...s,ratePerHr:e.target.value}))} type="number" placeholder="0.00"
+                    className="w-full bg-transparent text-sm font-bold text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+                </div>
+                <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
+                  <p className="text-xs text-glow-muted/60">Duration (hrs)</p>
+                  <input value={payStream.duration} onChange={e=>setPayStream(s=>({...s,duration:e.target.value}))} type="number" placeholder="24"
+                    className="w-full bg-transparent text-sm font-bold text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+                </div>
+              </div>
+              {payStream.ratePerHr && payStream.duration && (
+                <div className="text-xs text-glow-muted/70 bg-glow-surface/50 rounded-xl p-3">
+                  Total: <span className="text-glow-text font-semibold">{(parseFloat(payStream.ratePerHr||"0")*parseFloat(payStream.duration||"0")).toFixed(2)} USDC</span>
+                  {" "}over {payStream.duration} hrs
+                </div>
+              )}
+              <button onClick={handleStreamCreate} disabled={loading||!payStream.recipient||!payStream.ratePerHr}
+                className="w-full py-3 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                {loading?<Loader2 className="w-4 h-4 animate-spin"/>:<Zap className="w-4 h-4"/>}Create Stream
+              </button>
+            </div>
+          </Modal>
+        )}
+
+        {modal==="treasury-deploy" && (
+          <Modal title="Deploy Treasury" desc="Multi-sig USDC treasury · Circle Wallets" onClose={()=>setModal(null)}>
+            <div className="space-y-3">
+              <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
+                <p className="text-xs text-glow-muted/60">Treasury Name</p>
+                <input value={treasury.name} onChange={e=>setTreasury(s=>({...s,name:e.target.value}))} placeholder="My DAO Treasury"
+                  className="w-full bg-transparent text-sm text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+              </div>
+              <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
+                <p className="text-xs text-glow-muted/60">Signers (comma-separated addresses)</p>
+                <textarea value={treasury.signers} onChange={e=>setTreasury(s=>({...s,signers:e.target.value}))} placeholder="0x…, 0x…, 0x…" rows={3}
+                  className="w-full bg-transparent text-xs font-mono text-glow-text focus:outline-none placeholder-glow-muted/40 resize-none"/>
+              </div>
+              <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
+                <p className="text-xs text-glow-muted/60">Threshold (minimum signatures)</p>
+                <input value={treasury.threshold} onChange={e=>setTreasury(s=>({...s,threshold:e.target.value}))} type="number" min="1"
+                  className="w-full bg-transparent text-sm font-bold text-glow-text focus:outline-none"/>
+              </div>
+              <button onClick={handleTreasury} disabled={loading||!treasury.name||!treasury.signers}
+                className="w-full py-3 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                {loading?<Loader2 className="w-4 h-4 animate-spin"/>:<Building2 className="w-4 h-4"/>}Deploy Treasury
+              </button>
+            </div>
+          </Modal>
+        )}
+
+        {modal==="yield-deposit" && (
+          <Modal title="Deposit to Yield Vault" desc="Earn yield on your stablecoins" onClose={()=>setModal(null)}>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                {YIELD_VAULTS.map(v=>(
+                  <button key={v.name} onClick={()=>{}} className="p-3 bg-glow-surface border border-glow-border rounded-xl text-left hover:border-glow-accent/30">
+                    <p className="text-xs font-semibold text-glow-text">{v.token}</p>
+                    <p className="text-lg font-bold text-emerald-400">{v.apy}%</p>
+                    <p className="text-[10px] text-glow-muted/60 mt-0.5">APY</p>
+                  </button>
+                ))}
+              </div>
+              <div className="bg-glow-surface border border-glow-border rounded-xl p-3">
+                <div className="flex items-center justify-between mb-1.5"><p className="text-xs text-glow-muted/60">Amount</p><button className="text-xs text-glow-accent">Max</button></div>
+                <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" min="0" placeholder="0.00"
+                  className="w-full text-xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
+              </div>
+              <button onClick={()=>{toast.success("✓ Deposited to yield vault!");setModal(null);setAmount("");}} disabled={!amount}
+                className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                <TrendingUp className="w-4 h-4"/>Deposit &amp; Earn
+              </button>
+            </div>
+          </Modal>
+        )}
+
+        {modal==="nanopay" && (
+          <Modal title="Nanopayment" desc="Gas-free · x402 · $0.000001 minimum" onClose={()=>setModal(null)}>
+            <div className="space-y-3">
+              <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
+                <p className="text-xs text-glow-muted/60">Recipient</p>
+                <input placeholder="0x…" className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+              </div>
+              <div className="bg-glow-surface border border-glow-border rounded-xl p-3 space-y-1">
+                <p className="text-xs text-glow-muted/60">USDC Amount</p>
+                <input value={amount} onChange={e=>setAmount(e.target.value)} type="number" min="0.000001" step="0.000001" placeholder="0.000001"
+                  className="w-full text-xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
+              </div>
+              <div className="flex items-center gap-2 p-2.5 bg-emerald-500/8 border border-emerald-500/20 rounded-xl text-xs text-emerald-400">
+                <Zap className="w-3.5 h-3.5"/>Zero gas · Signs EIP-3009 off-chain · Gateway settles onchain
+              </div>
+              <button onClick={()=>{toast.success(`✓ Nanopayment sent: $${amount} USDC (gas-free!)`);setModal(null);setAmount("");}} disabled={!amount}
+                className="w-full py-3 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                <Zap className="w-4 h-4"/>Send ${amount||"0"} USDC Gas-Free
+              </button>
+            </div>
+          </Modal>
+        )}
+      </div>
+    </AppLayout>
+  );
+}

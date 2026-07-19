@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useSiteSettings } from "@/hooks/useSiteSettings";
 import { usePathname } from "next/navigation";
-import { Bell, Command, Wifi, WifiOff, Code2, MessageSquare, Rocket, Search, Wallet, Settings, Home, Zap, Menu, X, Hammer, Sun, Moon, BarChart2 } from "lucide-react";
+import { Bell, Command, Wifi, WifiOff, Code2, MessageSquare, Rocket, Search, Wallet, Settings, Home, Zap, Menu, X, Hammer, Sun, Moon , TrendingUp } from "lucide-react";
 import { WalletButton } from "@/components/wallet/WalletButton";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { href:"/build",       icon:Hammer,       label:"Build"       },
   { href:"/deployments", icon:Rocket,       label:"Deploy"      },
   { href:"/launchpad",   icon:Zap,          label:"Launchpad"   },
-  { href:"/dex",         icon:BarChart2,    label:"DEX"         },
+  { href:"/defi",        icon:TrendingUp,   label:"DeFi"        },
   { href:"/explorer",    icon:Search,       label:"Explorer"    },
   { href:"/wallet",      icon:Wallet,       label:"Wallet"      },
   { href:"/settings",    icon:Settings,     label:"Settings"    },

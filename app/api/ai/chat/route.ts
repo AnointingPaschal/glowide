@@ -165,8 +165,15 @@ export async function POST(req: NextRequest) {
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
     const sKey        = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-    const openRouterKey = process.env.OPENROUTER_API_KEY ?? "";
-    if (!openRouterKey) return NextResponse.json({ error: "OpenRouter API key not set" }, { status: 500 });
+    // Fetch OpenRouter key: DB first (admin setting), then env var
+    let openRouterKey = process.env.OPENROUTER_API_KEY ?? "";
+    if (!openRouterKey && supabaseUrl && sKey) {
+      try {
+        const keyRow = await fetchDB(supabaseUrl, sKey, "/system_settings?key=eq.openrouter_api_key&select=value&limit=1");
+        if (Array.isArray(keyRow) && keyRow[0]?.value) openRouterKey = keyRow[0].value;
+      } catch { /* use env */ }
+    }
+    if (!openRouterKey) return NextResponse.json({ error: "OpenRouter API key not set. Add OPENROUTER_API_KEY to Vercel env vars or set it in Admin → Settings." }, { status: 500 });
 
     // Fetch system prompt + training examples from DB
     let systemPrompt = CIRCLE_CONTEXT;
