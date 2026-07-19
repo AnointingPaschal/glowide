@@ -10,9 +10,8 @@ import toast from "react-hot-toast";
 import {
   Send, ArrowDownLeft, RefreshCw, Copy, CheckCircle, Check, Eye, EyeOff,
   ChevronRight, Plus, X, Loader2, Shield, Zap, ArrowLeftRight,
-  Globe, AlertTriangle, Settings, ArrowUpRight,
-  TrendingUp, Coins, KeyRound, Fingerprint,
-  Clock, Home, ExternalLink, ChevronDown,
+  Globe, AlertTriangle, Settings, ArrowUpRight, TrendingUp, TrendingDown,
+  Coins, KeyRound, Fingerprint, Clock, Home, ExternalLink, ChevronDown,
   Wallet, Lock, ChevronLeft,
 } from "lucide-react";
 
@@ -76,6 +75,218 @@ const ARC_USDC = "0x3600000000000000000000000000000000000000";
 function shortAddr(a:string) { return a ? `${a.slice(0,6)}…${a.slice(-4)}` : "—"; }
 function fmtUSD(n:number) { return n>=1e6?`$${(n/1e6).toFixed(2)}M`:n>=1e3?`$${(n/1e3).toFixed(1)}K`:`$${n.toFixed(2)}`; }
 
+// ── Mini Sparkline SVG ─────────────────────────────────────────────────────────
+function Sparkline({ prices, color="var(--glow-accent)", h=48, w=160 }: { prices:number[]; color?:string; h?:number; w?:number }) {
+  if (!prices.length) return null;
+  const min = Math.min(...prices), max = Math.max(...prices);
+  const range = max - min || 1;
+  const pts = prices.map((p,i) => {
+    const x = (i / (prices.length-1)) * w;
+    const y = h - ((p-min)/range) * (h-4) - 2;
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="w-full">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <linearGradient id="sg" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stopColor={color} stopOpacity="0.3"/>
+        <stop offset="100%" stopColor={color} stopOpacity="0"/>
+      </linearGradient>
+      <polygon points={`0,${h} ${pts} ${w},${h}`} fill="url(#sg)"/>
+    </svg>
+  );
+}
+
+// ── Asset Detail Sheet ─────────────────────────────────────────────────────────
+type AssetDetailProps = {
+  symbol: string; name: string; amount: string;
+  price: number; change: number; logoUrl?: string;
+  onClose(): void;
+  onSend(): void; onReceive(): void;
+  walletAddr: string;
+};
+function AssetDetailSheet({ symbol, name, amount, price, change, logoUrl, onClose, onSend, onReceive, walletAddr }: AssetDetailProps) {
+  const [txns, setTxns] = useState<Array<{hash:string;from:string;to:string;value:string;isIn:boolean}>>([]);
+  const [loadingTxns, setLoadingTxns] = useState(false);
+  const value = parseFloat(amount||"0") * price;
+  const up = change >= 0;
+
+  // Generate demo sparkline from price + change
+  const sparkPrices = useMemo(() => {
+    const base = price / (1 + change/100);
+    return Array.from({length:24},(_,i) => {
+      const t = i/23;
+      const noise = (Math.sin(i*2.7)*0.3 + Math.sin(i*1.3)*0.2) * base * 0.02;
+      return base + (price-base)*t + noise;
+    });
+  }, [price, change]);
+
+  // Load on-chain transfer history
+  useEffect(() => {
+    if (!walletAddr) return;
+    setLoadingTxns(true);
+    const TOKEN_ADDRS: Record<string,string> = {
+      USDC:"0x3600000000000000000000000000000000000000",
+      EURC:"0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+      cirBTC:"0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
+      USYC:"0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C",
+    };
+    const tokenAddr = TOKEN_ADDRS[symbol];
+    if (!tokenAddr) { setLoadingTxns(false); return; }
+    const paddedAddr = "000000000000000000000000" + walletAddr.replace("0x","").toLowerCase();
+    Promise.all([
+      // Incoming transfers
+      fetch(ARC_RPC, {method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_getLogs",params:[{
+          address:tokenAddr, fromBlock:"earliest", toBlock:"latest",
+          topics:["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",null,"0x"+paddedAddr]
+        }]})}).then(r=>r.json()).catch(()=>({result:[]})),
+      // Outgoing transfers
+      fetch(ARC_RPC, {method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({jsonrpc:"2.0",id:2,method:"eth_getLogs",params:[{
+          address:tokenAddr, fromBlock:"earliest", toBlock:"latest",
+          topics:["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef","0x"+paddedAddr,null]
+        }]})}).then(r=>r.json()).catch(()=>({result:[]})),
+    ]).then(([inbound,outbound]) => {
+      const DECIMALS: Record<string,number> = {USDC:18,EURC:6,cirBTC:8,USYC:6};
+      const dec = DECIMALS[symbol]||6;
+      const fmt = (hex:string) => {
+        try { return (Number(BigInt(hex))/Math.pow(10,dec)).toFixed(4); } catch { return "0"; }
+      };
+      type LogEntry = { transactionHash: string; topics: string[]; data: string };
+      const ins = ((inbound as {result?:LogEntry[]}).result||[]).slice(-5).map((l:LogEntry) => ({
+        hash:l.transactionHash, isIn:true,
+        from:"0x"+l.topics[1]?.slice(26), to:walletAddr,
+        value:fmt(l.data)
+      }));
+      const outs = ((outbound as {result?:LogEntry[]}).result||[]).slice(-5).map((l:LogEntry) => ({
+        hash:l.transactionHash, isIn:false,
+        from:walletAddr, to:"0x"+l.topics[2]?.slice(26),
+        value:fmt(l.data)
+      }));
+      setTxns([...ins,...outs].slice(0,8));
+    }).finally(()=>setLoadingTxns(false));
+  }, [symbol, walletAddr]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className="w-full max-h-[92dvh] bg-glow-card rounded-t-3xl flex flex-col overflow-hidden">
+        {/* Drag handle */}
+        <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mt-3 mb-1 flex-shrink-0"/>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 overflow-hidden shadow"
+              style={{background: logoUrl ? "transparent" : (CHAIN_BG[symbol]??"#7c3aed")}}>
+              {logoUrl
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={logoUrl} alt={symbol} className="w-10 h-10 object-cover rounded-full"/>
+                : symbol.slice(0,2)}
+            </div>
+            <div>
+              <p className="text-base font-bold text-glow-text">{symbol}</p>
+              <p className="text-xs text-glow-muted">{name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-glow-muted hover:text-glow-text"><X className="w-5 h-5"/></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 pb-8 space-y-5">
+          {/* Price + change */}
+          <div className="text-center py-2">
+            <p className="text-3xl font-bold text-glow-text">${price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:symbol==="cirBTC"?0:4})}</p>
+            <span className={cn("inline-flex items-center gap-1 text-sm font-semibold mt-1 px-2.5 py-1 rounded-full",
+              up?"bg-emerald-500/15 text-emerald-500":"bg-red-500/15 text-red-500")}>
+              {up?<TrendingUp className="w-3.5 h-3.5"/>:<TrendingDown className="w-3.5 h-3.5"/>}
+              {up?"+":""}{change.toFixed(2)}% 24h
+            </span>
+          </div>
+
+          {/* Sparkline chart */}
+          <div className="bg-glow-surface border border-glow-border rounded-2xl p-4">
+            <div className="flex justify-between items-center mb-3">
+              <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">24H Price</p>
+              <p className="text-xs text-glow-muted">Arc Testnet</p>
+            </div>
+            <Sparkline prices={sparkPrices} color={up?"#10b981":"#ef4444"} h={64} w={300}/>
+          </div>
+
+          {/* Balance stats */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-glow-surface border border-glow-border rounded-2xl p-4">
+              <p className="text-[10px] text-glow-muted uppercase tracking-wider mb-1">Balance</p>
+              <p className="text-lg font-bold text-glow-text">{parseFloat(amount||"0").toFixed(4)}</p>
+              <p className="text-xs text-glow-muted">{symbol}</p>
+            </div>
+            <div className="bg-glow-surface border border-glow-border rounded-2xl p-4">
+              <p className="text-[10px] text-glow-muted uppercase tracking-wider mb-1">Value</p>
+              <p className="text-lg font-bold text-glow-text">{fmtUSD(value)}</p>
+              <p className="text-xs text-glow-muted">USD</p>
+            </div>
+          </div>
+
+          {/* Quick actions */}
+          <div className="grid grid-cols-3 gap-3">
+            <button onClick={onSend} className="flex flex-col items-center gap-2 py-3 bg-glow-surface border border-glow-border rounded-2xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-colors">
+              <Send className="w-5 h-5 text-glow-accent"/><span className="text-xs font-medium text-glow-text">Send</span>
+            </button>
+            <button onClick={onReceive} className="flex flex-col items-center gap-2 py-3 bg-glow-surface border border-glow-border rounded-2xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-colors">
+              <ArrowDownLeft className="w-5 h-5 text-glow-accent"/><span className="text-xs font-medium text-glow-text">Receive</span>
+            </button>
+            <a href="/defi" className="flex flex-col items-center gap-2 py-3 bg-glow-surface border border-glow-border rounded-2xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-colors">
+              <ArrowLeftRight className="w-5 h-5 text-glow-accent"/><span className="text-xs font-medium text-glow-text">Swap</span>
+            </a>
+          </div>
+
+          {/* On-chain transactions */}
+          <div className="bg-glow-surface border border-glow-border rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-glow-border">
+              <p className="text-xs font-semibold text-glow-muted uppercase tracking-wider">On-Chain Activity</p>
+              <a href={`https://testnet.arcscan.app/token/0x3600000000000000000000000000000000000000`}
+                target="_blank" rel="noopener noreferrer" className="text-[10px] text-glow-accent">ArcScan ↗</a>
+            </div>
+            {loadingTxns && (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="w-5 h-5 text-glow-muted animate-spin"/>
+              </div>
+            )}
+            {!loadingTxns && txns.length === 0 && (
+              <p className="text-xs text-glow-muted text-center py-6">No transactions yet</p>
+            )}
+            {txns.map((tx,i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-glow-border last:border-0">
+                <div className={cn("w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                  tx.isIn?"bg-emerald-500/15":"bg-red-500/15")}>
+                  {tx.isIn
+                    ? <ArrowDownLeft className="w-4 h-4 text-emerald-500"/>
+                    : <Send className="w-4 h-4 text-red-500"/>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-glow-text">{tx.isIn?"Received":"Sent"}</p>
+                  <p className="text-[10px] text-glow-muted font-mono truncate">
+                    {tx.isIn ? shortAddr(tx.from) : shortAddr(tx.to)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className={cn("text-xs font-bold", tx.isIn?"text-emerald-500":"text-red-500")}>
+                    {tx.isIn?"+":"-"}{tx.value} {symbol}
+                  </p>
+                  <a href={`https://testnet.arcscan.app/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer"
+                    className="text-[9px] text-glow-accent">view →</a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function shortAddr(a:string) { return a ? `${a.slice(0,6)}…${a.slice(-4)}` : "—"; }
+function fmtUSD(n:number) { return n>=1e6?`$${(n/1e6).toFixed(2)}M`:n>=1e3?`$${(n/1e3).toFixed(1)}K`:`$${n.toFixed(2)}`; }
+
 // ── Circle SDK window type ────────────────────────────────────────────────────
 declare global {
   interface Window {
@@ -102,7 +313,7 @@ function AssetRow({ symbol, name, amount, livePrice, liveChange, logoUrl, onClic
         }
       </div>
       <div className="flex-1 min-w-0 text-left">
-        <p className="text-sm font-semibold text-glow-text">{name}</p>
+        <p className="text-sm font-semibold text-glow-text">{symbol}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="text-xs text-glow-muted">${(price).toFixed(symbol==="USDC"||symbol==="EURC"||symbol==="USYC"?3:2)}</span>
           <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
@@ -184,6 +395,7 @@ export default function WalletPage() {
   const [livePrices,  setLivePrices]  = useState<Record<string,{price:number;change:number}>>({});
   const [tokenLogos,  setTokenLogos]  = useState<Record<string,string>>({});
   const [onChainBals, setOnChainBals] = useState<Record<string,string>>({});
+  const [selectedAsset, setSelectedAsset] = useState<{symbol:string;name:string;amount:string}|null>(null);
 
   const [sendTo,      setSendTo]      = useState("");
   const [sendAmt,     setSendAmt]     = useState("");
@@ -411,22 +623,21 @@ export default function WalletPage() {
           <h3 className="text-base font-bold text-glow-text">Send USDC</h3>
           <button onClick={()=>setModal(null)} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
         </div>
-        <div className="bg-glow-surface border border-glow-border rounded-2xl p-4 space-y-3">
-          <div>
-            <p className="text-xs text-glow-muted mb-1.5">Recipient</p>
-            <input value={sendTo} onChange={e=>setSendTo(e.target.value)} placeholder="0x…"
-              className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-white/30"/>
+        <div className="bg-glow-surface border-2 border-glow-border rounded-2xl overflow-hidden">
+          <div className="p-4 border-b border-glow-border">
+            <p className="text-[10px] text-glow-muted uppercase tracking-wider mb-2">Recipient</p>
+            <input value={sendTo} onChange={e=>setSendTo(e.target.value)} placeholder="0x wallet address…"
+              className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/50"/>
           </div>
-          <div className="h-px bg-white/8"/>
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-xs text-glow-muted">Amount</p>
-              <button className="text-xs text-glow-accent">Max</button>
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] text-glow-muted uppercase tracking-wider">Amount</p>
+              <button className="text-xs text-glow-accent font-semibold">Max</button>
             </div>
             <div className="flex items-center gap-2">
               <input value={sendAmt} onChange={e=>setSendAmt(e.target.value)} type="number" min="0" placeholder="0.00"
-                className="flex-1 text-xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-white/20"/>
-              <span className="text-sm font-semibold text-glow-muted">USDC</span>
+                className="flex-1 text-2xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+              <span className="text-sm font-bold text-glow-accent bg-glow-accent/10 px-2.5 py-1 rounded-xl">USDC</span>
             </div>
           </div>
         </div>
@@ -882,10 +1093,7 @@ export default function WalletPage() {
                     <AssetRow key={b.token.symbol} symbol={b.token.symbol} name={b.token.name} amount={b.amount}
                       livePrice={liveP(b.token.symbol)} liveChange={liveC(b.token.symbol)}
                       logoUrl={tokenLogos[b.token.symbol]}
-                      onClick={()=>{
-                        const val = (parseFloat(b.amount||"0") * liveP(b.token.symbol)).toFixed(2);
-                        toast(`${b.token.name}\n${b.amount} ${b.token.symbol} · $${val}`, {icon: tokenLogos[b.token.symbol] ? undefined : "🪙", duration:3000});
-                      }}/>
+                      onClick={()=>setSelectedAsset({symbol:b.token.symbol,name:b.token.name,amount:b.amount})}/>
                   ))}
                 </div>
               </div>
@@ -1038,6 +1246,21 @@ export default function WalletPage() {
           ))}
         </div>
       </div>
+      {/* Asset Detail Sheet */}
+      {selectedAsset && (
+        <AssetDetailSheet
+          symbol={selectedAsset.symbol}
+          name={selectedAsset.name}
+          amount={selectedAsset.amount}
+          price={liveP(selectedAsset.symbol)}
+          change={liveC(selectedAsset.symbol)}
+          logoUrl={tokenLogos[selectedAsset.symbol]}
+          walletAddr={displayAddr}
+          onClose={()=>setSelectedAsset(null)}
+          onSend={()=>{ setSelectedAsset(null); setModal("send"); }}
+          onReceive={()=>{ setSelectedAsset(null); setModal("receive"); }}
+        />
+      )}
     </AppLayout>
   );
 }

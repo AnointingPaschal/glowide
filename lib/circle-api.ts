@@ -22,8 +22,11 @@ async function getCirclePublicKey(): Promise<string> {
     headers: { Authorization: `Bearer ${API_KEY}` },
     cache: "no-store",
   });
-  const d = await res.json() as { data?: { publicKey?: string } };
-  _pubKey = d.data?.publicKey ?? "";
+  const d = await res.json() as { data?: { publicKey?: string }; code?: number; message?: string };
+  if (!res.ok || !d.data?.publicKey) {
+    throw new Error(`Circle API key fetch failed (${res.status}): ${d.message ?? JSON.stringify(d)}`);
+  }
+  _pubKey = d.data.publicKey.trim();
   return _pubKey;
 }
 
@@ -31,36 +34,30 @@ export async function getEntitySecretCiphertext(): Promise<string> {
   const pubKeyPem = await getCirclePublicKey();
   const secretBuf = Buffer.from(ENTITY_SECRET, "hex");
 
-  // Strategy 1: createPublicKey (normalises PEM format for OpenSSL 3 / Node 20+)
-  try {
-    const keyObj = crypto.createPublicKey({ key: pubKeyPem, format: "pem" });
-    const encrypted = crypto.publicEncrypt(
-      { key: keyObj, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
-      secretBuf
-    );
-    return encrypted.toString("base64");
-  } catch (e1) {
-    // Strategy 2: pass raw PEM string (works on Node 18)
-    try {
-      const encrypted = crypto.publicEncrypt(
-        { key: pubKeyPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
-        secretBuf
-      );
-      return encrypted.toString("base64");
-    } catch (e2) {
-      // Strategy 3: try with sha1 oaep (some Circle environments use this)
-      try {
-        const keyObj = crypto.createPublicKey({ key: pubKeyPem, format: "pem" });
-        const encrypted = crypto.publicEncrypt(
-          { key: keyObj, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha1" },
-          secretBuf
-        );
-        return encrypted.toString("base64");
-      } catch (e3) {
-        throw new Error(`Circle RSA encryption failed on all strategies. Original: ${e1}. Check CIRCLE_ENTITY_SECRET and CIRCLE_API_KEY env vars.`);
-      }
-    }
+  // Extract raw DER bytes from PEM (strips headers + whitespace)
+  const pemBody = pubKeyPem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const der = Buffer.from(pemBody, "base64");
+
+  // Try DER with explicit types — bypasses PEM DECODER entirely (fixes OpenSSL 3 / Node 24 compat)
+  const attempts: Array<() => crypto.KeyObject> = [
+    () => crypto.createPublicKey({ key: der, format: "der", type: "spki"   }),
+    () => crypto.createPublicKey({ key: der, format: "der", type: "pkcs1"  }),
+    () => crypto.createPublicKey({ key: pubKeyPem, format: "pem" }),
+  ];
+
+  let keyObj: crypto.KeyObject | null = null;
+  let lastErr: unknown;
+  for (const attempt of attempts) {
+    try { keyObj = attempt(); break; } catch (e) { lastErr = e; }
   }
+  if (!keyObj) throw new Error(`Circle RSA key parse failed: ${lastErr}`);
+
+  // Encrypt with RSA-OAEP + SHA-256
+  const encrypted = crypto.publicEncrypt(
+    { key: keyObj, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
+    secretBuf
+  );
+  return encrypted.toString("base64");
 }
 
 // ── Generic Circle API helper ─────────────────────────────────────────────────
