@@ -580,8 +580,7 @@ export default function WalletPage() {
   // ── Setup Modal ──────────────────────────────────────────────────────────────
   const SetupModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
-      <div className=" p-6 space-y-5 pb-10">
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl p-6 space-y-5 pb-10" onClick={e=>e.stopPropagation()}>
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4"/>
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-glow-gradient flex items-center justify-center"><Shield className="w-6 h-6 text-glow-text"/></div>
@@ -670,8 +669,7 @@ export default function WalletPage() {
   // ── CCTP Modal ───────────────────────────────────────────────────────────────
   const CCTPModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
-      <div className=" p-5 pb-10 space-y-4">
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10 space-y-4" onClick={e=>e.stopPropagation()}>
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-glow-text">CCTP Bridge</h3><p className="text-xs text-glow-muted">Native USDC burn+mint — no wrapped tokens</p></div>
@@ -714,8 +712,7 @@ export default function WalletPage() {
   // ── Gateway Modal ─────────────────────────────────────────────────────────────
   const GatewayModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
-      <div className=" p-5 pb-10 space-y-4">
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10 space-y-4" onClick={e=>e.stopPropagation()}>
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-glow-text">Gateway Transfer</h3><p className="text-xs text-glow-muted">&lt;500ms · Unified balance</p></div>
@@ -758,8 +755,7 @@ export default function WalletPage() {
   // ── Nanopay Modal ──────────────────────────────────────────────────────────
   const NanopayModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
-      <div className=" p-5 pb-10 space-y-4">
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10 space-y-4" onClick={e=>e.stopPropagation()}>
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-glow-text">Nanopayment</h3><p className="text-xs text-glow-muted">Gas-free · x402 · from $0.000001</p></div>
@@ -794,8 +790,7 @@ export default function WalletPage() {
   // ── Receive Modal ───────────────────────────────────────────────────────────
   const ReceiveModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
-      <div className=" p-5 pb-10">
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10" onClick={e=>e.stopPropagation()}>
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4"/>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-base font-bold text-glow-text">Receive USDC</h3>
