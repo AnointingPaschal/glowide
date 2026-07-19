@@ -5,6 +5,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useWalletStore } from "@/store/walletStore";
 import { useCircleStore } from "@/store/circleStore";
 import type { CircleTx } from "@/store/circleStore";
+import { useLocalWalletStore } from "@/store/localWalletStore";
+import type { LocalWallet } from "@/store/localWalletStore";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import {
@@ -379,9 +381,10 @@ function TxRow({ tx }: { tx: CircleTx }) {
 export default function WalletPage() {
   const { address: mmAddr, isConnected, chainId } = useWalletStore();
   const circle = useCircleStore();
+  const localWallet = useLocalWalletStore();
 
   const [tab,         setTab]         = useState<"home"|"swap"|"history"|"settings">("home");
-  const [modal,       setModal]       = useState<null|"send"|"receive"|"cctp"|"gateway"|"nanopay"|"setup"|"wallets"|"import">(null);
+  const [modal,       setModal]       = useState<null|"send"|"receive"|"cctp"|"gateway"|"nanopay"|"setup"|"wallets"|"import"|"createLocal"|"importLocal"|"revealPhrase">(null);
   const [settingsScreen, setSettingsScreen] = useState<null|"security"|"networks"|"tokens"|"defi">(null);
   const [hideBalance, setHideBalance] = useState(false);
   const [copied,      setCopied]      = useState(false);
@@ -394,6 +397,20 @@ export default function WalletPage() {
   const [onChainBals, setOnChainBals] = useState<Record<string,string>>({});
   const [selectedAsset, setSelectedAsset] = useState<{symbol:string;name:string;amount:string}|null>(null);
   const [balRefreshTick, setBalRefreshTick] = useState(0);
+  const [newWalletPass, setNewWalletPass] = useState("");
+  const [newWalletPass2, setNewWalletPass2] = useState("");
+  const [newWalletName, setNewWalletName] = useState("");
+  const [generatedMnemonic, setGeneratedMnemonic] = useState("");
+  const [generatedPrivKey, setGeneratedPrivKey] = useState("");
+  const [generatedAddress, setGeneratedAddress] = useState("");
+  const [createStep, setCreateStep] = useState<"password"|"reveal"|"confirm">("password");
+  const [confirmWords, setConfirmWords] = useState<{idx:number; value:string}[]>([]);
+  const [importMethod, setImportMethod] = useState<"phrase"|"key">("phrase");
+  const [importPhraseOrKey, setImportPhraseOrKey] = useState("");
+  const [importPass, setImportPass] = useState("");
+  const [importName, setImportName] = useState("");
+  const [revealedSecret, setRevealedSecret] = useState<{type:"phrase"|"key"; value:string}|null>(null);
+  const [revealPass, setRevealPass] = useState("");
 
   const [sendTo,      setSendTo]      = useState("");
   const [sendAmt,     setSendAmt]     = useState("");
@@ -437,8 +454,9 @@ export default function WalletPage() {
 
   // Read on-chain ERC-20 balances via server-side Arc RPC (avoids CORS/timeout issues)
   useEffect(() => {
+    const localAddr = localWallet.wallets.find(w => w.id === localWallet.activeWalletId)?.address;
     const circleAddr = circle.wallets.find(w => w.id === circle.activeWalletId)?.address;
-    const addr = circleAddr ?? mmAddr;
+    const addr = localAddr ?? circleAddr ?? mmAddr;
     if (!addr || addr.length < 10) return;
 
     const fetchBalances = async () => {
@@ -460,7 +478,7 @@ export default function WalletPage() {
     const interval = setInterval(fetchBalances, 30000); // auto-refresh every 30s
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mmAddr, circle.activeWalletId, circle.wallets.length, balRefreshTick]);
+  }, [mmAddr, circle.activeWalletId, circle.wallets.length, localWallet.activeWalletId, localWallet.wallets.length, balRefreshTick]);
 
   // Load Circle SDK
   useEffect(() => {
@@ -528,6 +546,106 @@ export default function WalletPage() {
       setSetupStep("welcome");
     }
   };
+  // ── Local Wallet: Create (generate real mnemonic + private key with ethers) ──
+  const generateNewWallet = async () => {
+    if (newWalletPass.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    if (newWalletPass !== newWalletPass2) { toast.error("Passwords don't match"); return; }
+    try {
+      const { ethers } = await import("ethers");
+      const wallet = ethers.Wallet.createRandom();
+      setGeneratedMnemonic(wallet.mnemonic?.phrase ?? "");
+      setGeneratedPrivKey(wallet.privateKey);
+      setGeneratedAddress(wallet.address);
+      setCreateStep("reveal");
+    } catch (e) { toast.error(String(e)); }
+  };
+
+  const proceedToConfirm = () => {
+    // Pick 3 random word positions from the mnemonic to verify
+    const words = generatedMnemonic.split(" ");
+    const positions = new Set<number>();
+    while (positions.size < 3 && positions.size < words.length) {
+      positions.add(Math.floor(Math.random() * words.length));
+    }
+    setConfirmWords([...positions].sort((a,b)=>a-b).map(idx => ({ idx, value: "" })));
+    setCreateStep("confirm");
+  };
+
+  const finalizeNewWallet = async () => {
+    const words = generatedMnemonic.split(" ");
+    const wrong = confirmWords.some(c => c.value.trim().toLowerCase() !== words[c.idx]);
+    if (wrong) { toast.error("Word mismatch — check your backup and try again"); return; }
+    try {
+      const { ethers } = await import("ethers");
+      const wallet = new ethers.Wallet(generatedPrivKey);
+      const encryptedJson = await wallet.encrypt(newWalletPass);
+      const id = crypto.randomUUID();
+      localWallet.addWallet({
+        id, name: newWalletName || `Wallet ${localWallet.wallets.length + 1}`,
+        address: wallet.address, encryptedJson, createdAt: Date.now(),
+      });
+      // Reset flow state
+      setNewWalletPass(""); setNewWalletPass2(""); setNewWalletName("");
+      setGeneratedMnemonic(""); setGeneratedPrivKey(""); setGeneratedAddress("");
+      setCreateStep("password"); setConfirmWords([]);
+      setModal(null);
+      toast.success(`✓ Wallet created: ${shortAddr(wallet.address)}`);
+      setBalRefreshTick(t => t + 1);
+    } catch (e) { toast.error(String(e)); }
+  };
+
+  // ── Local Wallet: Import via seed phrase or private key ──────────────────────
+  const importWallet = async () => {
+    if (!importPhraseOrKey.trim()) { toast.error("Enter a seed phrase or private key"); return; }
+    if (importPass.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    try {
+      const { ethers } = await import("ethers");
+      const input = importPhraseOrKey.trim();
+      let wallet: InstanceType<typeof ethers.Wallet>;
+      if (importMethod === "phrase") {
+        if (input.split(/\s+/).length < 12) throw new Error("Seed phrase must be 12+ words");
+        wallet = ethers.Wallet.fromPhrase(input);
+      } else {
+        const key = input.startsWith("0x") ? input : "0x" + input;
+        wallet = new ethers.Wallet(key);
+      }
+      const encryptedJson = await wallet.encrypt(importPass);
+      const id = crypto.randomUUID();
+      localWallet.addWallet({
+        id, name: importName || `Imported ${localWallet.wallets.length + 1}`,
+        address: wallet.address, encryptedJson, createdAt: Date.now(),
+      });
+      setImportPhraseOrKey(""); setImportPass(""); setImportName("");
+      setModal(null);
+      toast.success(`✓ Wallet imported: ${shortAddr(wallet.address)}`);
+      setBalRefreshTick(t => t + 1);
+    } catch (e) { toast.error(`Import failed: ${(e as Error).message}`); }
+  };
+
+  // ── Reveal seed phrase / private key for an existing local wallet ────────────
+  const revealSecret = async (type: "phrase"|"key") => {
+    const w = localWallet.wallets.find(w => w.id === localWallet.activeWalletId);
+    if (!w) { toast.error("No active wallet"); return; }
+    if (!revealPass) { toast.error("Enter your password"); return; }
+    try {
+      const { ethers } = await import("ethers");
+      const wallet = await ethers.Wallet.fromEncryptedJson(w.encryptedJson, revealPass);
+      if (type === "phrase") {
+        if ("mnemonic" in wallet && wallet.mnemonic) {
+          setRevealedSecret({ type: "phrase", value: wallet.mnemonic.phrase });
+        } else {
+          toast.error("This wallet was imported via private key — no seed phrase available");
+          return;
+        }
+      } else {
+        setRevealedSecret({ type: "key", value: wallet.privateKey });
+      }
+      setRevealPass("");
+    } catch {
+      toast.error("Incorrect password");
+    }
+  };
+
   // Send
   const handleSend = async () => {
     if (!sendTo||!sendAmt){toast.error("Fill all fields");return;}
@@ -552,7 +670,8 @@ export default function WalletPage() {
   const copyAddr = async () => { await navigator.clipboard.writeText(displayAddr); setCopied(true); setTimeout(()=>setCopied(false),2000); };
 
   const activeWallet = circle.wallets.find(w=>w.id===circle.activeWalletId);
-  const displayAddr  = activeWallet?.address ?? mmAddr ?? "";
+  const activeLocalWallet = localWallet.wallets.find(w=>w.id===localWallet.activeWalletId);
+  const displayAddr  = activeLocalWallet?.address ?? activeWallet?.address ?? mmAddr ?? "";
   const hasCircle    = circle.isInitialized && circle.wallets.length > 0;
   const liveP = (sym: string) => livePrices[sym]?.price ?? PRICE_DEFAULTS[sym] ?? 1;
   const liveC = (sym: string) => livePrices[sym]?.change ?? CHANGE_DEFAULTS[sym] ?? 0;
@@ -593,17 +712,9 @@ export default function WalletPage() {
           </div>
         ))}
         {setupStep==="welcome" && (
-          <div className="space-y-3">
-            <div className="bg-amber-500/8 border border-amber-500/20 rounded-2xl p-3.5 space-y-1.5">
-              <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0"/>Circle API Key Format</p>
-              <p className="text-[11px] text-amber-300/80 leading-relaxed">Your <code className="bg-black/20 px-1 rounded">CIRCLE_API_KEY</code> in Vercel must have 3 parts:</p>
-              <code className="text-[10px] text-amber-200/70 bg-black/20 px-2 py-1 rounded block">TEST_API_KEY:your-id:your-secret</code>
-              <p className="text-[11px] text-amber-300/80">Get it at <a href="https://console.circle.com" target="_blank" rel="noopener noreferrer" className="underline">console.circle.com</a> → API Keys</p>
-            </div>
-            <button onClick={setupCircle} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2">
-              <Plus className="w-5 h-5"/>Create MPC Wallet
-            </button>
-          </div>
+          <button onClick={setupCircle} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2">
+            <Plus className="w-5 h-5"/>Create Dev Wallet
+          </button>
         )}
         {setupStep==="loading" && (
           <div className="text-center py-3 space-y-2">
@@ -907,18 +1018,18 @@ export default function WalletPage() {
 
       {/* ── Wallet Switcher Modal ──────────────────────────────────────── */}
       {modal==="wallets" && (
-        <div className="fixed inset-0 z-50 bg-black/75 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-          <div className="w-full bg-glow-card border border-glow-border rounded-t-3xl pb-10">
-            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mt-4 mb-5"/>
+        <div className="fixed inset-0 z-50 bg-black/75 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+          <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl pb-10 max-h-[85dvh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mt-4 mb-5"/>
             <div className="flex items-center justify-between px-5 mb-4">
               <h3 className="text-base font-bold text-glow-text">My Wallets</h3>
               <div className="flex gap-2">
-                <button onClick={()=>setModal("import")}
+                <button onClick={()=>setModal("importLocal")}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-surface border border-glow-border rounded-xl text-xs text-glow-muted hover:text-glow-text transition-colors">
                   <ArrowDownLeft className="w-3.5 h-3.5"/>Import
                 </button>
-                <button onClick={()=>{setModal("setup");}}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-gradient rounded-xl text-xs text-glow-text font-semibold">
+                <button onClick={()=>{setCreateStep("password"); setModal("createLocal");}}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-gradient rounded-xl text-xs text-white font-semibold">
                   <Plus className="w-3.5 h-3.5"/>New
                 </button>
               </div>
@@ -927,7 +1038,7 @@ export default function WalletPage() {
               {/* MetaMask wallet if connected */}
               {mmAddr && (
                 <div className={cn("flex items-center gap-3 p-4 rounded-2xl border transition-colors",
-                  !hasCircle ? "bg-glow-accent/10 border-glow-accent/30" : "bg-white/4 border-glow-border hover:bg-black/5 dark:hover:bg-white/6")}>
+                  !hasCircle && localWallet.wallets.length===0 ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
                   <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-bold text-orange-400 flex-shrink-0">
                     {mmAddr.slice(2,4).toUpperCase()}
                   </div>
@@ -935,32 +1046,49 @@ export default function WalletPage() {
                     <p className="text-sm font-semibold text-glow-text">MetaMask</p>
                     <p className="text-xs font-mono text-glow-muted truncate">{mmAddr}</p>
                   </div>
-                  {!hasCircle && <span className="text-[10px] text-glow-accent bg-glow-accent/10 border border-glow-accent/20 px-2 py-0.5 rounded-full font-semibold">Active</span>}
                 </div>
               )}
-              {/* Circle wallets */}
+              {/* Local wallets (real generated/imported) */}
+              {localWallet.wallets.map((w,i)=>(
+                <button key={w.id} onClick={()=>{localWallet.setActive(w.id); setModal(null); toast(`Switched to ${w.name}`,{icon:"👛"});}}
+                  className={cn("w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors text-left",
+                    w.id===localWallet.activeWalletId ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
+                  <div className="w-10 h-10 rounded-full bg-glow-gradient flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                    {w.address.slice(2,4).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-glow-text">{w.name}</p>
+                      <span className="text-[9px] text-glow-accent bg-glow-accent/15 border border-glow-accent/20 px-1.5 py-0.5 rounded-full">SELF-CUSTODY</span>
+                    </div>
+                    <p className="text-xs font-mono text-glow-muted truncate">{shortAddr(w.address)}</p>
+                  </div>
+                  {w.id===localWallet.activeWalletId && <Check className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
+                </button>
+              ))}
+              {/* Circle Developer wallets */}
               {circle.wallets.map((w,i)=>(
                 <button key={w.id} onClick={()=>{circle.setActive(w.id); setModal(null); toast(`Switched to Circle Wallet ${i+1}`,{icon:"🔐"});}}
                   className={cn("w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors text-left",
-                    w.id===circle.activeWalletId ? "bg-glow-accent/10 border-glow-accent/30" : "bg-white/4 border-glow-border hover:bg-black/5 dark:hover:bg-white/6")}>
+                    w.id===circle.activeWalletId ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
                   <div className="w-10 h-10 rounded-full bg-glow-gradient flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                     {(w.address??'').slice(2,4).toUpperCase()||"W"+(i+1)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-glow-text">Circle MPC Wallet {circle.wallets.length > 1 ? i+1 : ""}</p>
-                      <span className="text-[9px] text-emerald-400 bg-emerald-500/15 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">MPC</span>
+                      <p className="text-sm font-semibold text-glow-text">Circle Dev Wallet {circle.wallets.length > 1 ? i+1 : ""}</p>
+                      <span className="text-[9px] text-emerald-500 bg-emerald-500/15 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">DEV</span>
                     </div>
                     <p className="text-xs font-mono text-glow-muted truncate">{w.address??shortAddr(w.id)}</p>
                   </div>
                   {w.id===circle.activeWalletId && <Check className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
                 </button>
               ))}
-              {!mmAddr && circle.wallets.length===0 && (
+              {!mmAddr && circle.wallets.length===0 && localWallet.wallets.length===0 && (
                 <div className="text-center py-8 text-glow-muted/70">
                   <Wallet className="w-10 h-10 mx-auto mb-3 opacity-40"/>
                   <p className="text-sm">No wallets yet</p>
-                  <p className="text-xs mt-1">Create a Circle MPC wallet or connect MetaMask</p>
+                  <p className="text-xs mt-1">Create a new wallet or import an existing one</p>
                 </div>
               )}
             </div>
@@ -969,40 +1097,191 @@ export default function WalletPage() {
       )}
 
       {/* ── Import Wallet Modal ─────────────────────────────────────────── */}
-      {modal==="import" && (
-        <div className="fixed inset-0 z-50 bg-black/75 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-          <div className="w-full bg-glow-card border border-glow-border rounded-t-3xl p-5 pb-10 space-y-4">
-            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
+      {/* ── Create New Wallet Modal ─────────────────────────────────────── */}
+      {modal==="createLocal" && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget){setModal(null);setCreateStep("password");}}}>
+          <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10 space-y-4 max-h-[90dvh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mb-2"/>
             <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-glow-text">Import Wallet</h3>
-                <p className="text-xs text-glow-muted mt-0.5">Watch address or enter private key</p>
-              </div>
-              <button onClick={()=>setModal(null)} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
+              <h3 className="text-base font-bold text-glow-text">
+                {createStep==="password"?"Create Wallet":createStep==="reveal"?"Backup Your Wallet":"Confirm Backup"}
+              </h3>
+              <button onClick={()=>{setModal(null);setCreateStep("password");}} className="p-2 text-glow-muted rounded-xl hover:bg-glow-surface"><X className="w-5 h-5"/></button>
+            </div>
+
+            {createStep==="password" && (
+              <>
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Wallet Name (optional)</p>
+                  <input value={newWalletName} onChange={e=>setNewWalletName(e.target.value)} placeholder={`Wallet ${localWallet.wallets.length+1}`}
+                    className="w-full bg-transparent text-sm text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+                </div>
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Password</p>
+                  <input value={newWalletPass} onChange={e=>setNewWalletPass(e.target.value)} type="password" placeholder="Min. 8 characters"
+                    className="w-full bg-transparent text-sm text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+                </div>
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Confirm Password</p>
+                  <input value={newWalletPass2} onChange={e=>setNewWalletPass2(e.target.value)} type="password" placeholder="Repeat password"
+                    className="w-full bg-transparent text-sm text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+                </div>
+                <div className="flex items-center gap-2 bg-glow-accent/8 border border-glow-accent/20 rounded-xl p-3">
+                  <Shield className="w-4 h-4 text-glow-accent flex-shrink-0"/>
+                  <p className="text-xs text-glow-muted">This password encrypts your wallet on this device only. GlowIDE never sees it.</p>
+                </div>
+                <button onClick={generateNewWallet} disabled={!newWalletPass||!newWalletPass2}
+                  className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                  <Plus className="w-5 h-5"/>Generate Wallet
+                </button>
+              </>
+            )}
+
+            {createStep==="reveal" && (
+              <>
+                <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-3 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"/>
+                  <p className="text-xs text-amber-300/90">Write down these 12 words in order. Anyone with this phrase can access your funds. Never share it.</p>
+                </div>
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-3">Secret Recovery Phrase</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {generatedMnemonic.split(" ").map((word,i)=>(
+                      <div key={i} className="flex items-center gap-1.5 bg-glow-bg border border-glow-border rounded-lg px-2 py-1.5">
+                        <span className="text-[10px] text-glow-muted/60 w-3">{i+1}</span>
+                        <span className="text-xs font-mono text-glow-text">{word}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Private Key</p>
+                  <p className="text-[10px] font-mono text-glow-text break-all">{generatedPrivKey}</p>
+                </div>
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Address</p>
+                  <p className="text-xs font-mono text-glow-text break-all">{generatedAddress}</p>
+                </div>
+                <button onClick={proceedToConfirm}
+                  className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2">
+                  <CheckCircle className="w-5 h-5"/>I've Saved It — Continue
+                </button>
+              </>
+            )}
+
+            {createStep==="confirm" && (
+              <>
+                <p className="text-xs text-glow-muted">Enter the requested words from your recovery phrase to confirm your backup.</p>
+                {confirmWords.map((c,i)=>(
+                  <div key={c.idx} className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                    <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Word #{c.idx+1}</p>
+                    <input value={c.value} onChange={e=>{
+                      const updated=[...confirmWords]; updated[i]={...c,value:e.target.value}; setConfirmWords(updated);
+                    }} className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none"/>
+                  </div>
+                ))}
+                <button onClick={finalizeNewWallet} disabled={confirmWords.some(c=>!c.value)}
+                  className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+                  <CheckCircle className="w-5 h-5"/>Confirm & Create Wallet
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Import Wallet Modal (seed phrase or private key) ─────────────── */}
+      {modal==="importLocal" && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+          <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10 space-y-4" onClick={e=>e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mb-2"/>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-glow-text">Import Wallet</h3>
+              <button onClick={()=>setModal(null)} className="p-2 text-glow-muted rounded-xl hover:bg-glow-surface"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="flex gap-2 bg-glow-surface border border-glow-border rounded-xl p-1">
+              <button onClick={()=>setImportMethod("phrase")}
+                className={cn("flex-1 py-2 rounded-lg text-xs font-semibold transition-colors", importMethod==="phrase"?"bg-glow-gradient text-white":"text-glow-muted")}>
+                Seed Phrase
+              </button>
+              <button onClick={()=>setImportMethod("key")}
+                className={cn("flex-1 py-2 rounded-lg text-xs font-semibold transition-colors", importMethod==="key"?"bg-glow-gradient text-white":"text-glow-muted")}>
+                Private Key
+              </button>
             </div>
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300/80 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
-              Never share your private key. GlowIDE is open source — always verify.
+              Never share your seed phrase or private key with anyone.
             </div>
-            <div className="bg-glow-surface border border-glow-border rounded-2xl p-4 space-y-3">
-              <p className="text-xs text-glow-muted uppercase tracking-wider">Address or Private Key</p>
-              <textarea value={importKey} onChange={e=>setImportKey(e.target.value)}
-                placeholder="0x... wallet address (watch-only) or private key"
-                rows={3} className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-white/25 resize-none"/>
+            <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+              <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">
+                {importMethod==="phrase" ? "12 or 24-word Seed Phrase" : "Private Key"}
+              </p>
+              <textarea value={importPhraseOrKey} onChange={e=>setImportPhraseOrKey(e.target.value)}
+                placeholder={importMethod==="phrase" ? "word1 word2 word3 ..." : "0x..."}
+                rows={3} className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40 resize-none"/>
             </div>
-            <button disabled={!importKey||importLoading} onClick={async()=>{
-              setImportLoading(true);
-              await new Promise(r=>setTimeout(r,800));
-              if(importKey.startsWith("0x")&&importKey.length===42){
-                toast.success("Watch-only wallet added!"); setModal(null); setImportKey("");
-              } else {
-                toast.error("Full key import requires Circle MPC setup for security");
-              }
-              setImportLoading(false);
-            }} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
-              {importLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <ArrowDownLeft className="w-5 h-5"/>}
-              Import Wallet
+            <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+              <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Wallet Name (optional)</p>
+              <input value={importName} onChange={e=>setImportName(e.target.value)} placeholder={`Imported ${localWallet.wallets.length+1}`}
+                className="w-full bg-transparent text-sm text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+            </div>
+            <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+              <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Set a Password</p>
+              <input value={importPass} onChange={e=>setImportPass(e.target.value)} type="password" placeholder="Min. 8 characters — encrypts this wallet locally"
+                className="w-full bg-transparent text-sm text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+            </div>
+            <button onClick={importWallet} disabled={!importPhraseOrKey||!importPass}
+              className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+              <ArrowDownLeft className="w-5 h-5"/>Import Wallet
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reveal Seed Phrase / Private Key Modal ────────────────────────── */}
+      {modal==="revealPhrase" && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget){setModal(null);setRevealedSecret(null);setRevealPass("");}}}>
+          <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10 space-y-4" onClick={e=>e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mb-2"/>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-glow-text">Reveal Backup</h3>
+              <button onClick={()=>{setModal(null);setRevealedSecret(null);setRevealPass("");}} className="p-2 text-glow-muted rounded-xl hover:bg-glow-surface"><X className="w-5 h-5"/></button>
+            </div>
+            {!revealedSecret ? (
+              <>
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Enter Wallet Password</p>
+                  <input value={revealPass} onChange={e=>setRevealPass(e.target.value)} type="password" placeholder="Password"
+                    className="w-full bg-transparent text-sm text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={()=>revealSecret("phrase")} className="py-3 bg-glow-surface border border-glow-border rounded-2xl text-sm font-semibold text-glow-text hover:border-glow-accent/40">
+                    Seed Phrase
+                  </button>
+                  <button onClick={()=>revealSecret("key")} className="py-3 bg-glow-surface border border-glow-border rounded-2xl text-sm font-semibold text-glow-text hover:border-glow-accent/40">
+                    Private Key
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-3 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"/>
+                  <p className="text-xs text-amber-300/90">Never share this. Anyone with it can access your funds.</p>
+                </div>
+                <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+                  <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">
+                    {revealedSecret.type==="phrase"?"Seed Phrase":"Private Key"}
+                  </p>
+                  <p className="text-sm font-mono text-glow-text break-all">{revealedSecret.value}</p>
+                </div>
+                <button onClick={()=>{navigator.clipboard.writeText(revealedSecret.value); toast.success("Copied!");}}
+                  className="w-full py-3 bg-glow-surface border border-glow-border rounded-2xl text-sm font-semibold text-glow-text flex items-center justify-center gap-2">
+                  <Copy className="w-4 h-4"/>Copy to Clipboard
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1146,9 +1425,12 @@ export default function WalletPage() {
                 <h2 className="text-base font-bold text-glow-text">Security</h2>
               </div>
               {[
-                {icon:KeyRound,      label:"Change PIN",         desc:"Update your wallet PIN", action:()=>toast("Set NEXT_PUBLIC_CIRCLE_APP_ID to enable PIN management",{icon:"🔑"})},
+                {icon:KeyRound,      label:"Change Password",    desc:"Update wallet encryption password", action:()=>toast("Delete and re-import wallet with new password",{icon:"🔑"})},
                 {icon:Fingerprint,   label:"Biometrics",         desc:"Enable Face/Touch ID",   action:()=>toast("Biometrics requires native app",{icon:"👆"})},
-                {icon:Shield,        label:"Recovery Phrase",    desc:"Backup your wallet",     action:()=>toast("Circle MPC wallets use PIN recovery — no seed phrase",{icon:"🛡"})},
+                {icon:Shield,        label:"Reveal Backup",      desc:"View seed phrase or private key", action:()=>{
+                  if (localWallet.wallets.length===0) { toast.error("No self-custody wallet active"); return; }
+                  setRevealedSecret(null); setRevealPass(""); setModal("revealPhrase");
+                }},
                 {icon:Lock,          label:"Auto-lock Timer",    desc:"Lock after 5 minutes",   action:()=>toast("Auto-lock: 5 min",{icon:"⏱"})},
               ].map(item=>(
                 <button key={item.label} onClick={item.action}
