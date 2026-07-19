@@ -284,9 +284,6 @@ function AssetDetailSheet({ symbol, name, amount, price, change, logoUrl, onClos
   );
 }
 
-function shortAddr(a:string) { return a ? `${a.slice(0,6)}…${a.slice(-4)}` : "—"; }
-function fmtUSD(n:number) { return n>=1e6?`$${(n/1e6).toFixed(2)}M`:n>=1e3?`$${(n/1e3).toFixed(1)}K`:`$${n.toFixed(2)}`; }
-
 // ── Circle SDK window type ────────────────────────────────────────────────────
 declare global {
   interface Window {
