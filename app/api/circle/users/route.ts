@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
       // Initialize user (generate PIN challenge)
       const { userToken } = body as unknown as { userToken: string };
       if (!userToken) return NextResponse.json({ error: "userToken required" }, { status: 400 });
-      const blockchains = ["ETH-SEPOLIA", "ETH", "MATIC", "AVAX", "ARB", "BASE", "OP"];
+      // TEST API key only supports testnet blockchains (never MAINNET names)
+      const blockchains = ["ETH-SEPOLIA", "MATIC-AMOY", "ARB-SEPOLIA", "AVAX-FUJI", "SOL-DEVNET", "UNI-SEPOLIA"];
       const { data, error } = await circleAPI<{ challengeId: string }>(
         "POST", `/user/initialize`, {
           idempotencyKey: idempotencyKey(),

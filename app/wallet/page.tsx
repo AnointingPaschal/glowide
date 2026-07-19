@@ -393,6 +393,7 @@ export default function WalletPage() {
   const [tokenLogos,  setTokenLogos]  = useState<Record<string,string>>({});
   const [onChainBals, setOnChainBals] = useState<Record<string,string>>({});
   const [selectedAsset, setSelectedAsset] = useState<{symbol:string;name:string;amount:string}|null>(null);
+  const [balRefreshTick, setBalRefreshTick] = useState(0);
 
   const [sendTo,      setSendTo]      = useState("");
   const [sendAmt,     setSendAmt]     = useState("");
@@ -438,7 +439,8 @@ export default function WalletPage() {
   useEffect(() => {
     const circleAddr = circle.wallets.find(w => w.id === circle.activeWalletId)?.address;
     const addr = (circleAddr ?? mmAddr)?.toLowerCase();
-    if (!addr) return;
+    if (!addr || addr === "0x") return; // wait until address is available
+
     const ARC_TOKENS_LIST = [
       { symbol:"USDC",   address:"0x3600000000000000000000000000000000000000", decimals:18 },
       { symbol:"EURC",   address:"0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a", decimals:6  },
@@ -446,18 +448,20 @@ export default function WalletPage() {
       { symbol:"USYC",   address:"0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C", decimals:6  },
     ];
     const paddedAddr = "000000000000000000000000" + addr.replace("0x","");
-    Promise.all(ARC_TOKENS_LIST.map(async t => {
+
+    const fetchBalances = () => Promise.all(ARC_TOKENS_LIST.map(async t => {
       try {
         const res = await fetch(ARC_RPC, {
           method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({ jsonrpc:"2.0", id:1, method:"eth_call",
             params:[{ to:t.address, data:"0x70a08231" + paddedAddr }, "latest"],
           }),
+          signal: AbortSignal.timeout(8000),
         });
         const d = await res.json() as { result?:string };
-        if (d.result && d.result !== "0x" && d.result !== "0x0") {
+        if (d.result && d.result !== "0x" && d.result !== "0x0" && d.result.length > 2) {
           const amt = Number(BigInt(d.result)) / Math.pow(10, t.decimals);
-          return { symbol:t.symbol, amount: amt > 0 ? amt.toFixed(6) : "0" };
+          return { symbol:t.symbol, amount: amt.toFixed(amt > 0 ? 6 : 0) };
         }
         return { symbol:t.symbol, amount:"0" };
       } catch { return { symbol:t.symbol, amount:"0" }; }
@@ -466,8 +470,13 @@ export default function WalletPage() {
       results.forEach(r => { bals[r.symbol] = r.amount; });
       setOnChainBals(bals);
     });
+
+    fetchBalances();
+    // Retry once after 3s in case RPC was slow
+    const retry = setTimeout(fetchBalances, 3000);
+    return () => clearTimeout(retry);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mmAddr, circle.activeWalletId]);
+  }, [mmAddr, circle.activeWalletId, circle.wallets.length, balRefreshTick]);
 
   // Load Circle SDK
   useEffect(() => {
@@ -1042,9 +1051,15 @@ export default function WalletPage() {
                     <div className="w-5 h-5 rounded-md bg-white/8 flex items-center justify-center"><Wallet className="w-3 h-3"/></div>
                     Portfolio Balance
                   </div>
-                  <button onClick={()=>setHideBalance(!hideBalance)} className="text-glow-muted hover:text-glow-text">
-                    {hideBalance?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={()=>setBalRefreshTick(t=>t+1)}
+                      className="text-glow-muted hover:text-glow-accent transition-colors">
+                      <RefreshCw className={cn("w-3.5 h-3.5", loadingBal && "animate-spin")}/>
+                    </button>
+                    <button onClick={()=>setHideBalance(!hideBalance)} className="text-glow-muted hover:text-glow-text">
+                      {hideBalance?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}
+                    </button>
+                  </div>
                 </div>
                 <p className="text-3xl font-bold text-glow-text mb-2">
                   {hideBalance ? "••••••" : `$${totalUSD.toFixed(2)}`}
