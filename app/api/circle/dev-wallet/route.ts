@@ -118,6 +118,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(data);
     }
 
+    // Transaction history for Developer-Controlled wallets — no userToken needed
+    if (body.action === "history" && body.walletId) {
+      const { data, error } = await circleAPI<{ transactions: unknown[] }>(
+        "GET", `/developer/transactions?walletIds=${body.walletId}&pageSize=20`
+      );
+      if (error) return NextResponse.json({ error }, { status: 400 });
+      return NextResponse.json(data);
+    }
+
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

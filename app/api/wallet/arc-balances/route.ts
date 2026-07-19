@@ -89,6 +89,17 @@ export async function GET(req: NextRequest) {
     return { symbol: t.symbol, name: t.name, decimals: t.decimals, amount, error: null as string | null, rawResult: debug ? raw : undefined };
   });
 
+  // RECONCILIATION: On Arc, USDC's native balance and its ERC-20 interface balance
+  // represent the SAME underlying value (per docs.arc.io) — just scaled with different
+  // decimals (18 vs 6). If the ERC-20 balanceOf() call comes back 0 while the native
+  // eth_getBalance shows real funds, trust the native value instead of showing a
+  // misleading $0.00 — this can happen if the system contract's call semantics differ
+  // slightly from a standard ERC-20 token.
+  const usdcResult = results.find(r => r.symbol === "USDC");
+  if (usdcResult && parseFloat(usdcResult.amount) === 0 && parseFloat(nativeGasUSDC) > 0) {
+    usdcResult.amount = nativeGasUSDC;
+  }
+
   const balances: Record<string, { name: string; amount: string; decimals: number; error?: string | null; rawResult?: string | null }> = {};
   const errors: Record<string, string> = {};
   results.forEach((r) => {

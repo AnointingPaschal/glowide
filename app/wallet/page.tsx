@@ -558,23 +558,8 @@ export default function WalletPage() {
     return () => { try{document.head.removeChild(s);}catch{} };
   }, []);
 
-  // Fetch balances
-  const loadBalances = useCallback(async () => {
-    if (!circle.userToken || !circle.activeWalletId) return;
-    setLoadingBal(true);
-    try {
-      const r = await fetch(`/api/circle/wallets?userToken=${circle.userToken}&action=balances&walletId=${circle.activeWalletId}`);
-      const d = await r.json() as { tokenBalances?: Array<{token:{symbol:string;name:string;decimals:number};amount:string}> };
-      if (d.tokenBalances) {
-        const w = circle.wallets[0];
-        if (w) circle.setWallets([{...w, balances: d.tokenBalances}, ...circle.wallets.slice(1)]);
-      }
-    } finally { setLoadingBal(false); }
-  }, [circle]);
-
-  useEffect(() => {
-    if (circle.userToken && circle.isInitialized) loadBalances();
-  }, [circle.userToken, circle.isInitialized, loadBalances]);
+  // Legacy loadBalances removed — superseded by /api/wallet/arc-balances (Developer-Controlled
+  // wallets don't use userToken sessions, so this User-Controlled-only path never fired anyway).
 
   // Circle setup
   const setupCircle = async () => {
@@ -720,18 +705,15 @@ export default function WalletPage() {
     if (!sendTo||!sendAmt){toast.error("Fill all fields");return;}
     setLoading(true);
     try {
-      if (circle.userToken && circle.activeWalletId) {
-        const r = await fetch("/api/circle/transactions",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({action:"transfer",userToken:circle.userToken,walletId:circle.activeWalletId,destinationAddress:sendTo,amounts:[sendAmt],blockchain:"ETH-SEPOLIA"})});
-        const d = await r.json() as {challengeId?:string;error?:string};
-        if(!d.challengeId) throw new Error(d.error??"No challenge");
-        if(sdkRef.current&&circle.encryptionKey){
-          sdkRef.current.setAuthentication({userToken:circle.userToken,encryptionKey:circle.encryptionKey});
-          sdkRef.current.execute(d.challengeId,(err)=>{ if(err){toast.error("PIN rejected");return;} toast.success("✓ Sent!"); setModal(null); setSendTo(""); setSendAmt(""); loadBalances(); });
-        } else toast("Challenge: "+d.challengeId,{icon:"🔑"});
-      } else {
-        toast("Connect Circle Wallet to send onchain",{icon:"ℹ️"});
-      }
+      const walletId = resolvedActive?.type === "circle" ? resolvedActive.id : (circle.activeWalletId ?? circle.wallets[0]?.id);
+      if (!walletId) { toast("Create a Circle Developer Wallet first to send on-chain", {icon:"ℹ️"}); return; }
+      const r = await fetch("/api/circle/dev-wallet",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"transfer",walletId,to:sendTo,amount:sendAmt,blockchain:"ETH-SEPOLIA"})});
+      const d = await r.json() as {id?:string;txHash?:string;error?:string};
+      if (d.error) throw new Error(d.error);
+      toast.success(d.txHash ? `✓ Sent! ${d.txHash.slice(0,16)}…` : "✓ Transaction submitted");
+      setModal(null); setSendTo(""); setSendAmt("");
+      setBalRefreshTick(t=>t+1);
     } catch(e){ toast.error(String(e)); }
     finally { setLoading(false); }
   };
@@ -880,13 +862,18 @@ export default function WalletPage() {
         <button disabled={loading||!cctpAmt} onClick={async()=>{
           setLoading(true);
           try{
-            if(!circle.userToken||!circle.activeWalletId){toast.error("Connect Circle Wallet");return;}
-            const r=await fetch("/api/circle/transactions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"contract",userToken:circle.userToken,walletId:circle.activeWalletId,blockchain:"ETH-SEPOLIA",contractAddress:"0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",abiFunctionSignature:"depositForBurn(uint256,uint32,bytes32,address)",abiParameters:[cctpAmt,0,displayAddr,displayAddr]})});
-            const d=await r.json() as {challengeId?:string;error?:string};
-            if(d.challengeId&&sdkRef.current&&circle.encryptionKey){
-              sdkRef.current.setAuthentication({userToken:circle.userToken,encryptionKey:circle.encryptionKey});
-              sdkRef.current.execute(d.challengeId,(err)=>{if(err){toast.error("PIN rejected");return;}toast.success(`✓ Bridging ${cctpAmt} USDC via CCTP!`);setModal(null);});
-            }else toast.success("CCTP initiated");
+            const walletId = resolvedActive?.type === "circle" ? resolvedActive.id : (circle.activeWalletId ?? circle.wallets[0]?.id);
+            if(!walletId){toast("Create a Circle Developer Wallet first",{icon:"ℹ️"});return;}
+            const r=await fetch("/api/circle/dev-wallet",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+              action:"contract",walletId,blockchain:"ETH-SEPOLIA",
+              contractAddress:"0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+              abiFunctionSignature:"depositForBurn(uint256,uint32,bytes32,address)",
+              abiParameters:[cctpAmt,0,displayAddr,displayAddr]})});
+            const d=await r.json() as {id?:string;txHash?:string;error?:string};
+            if(d.error) throw new Error(d.error);
+            toast.success(d.txHash ? `✓ Bridging ${cctpAmt} USDC: ${d.txHash.slice(0,16)}…` : `✓ Bridging ${cctpAmt} USDC via CCTP!`);
+            setModal(null);
+            setBalRefreshTick(t=>t+1);
           }catch(e){toast.error(String(e));}finally{setLoading(false);}
         }} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
           {loading?<Loader2 className="w-5 h-5 animate-spin"/>:<ArrowLeftRight className="w-5 h-5"/>}Bridge {cctpAmt||"0"} USDC
@@ -1070,8 +1057,10 @@ export default function WalletPage() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-glow-border">
         <span className="text-sm font-semibold text-glow-text">Transaction History</span>
         <button onClick={async()=>{
-          if(!circle.userToken||!circle.activeWalletId)return;
-          const r=await fetch(`/api/circle/transactions?userToken=${circle.userToken}&walletId=${circle.activeWalletId}`);
+          const walletId = resolvedActive?.type === "circle" ? resolvedActive.id : (circle.activeWalletId ?? circle.wallets[0]?.id);
+          if(!walletId)return;
+          const r=await fetch("/api/circle/dev-wallet",{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({action:"history",walletId})});
           const d=await r.json() as {transactions?:CircleTx[]};
           if(d.transactions) d.transactions.forEach(tx=>circle.appendTx(tx));
         }} className="text-glow-muted hover:text-glow-text"><RefreshCw className="w-4 h-4"/></button>
