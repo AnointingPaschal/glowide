@@ -7,6 +7,7 @@ import { useCircleStore } from "@/store/circleStore";
 import type { CircleTx } from "@/store/circleStore";
 import { useLocalWalletStore } from "@/store/localWalletStore";
 import type { LocalWallet } from "@/store/localWalletStore";
+import { useActiveWalletStore } from "@/store/activeWalletStore";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import {
@@ -382,6 +383,7 @@ export default function WalletPage() {
   const { address: mmAddr, isConnected, chainId } = useWalletStore();
   const circle = useCircleStore();
   const localWallet = useLocalWalletStore();
+  const { active: activeWalletKey, setActiveWalletKey } = useActiveWalletStore();
 
   const [tab,         setTab]         = useState<"home"|"swap"|"history"|"settings">("home");
   const [modal,       setModal]       = useState<null|"send"|"receive"|"cctp"|"gateway"|"nanopay"|"setup"|"wallets"|"import"|"createLocal"|"importLocal"|"revealPhrase">(null);
@@ -454,9 +456,19 @@ export default function WalletPage() {
 
   // Read on-chain ERC-20 balances via server-side Arc RPC (avoids CORS/timeout issues)
   useEffect(() => {
-    const localAddr = localWallet.wallets.find(w => w.id === localWallet.activeWalletId)?.address;
-    const circleAddr = circle.wallets.find(w => w.id === circle.activeWalletId)?.address;
-    const addr = localAddr ?? circleAddr ?? mmAddr;
+    const key = activeWalletKey ?? (
+      localWallet.wallets.length > 0 ? { type: "local" as const, id: localWallet.activeWalletId ?? localWallet.wallets[0].id } :
+      circle.wallets.length > 0     ? { type: "circle" as const, id: circle.activeWalletId ?? circle.wallets[0].id } :
+      mmAddr                        ? { type: "metamask" as const } :
+      null
+    );
+    const addr = key?.type === "local"
+      ? localWallet.wallets.find(w => w.id === key.id)?.address
+      : key?.type === "circle"
+      ? circle.wallets.find(w => w.id === key.id)?.address
+      : key?.type === "metamask"
+      ? (mmAddr ?? undefined)
+      : undefined;
     if (!addr || addr.length < 10) return;
 
     const fetchBalances = async () => {
@@ -478,7 +490,7 @@ export default function WalletPage() {
     const interval = setInterval(fetchBalances, 30000); // auto-refresh every 30s
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mmAddr, circle.activeWalletId, circle.wallets.length, localWallet.activeWalletId, localWallet.wallets.length, balRefreshTick]);
+  }, [activeWalletKey, mmAddr, circle.activeWalletId, circle.wallets.length, localWallet.activeWalletId, localWallet.wallets.length, balRefreshTick]);
 
   // Load Circle SDK
   useEffect(() => {
@@ -535,6 +547,7 @@ export default function WalletPage() {
           balances: [],
         }]);
         circle.setActive(d.wallet.id);
+        setActiveWalletKey({type:"circle", id:d.wallet.id});
         circle.setInit(true);
         setSetupStep("done");
         setModal(null);
@@ -577,7 +590,9 @@ export default function WalletPage() {
     if (wrong) { toast.error("Word mismatch — check your backup and try again"); return; }
     try {
       const { ethers } = await import("ethers");
-      const wallet = new ethers.Wallet(generatedPrivKey);
+      // IMPORTANT: derive from the mnemonic (not the raw private key) so the
+      // encrypted keystore JSON preserves the seed phrase for later reveal.
+      const wallet = ethers.Wallet.fromPhrase(generatedMnemonic);
       const encryptedJson = await wallet.encrypt(newWalletPass);
       const id = crypto.randomUUID();
       localWallet.addWallet({
@@ -589,6 +604,7 @@ export default function WalletPage() {
       setGeneratedMnemonic(""); setGeneratedPrivKey(""); setGeneratedAddress("");
       setCreateStep("password"); setConfirmWords([]);
       setModal(null);
+      setActiveWalletKey({ type: "local", id });
       toast.success(`✓ Wallet created: ${shortAddr(wallet.address)}`);
       setBalRefreshTick(t => t + 1);
     } catch (e) { toast.error(String(e)); }
@@ -617,6 +633,7 @@ export default function WalletPage() {
       });
       setImportPhraseOrKey(""); setImportPass(""); setImportName("");
       setModal(null);
+      setActiveWalletKey({type:"local", id});
       toast.success(`✓ Wallet imported: ${shortAddr(wallet.address)}`);
       setBalRefreshTick(t => t + 1);
     } catch (e) { toast.error(`Import failed: ${(e as Error).message}`); }
@@ -624,8 +641,9 @@ export default function WalletPage() {
 
   // ── Reveal seed phrase / private key for an existing local wallet ────────────
   const revealSecret = async (type: "phrase"|"key") => {
-    const w = localWallet.wallets.find(w => w.id === localWallet.activeWalletId);
-    if (!w) { toast.error("No active wallet"); return; }
+    const activeLocalId = resolvedActive?.type === "local" ? resolvedActive.id : localWallet.activeWalletId;
+    const w = localWallet.wallets.find(w => w.id === activeLocalId);
+    if (!w) { toast.error("No active self-custody wallet"); return; }
     if (!revealPass) { toast.error("Enter your password"); return; }
     try {
       const { ethers } = await import("ethers");
@@ -669,9 +687,19 @@ export default function WalletPage() {
 
   const copyAddr = async () => { await navigator.clipboard.writeText(displayAddr); setCopied(true); setTimeout(()=>setCopied(false),2000); };
 
-  const activeWallet = circle.wallets.find(w=>w.id===circle.activeWalletId);
-  const activeLocalWallet = localWallet.wallets.find(w=>w.id===localWallet.activeWalletId);
-  const displayAddr  = activeLocalWallet?.address ?? activeWallet?.address ?? mmAddr ?? "";
+  // Resolve the single active wallet from the unified key, falling back to
+  // "most recently created" priority only if nothing has been explicitly chosen.
+  const resolvedActive = activeWalletKey ?? (
+    localWallet.wallets.length > 0 ? { type: "local" as const, id: localWallet.activeWalletId ?? localWallet.wallets[0].id } :
+    circle.wallets.length > 0     ? { type: "circle" as const, id: circle.activeWalletId ?? circle.wallets[0].id } :
+    mmAddr                        ? { type: "metamask" as const } :
+    null
+  );
+  const activeLocalWallet = resolvedActive?.type === "local"
+    ? localWallet.wallets.find(w => w.id === resolvedActive.id) : undefined;
+  const activeWallet = resolvedActive?.type === "circle"
+    ? circle.wallets.find(w => w.id === resolvedActive.id) : undefined;
+  const displayAddr  = activeLocalWallet?.address ?? activeWallet?.address ?? (resolvedActive?.type==="metamask" ? mmAddr : "") ?? "";
   const hasCircle    = circle.isInitialized && circle.wallets.length > 0;
   const liveP = (sym: string) => livePrices[sym]?.price ?? PRICE_DEFAULTS[sym] ?? 1;
   const liveC = (sym: string) => livePrices[sym]?.change ?? CHANGE_DEFAULTS[sym] ?? 0;
@@ -1037,8 +1065,9 @@ export default function WalletPage() {
             <div className="space-y-2 px-4">
               {/* MetaMask wallet if connected */}
               {mmAddr && (
-                <div className={cn("flex items-center gap-3 p-4 rounded-2xl border transition-colors",
-                  !hasCircle && localWallet.wallets.length===0 ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
+                <button onClick={()=>{setActiveWalletKey({type:"metamask"}); setModal(null); toast("Switched to MetaMask",{icon:"🦊"});}}
+                  className={cn("w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors text-left",
+                    resolvedActive?.type==="metamask" ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
                   <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-bold text-orange-400 flex-shrink-0">
                     {mmAddr.slice(2,4).toUpperCase()}
                   </div>
@@ -1046,13 +1075,14 @@ export default function WalletPage() {
                     <p className="text-sm font-semibold text-glow-text">MetaMask</p>
                     <p className="text-xs font-mono text-glow-muted truncate">{mmAddr}</p>
                   </div>
-                </div>
+                  {resolvedActive?.type==="metamask" && <Check className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
+                </button>
               )}
               {/* Local wallets (real generated/imported) */}
               {localWallet.wallets.map((w,i)=>(
-                <button key={w.id} onClick={()=>{localWallet.setActive(w.id); setModal(null); toast(`Switched to ${w.name}`,{icon:"👛"});}}
+                <button key={w.id} onClick={()=>{localWallet.setActive(w.id); setActiveWalletKey({type:"local",id:w.id}); setModal(null); toast(`Switched to ${w.name}`,{icon:"👛"});}}
                   className={cn("w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors text-left",
-                    w.id===localWallet.activeWalletId ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
+                    resolvedActive?.type==="local" && resolvedActive.id===w.id ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
                   <div className="w-10 h-10 rounded-full bg-glow-gradient flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                     {w.address.slice(2,4).toUpperCase()}
                   </div>
@@ -1063,14 +1093,14 @@ export default function WalletPage() {
                     </div>
                     <p className="text-xs font-mono text-glow-muted truncate">{shortAddr(w.address)}</p>
                   </div>
-                  {w.id===localWallet.activeWalletId && <Check className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
+                  {resolvedActive?.type==="local" && resolvedActive.id===w.id && <Check className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
                 </button>
               ))}
               {/* Circle Developer wallets */}
               {circle.wallets.map((w,i)=>(
-                <button key={w.id} onClick={()=>{circle.setActive(w.id); setModal(null); toast(`Switched to Circle Wallet ${i+1}`,{icon:"🔐"});}}
+                <button key={w.id} onClick={()=>{circle.setActive(w.id); setActiveWalletKey({type:"circle",id:w.id}); setModal(null); toast(`Switched to Circle Wallet ${i+1}`,{icon:"🔐"});}}
                   className={cn("w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors text-left",
-                    w.id===circle.activeWalletId ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
+                    resolvedActive?.type==="circle" && resolvedActive.id===w.id ? "bg-glow-accent/10 border-glow-accent/30" : "bg-glow-surface border-glow-border hover:bg-glow-accent/5")}>
                   <div className="w-10 h-10 rounded-full bg-glow-gradient flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                     {(w.address??'').slice(2,4).toUpperCase()||"W"+(i+1)}
                   </div>
@@ -1081,7 +1111,7 @@ export default function WalletPage() {
                     </div>
                     <p className="text-xs font-mono text-glow-muted truncate">{w.address??shortAddr(w.id)}</p>
                   </div>
-                  {w.id===circle.activeWalletId && <Check className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
+                  {resolvedActive?.type==="circle" && resolvedActive.id===w.id && <Check className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
                 </button>
               ))}
               {!mmAddr && circle.wallets.length===0 && localWallet.wallets.length===0 && (
