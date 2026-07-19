@@ -510,6 +510,8 @@ export default function LaunchpadPage() {
       const res = await fetch(`/api/launchpad?limit=24${q}`);
       const d = await res.json();
       setTokens(d.tokens ?? []);
+      // Kick off background price indexer (fire-and-forget)
+      fetch('/api/launchpad/prices').catch(() => {});
     } catch { /* silent */ }
     finally { setTokensLoading(false); }
   }, [searchQ]);
