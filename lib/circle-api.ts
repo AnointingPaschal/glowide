@@ -29,14 +29,38 @@ async function getCirclePublicKey(): Promise<string> {
 
 export async function getEntitySecretCiphertext(): Promise<string> {
   const pubKeyPem = await getCirclePublicKey();
-  // Normalize key format via createPublicKey — required for OpenSSL 3 / Node 20+
-  // Avoids "DECODER routines::unsupported" on legacy PEM headers
-  const keyObject = crypto.createPublicKey({ key: pubKeyPem, format: "pem" });
-  const encrypted = crypto.publicEncrypt(
-    { key: keyObject, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
-    Buffer.from(ENTITY_SECRET, "hex")
-  );
-  return encrypted.toString("base64");
+  const secretBuf = Buffer.from(ENTITY_SECRET, "hex");
+
+  // Strategy 1: createPublicKey (normalises PEM format for OpenSSL 3 / Node 20+)
+  try {
+    const keyObj = crypto.createPublicKey({ key: pubKeyPem, format: "pem" });
+    const encrypted = crypto.publicEncrypt(
+      { key: keyObj, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
+      secretBuf
+    );
+    return encrypted.toString("base64");
+  } catch (e1) {
+    // Strategy 2: pass raw PEM string (works on Node 18)
+    try {
+      const encrypted = crypto.publicEncrypt(
+        { key: pubKeyPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
+        secretBuf
+      );
+      return encrypted.toString("base64");
+    } catch (e2) {
+      // Strategy 3: try with sha1 oaep (some Circle environments use this)
+      try {
+        const keyObj = crypto.createPublicKey({ key: pubKeyPem, format: "pem" });
+        const encrypted = crypto.publicEncrypt(
+          { key: keyObj, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha1" },
+          secretBuf
+        );
+        return encrypted.toString("base64");
+      } catch (e3) {
+        throw new Error(`Circle RSA encryption failed on all strategies. Original: ${e1}. Check CIRCLE_ENTITY_SECRET and CIRCLE_API_KEY env vars.`);
+      }
+    }
+  }
 }
 
 // ── Generic Circle API helper ─────────────────────────────────────────────────

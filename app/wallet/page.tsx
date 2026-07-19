@@ -17,6 +17,45 @@ import {
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
+// ── QR Code canvas component ───────────────────────────────────────────────────
+function QRCanvas({ address }: { address: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas || !address) return;
+    // Dynamic import of qrcode to avoid SSR issues
+    import("qrcode").then(QRCode => {
+      QRCode.toCanvas(canvas, address, {
+        width: 192, margin: 1,
+        color: { dark: "#000000", light: "#ffffff" },
+      }).catch(() => {
+        // Fallback: draw simple grid pattern
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        canvas.width = 192; canvas.height = 192;
+        ctx.fillStyle = "#fff"; ctx.fillRect(0,0,192,192);
+        ctx.fillStyle = "#000";
+        let s = 0;
+        for(let i=2;i<address.length;i++) s=(s*31+address.charCodeAt(i))>>>0;
+        const rng=()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};
+        const sz=8, cols=24, rows=24;
+        const pat=(x:number,y:number)=>{
+          ctx.fillRect(x*sz,y*sz,7*sz,sz);ctx.fillRect(x*sz,(y+6)*sz,7*sz,sz);
+          ctx.fillRect(x*sz,y*sz,sz,7*sz);ctx.fillRect((x+6)*sz,y*sz,sz,7*sz);
+          ctx.clearRect((x+1)*sz,(y+1)*sz,5*sz,5*sz);
+          ctx.fillRect((x+2)*sz,(y+2)*sz,3*sz,3*sz);
+        };
+        pat(0,0);pat(cols-7,0);pat(0,rows-7);
+        for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+          if((r<8&&c<8)||(r<8&&c>cols-9)||(r>rows-9&&c<8)) continue;
+          if(rng()>0.45) ctx.fillRect(c*sz,r*sz,sz,sz);
+        }
+      });
+    }).catch(() => {});
+  }, [address]);
+  return <canvas ref={ref} width={192} height={192} className="rounded-lg"/>;
+}
+
 // Default prices — overwritten by live /api/prices fetch on mount
 const PRICE_DEFAULTS: Record<string,number> = {
   USDC:1, EURC:1.09, cirBTC:97000, USYC:1.002,
@@ -87,8 +126,8 @@ function ActionBtn({ icon:Icon, label, onClick, disabled=false }:
   return (
     <button onClick={onClick} disabled={disabled}
       className="flex flex-col items-center gap-1.5 disabled:opacity-40">
-      <div className="w-12 h-12 rounded-2xl bg-glow-surface border border-glow-border flex items-center justify-center hover:bg-white/12 active:scale-95 transition-all">
-        <Icon className="w-5 h-5 text-glow-text"/>
+      <div className="w-12 h-12 rounded-2xl bg-glow-card border border-glow-border flex items-center justify-center hover:border-glow-accent/50 hover:bg-glow-accent/10 active:scale-95 transition-all shadow-sm">
+        <Icon className="w-5 h-5 text-glow-accent"/>
       </div>
       <span className="text-[11px] text-glow-muted font-medium">{label}</span>
     </button>
@@ -532,8 +571,8 @@ export default function WalletPage() {
           <button onClick={()=>setModal(null)} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
         </div>
         <div className="flex flex-col items-center gap-4">
-          <div className="w-44 h-44 bg-white rounded-2xl p-3 flex items-center justify-center">
-            <div className="w-full h-full bg-gray-100 rounded-xl flex items-center justify-center text-4xl">🔲</div>
+          <div className="w-52 h-52 bg-white rounded-2xl p-2 flex items-center justify-center shadow-lg">
+            <QRCanvas address={displayAddr}/>
           </div>
           <p className="text-xs text-glow-muted text-center max-w-[240px]">Send only USDC and supported tokens to this address</p>
           <div className="w-full bg-glow-surface border border-glow-border rounded-2xl p-3 flex items-center gap-2">
@@ -843,7 +882,10 @@ export default function WalletPage() {
                     <AssetRow key={b.token.symbol} symbol={b.token.symbol} name={b.token.name} amount={b.amount}
                       livePrice={liveP(b.token.symbol)} liveChange={liveC(b.token.symbol)}
                       logoUrl={tokenLogos[b.token.symbol]}
-                      onClick={()=>toast(`${b.token.symbol}: ${b.amount}`,{icon:"💰"})}/>
+                      onClick={()=>{
+                        const val = (parseFloat(b.amount||"0") * liveP(b.token.symbol)).toFixed(2);
+                        toast(`${b.token.name}\n${b.amount} ${b.token.symbol} · $${val}`, {icon: tokenLogos[b.token.symbol] ? undefined : "🪙", duration:3000});
+                      }}/>
                   ))}
                 </div>
               </div>
