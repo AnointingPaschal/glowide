@@ -10,10 +10,10 @@ import toast from "react-hot-toast";
 import {
   Send, ArrowDownLeft, RefreshCw, Copy, CheckCircle, Eye, EyeOff,
   ChevronRight, Plus, X, Loader2, Shield, Zap, ArrowLeftRight,
-  Globe, AlertTriangle, Settings, ArrowUpRight, ArrowDownRight,
-  TrendingUp, TrendingDown, Coins, KeyRound, Fingerprint,
-  Clock, Home, BarChart2, ExternalLink, Search, ChevronDown,
-  Wallet, Check, Lock,
+  Globe, AlertTriangle, Settings, ArrowUpRight,
+  TrendingUp, Coins, KeyRound, Fingerprint,
+  Clock, Home, ExternalLink, ChevronDown,
+  Wallet, Lock, ChevronLeft,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -128,11 +128,14 @@ export default function WalletPage() {
   const circle = useCircleStore();
 
   const [tab,         setTab]         = useState<"home"|"swap"|"history"|"settings">("home");
-  const [modal,       setModal]       = useState<null|"send"|"receive"|"cctp"|"gateway"|"nanopay"|"setup">(null);
+  const [modal,       setModal]       = useState<null|"send"|"receive"|"cctp"|"gateway"|"nanopay"|"setup"|"wallets"|"import">(null);
+  const [settingsScreen, setSettingsScreen] = useState<null|"security"|"networks"|"tokens"|"defi">(null);
   const [hideBalance, setHideBalance] = useState(false);
   const [copied,      setCopied]      = useState(false);
   const [loading,     setLoading]     = useState(false);
   const [loadingBal,  setLoadingBal]  = useState(false);
+  const [importKey,   setImportKey]   = useState("");
+  const [importLoading, setImportLoading] = useState(false);
 
   const [sendTo,      setSendTo]      = useState("");
   const [sendAmt,     setSendAmt]     = useState("");
@@ -251,7 +254,7 @@ export default function WalletPage() {
   // ── Setup Modal ──────────────────────────────────────────────────────────────
   const SetupModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full max-w-sm bg-[#1a1b23] border border-white/10 rounded-t-3xl p-6 space-y-5 pb-10">
+      <div className="w-full bg-[#1a1b23] border border-white/10 rounded-t-3xl p-6 space-y-5 pb-10">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4"/>
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-glow-gradient flex items-center justify-center"><Shield className="w-6 h-6 text-white"/></div>
@@ -285,7 +288,7 @@ export default function WalletPage() {
   // ── Send Modal ───────────────────────────────────────────────────────────────
   const SendModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full max-w-sm bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
+      <div className="w-full bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <h3 className="text-base font-bold text-white">Send USDC</h3>
@@ -323,7 +326,7 @@ export default function WalletPage() {
   // ── CCTP Modal ───────────────────────────────────────────────────────────────
   const CCTPModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full max-w-sm bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
+      <div className="w-full bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-white">CCTP Bridge</h3><p className="text-xs text-white/40">Native USDC burn+mint — no wrapped tokens</p></div>
@@ -366,7 +369,7 @@ export default function WalletPage() {
   // ── Gateway Modal ─────────────────────────────────────────────────────────────
   const GatewayModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full max-w-sm bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
+      <div className="w-full bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-white">Gateway Transfer</h3><p className="text-xs text-white/40">&lt;500ms · Unified balance</p></div>
@@ -409,7 +412,7 @@ export default function WalletPage() {
   // ── Nanopay Modal ──────────────────────────────────────────────────────────
   const NanopayModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full max-w-sm bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
+      <div className="w-full bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-white">Nanopayment</h3><p className="text-xs text-white/40">Gas-free · x402 · from $0.000001</p></div>
@@ -444,7 +447,7 @@ export default function WalletPage() {
   // ── Receive Modal ───────────────────────────────────────────────────────────
   const ReceiveModal = (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full max-w-sm bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10">
+      <div className="w-full bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4"/>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-base font-bold text-white">Receive USDC</h3>
@@ -563,11 +566,113 @@ export default function WalletPage() {
       {modal==="gateway" && GatewayModal}
       {modal==="nanopay" && NanopayModal}
 
-      <div className="max-w-sm mx-auto flex flex-col h-[calc(100dvh-56px)] bg-[#13141c] relative">
+      {/* ── Wallet Switcher Modal ──────────────────────────────────────── */}
+      {modal==="wallets" && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+          <div className="w-full bg-[#1a1b23] border border-white/10 rounded-t-3xl pb-10">
+            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mt-4 mb-5"/>
+            <div className="flex items-center justify-between px-5 mb-4">
+              <h3 className="text-base font-bold text-white">My Wallets</h3>
+              <div className="flex gap-2">
+                <button onClick={()=>setModal("import")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/6 border border-white/10 rounded-xl text-xs text-white/70 hover:text-white transition-colors">
+                  <ArrowDownLeft className="w-3.5 h-3.5"/>Import
+                </button>
+                <button onClick={()=>{setModal("setup");}}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-glow-gradient rounded-xl text-xs text-white font-semibold">
+                  <Plus className="w-3.5 h-3.5"/>New
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2 px-4">
+              {/* MetaMask wallet if connected */}
+              {mmAddr && (
+                <div className={cn("flex items-center gap-3 p-4 rounded-2xl border transition-colors",
+                  !hasCircle ? "bg-glow-accent/10 border-glow-accent/30" : "bg-white/4 border-white/8 hover:bg-white/6")}>
+                  <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-bold text-orange-400 flex-shrink-0">
+                    {mmAddr.slice(2,4).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white">MetaMask</p>
+                    <p className="text-xs font-mono text-white/40 truncate">{mmAddr}</p>
+                  </div>
+                  {!hasCircle && <span className="text-[10px] text-glow-accent bg-glow-accent/10 border border-glow-accent/20 px-2 py-0.5 rounded-full font-semibold">Active</span>}
+                </div>
+              )}
+              {/* Circle wallets */}
+              {circle.wallets.map((w,i)=>(
+                <button key={w.id} onClick={()=>{circle.setActive(w.id); setModal(null); toast(`Switched to Circle Wallet ${i+1}`,{icon:"🔐"});}}
+                  className={cn("w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors text-left",
+                    w.id===circle.activeWalletId ? "bg-glow-accent/10 border-glow-accent/30" : "bg-white/4 border-white/8 hover:bg-white/6")}>
+                  <div className="w-10 h-10 rounded-full bg-glow-gradient flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                    {(w.address??'').slice(2,4).toUpperCase()||"W"+(i+1)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-white">Circle MPC Wallet {circle.wallets.length > 1 ? i+1 : ""}</p>
+                      <span className="text-[9px] text-emerald-400 bg-emerald-500/15 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">MPC</span>
+                    </div>
+                    <p className="text-xs font-mono text-white/40 truncate">{w.address??shortAddr(w.id)}</p>
+                  </div>
+                  {w.id===circle.activeWalletId && <Check className="w-4 h-4 text-glow-accent flex-shrink-0"/>}
+                </button>
+              ))}
+              {!mmAddr && circle.wallets.length===0 && (
+                <div className="text-center py-8 text-white/30">
+                  <Wallet className="w-10 h-10 mx-auto mb-3 opacity-40"/>
+                  <p className="text-sm">No wallets yet</p>
+                  <p className="text-xs mt-1">Create a Circle MPC wallet or connect MetaMask</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Import Wallet Modal ─────────────────────────────────────────── */}
+      {modal==="import" && (
+        <div className="fixed inset-0 z-50 bg-black/75 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+          <div className="w-full bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
+            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Import Wallet</h3>
+                <p className="text-xs text-white/40 mt-0.5">Watch address or enter private key</p>
+              </div>
+              <button onClick={()=>setModal(null)} className="p-2 text-white/40"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300/80 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5"/>
+              Never share your private key. GlowIDE is open source — always verify.
+            </div>
+            <div className="bg-white/4 border border-white/8 rounded-2xl p-4 space-y-3">
+              <p className="text-xs text-white/40 uppercase tracking-wider">Address or Private Key</p>
+              <textarea value={importKey} onChange={e=>setImportKey(e.target.value)}
+                placeholder="0x... wallet address (watch-only) or private key"
+                rows={3} className="w-full bg-transparent text-sm font-mono text-white focus:outline-none placeholder-white/25 resize-none"/>
+            </div>
+            <button disabled={!importKey||importLoading} onClick={async()=>{
+              setImportLoading(true);
+              await new Promise(r=>setTimeout(r,800));
+              if(importKey.startsWith("0x")&&importKey.length===42){
+                toast.success("Watch-only wallet added!"); setModal(null); setImportKey("");
+              } else {
+                toast.error("Full key import requires Circle MPC setup for security");
+              }
+              setImportLoading(false);
+            }} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+              {importLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <ArrowDownLeft className="w-5 h-5"/>}
+              Import Wallet
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="w-full flex flex-col h-[calc(100dvh-56px)] bg-[#13141c] relative">
 
         {/* ── Top bar ─────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0">
-          <button className="flex items-center gap-2 bg-white/6 border border-white/8 rounded-xl px-3 py-2">
+          <button onClick={()=>setModal("wallets")} className="flex items-center gap-2 bg-white/6 border border-white/8 rounded-xl px-3 py-2 hover:bg-white/10 transition-colors active:scale-95">
             <div className="w-6 h-6 rounded-full bg-glow-gradient flex items-center justify-center text-[10px] font-bold text-white">
               {displayAddr.slice(2,4).toUpperCase()}
             </div>
@@ -588,7 +693,7 @@ export default function WalletPage() {
           {tab === "home" && (
             <div className="space-y-3 pb-4">
               {/* Portfolio balance card */}
-              <div className="mx-4 bg-gradient-to-br from-[#1e2240] to-[#161825] border border-white/8 rounded-3xl p-5 shadow-2xl">
+              <div className="mx-3 bg-gradient-to-br from-[#1e2240] to-[#161825] border border-white/8 rounded-3xl p-5 shadow-2xl">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2 text-xs text-white/50">
                     <div className="w-5 h-5 rounded-md bg-white/8 flex items-center justify-center"><Wallet className="w-3 h-3"/></div>
@@ -625,7 +730,7 @@ export default function WalletPage() {
               </div>
 
               {/* Action buttons */}
-              <div className="flex items-center justify-around px-6 py-2">
+              <div className="flex items-center justify-around px-4 py-2">
                 <ActionBtn icon={Send}           label="Send"    onClick={()=>setModal("send")}/>
                 <ActionBtn icon={ArrowDownLeft}  label="Receive" onClick={()=>setModal("receive")}/>
                 <ActionBtn icon={ArrowLeftRight} label="CCTP"    onClick={()=>setModal("cctp")}/>
@@ -647,10 +752,11 @@ export default function WalletPage() {
               )}
 
               {/* My Assets */}
-              <div className="mx-4">
+              <div className="mx-3">
                 <div className="flex items-center justify-between mb-2 px-1">
                   <span className="text-base font-bold text-white">My Assets</span>
-                  <button className="flex items-center gap-1.5 text-xs text-glow-accent bg-glow-accent/10 border border-glow-accent/20 px-3 py-1.5 rounded-xl">
+                  <button onClick={()=>{setTab("settings"); setSettingsScreen("tokens");}}
+                    className="flex items-center gap-1.5 text-xs text-glow-accent bg-glow-accent/10 border border-glow-accent/20 px-3 py-1.5 rounded-xl hover:bg-glow-accent/20 transition-colors">
                     <Plus className="w-3.5 h-3.5"/>Import
                   </button>
                 </div>
@@ -666,22 +772,129 @@ export default function WalletPage() {
 
           {tab === "swap"    && SwapTab}
           {tab === "history" && HistoryTab}
-          {tab === "settings" && (
+          {tab === "settings" && !settingsScreen && (
             <div className="p-4 space-y-3">
               <h2 className="text-lg font-bold text-white px-1">Settings</h2>
               {[
-                {icon:Shield, label:"Security", desc:"PIN · Biometrics · Recovery",  action:()=>{}},
-                {icon:Globe,  label:"Networks", desc:"Manage connected networks",     action:()=>{}},
-                {icon:Coins,  label:"Tokens",   desc:"Manage custom tokens",          action:()=>{}},
-                {icon:Zap,    label:"DeFi",     desc:"Lending · Yield · LP positions",action:()=>{}},
+                {icon:Shield,    label:"Security", desc:"PIN · Biometrics · Recovery",   key:"security" as const},
+                {icon:Globe,     label:"Networks", desc:"Manage connected networks",      key:"networks" as const},
+                {icon:Coins,     label:"Tokens",   desc:"Manage custom tokens",           key:"tokens"   as const},
+                {icon:Zap,       label:"DeFi",     desc:"Lending · Yield · LP positions", key:"defi"     as const},
               ].map(item=>(
-                <button key={item.label} onClick={item.action}
-                  className="w-full flex items-center gap-3 p-4 bg-[#1a1b23] border border-white/8 rounded-2xl hover:bg-white/4">
+                <button key={item.label} onClick={()=>setSettingsScreen(item.key)}
+                  className="w-full flex items-center gap-3 p-4 bg-[#1a1b23] border border-white/8 rounded-2xl hover:bg-white/4 transition-colors">
                   <div className="w-9 h-9 rounded-xl bg-glow-accent/15 flex items-center justify-center"><item.icon className="w-5 h-5 text-glow-accent"/></div>
                   <div className="text-left flex-1"><p className="text-sm font-semibold text-white">{item.label}</p><p className="text-xs text-white/40">{item.desc}</p></div>
                   <ChevronRight className="w-4 h-4 text-white/30"/>
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* ── Security sub-screen ─────────────────────────────────────── */}
+          {tab === "settings" && settingsScreen === "security" && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <button onClick={()=>setSettingsScreen(null)} className="p-2 -ml-2 text-white/50 hover:text-white"><ChevronDown className="w-5 h-5 rotate-90"/></button>
+                <h2 className="text-base font-bold text-white">Security</h2>
+              </div>
+              {[
+                {icon:KeyRound,      label:"Change PIN",         desc:"Update your wallet PIN", action:()=>toast("Set NEXT_PUBLIC_CIRCLE_APP_ID to enable PIN management",{icon:"🔑"})},
+                {icon:Fingerprint,   label:"Biometrics",         desc:"Enable Face/Touch ID",   action:()=>toast("Biometrics requires native app",{icon:"👆"})},
+                {icon:Shield,        label:"Recovery Phrase",    desc:"Backup your wallet",     action:()=>toast("Circle MPC wallets use PIN recovery — no seed phrase",{icon:"🛡"})},
+                {icon:Lock,          label:"Auto-lock Timer",    desc:"Lock after 5 minutes",   action:()=>toast("Auto-lock: 5 min",{icon:"⏱"})},
+              ].map(item=>(
+                <button key={item.label} onClick={item.action}
+                  className="w-full flex items-center gap-3 p-4 bg-[#1a1b23] border border-white/8 rounded-2xl hover:bg-white/4 transition-colors">
+                  <div className="w-9 h-9 rounded-xl bg-glow-accent/15 flex items-center justify-center"><item.icon className="w-5 h-5 text-glow-accent"/></div>
+                  <div className="text-left flex-1"><p className="text-sm font-semibold text-white">{item.label}</p><p className="text-xs text-white/40">{item.desc}</p></div>
+                  <ChevronRight className="w-4 h-4 text-white/30"/>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── Networks sub-screen ─────────────────────────────────────── */}
+          {tab === "settings" && settingsScreen === "networks" && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <button onClick={()=>setSettingsScreen(null)} className="p-2 -ml-2 text-white/50 hover:text-white"><ChevronDown className="w-5 h-5 rotate-90"/></button>
+                <h2 className="text-base font-bold text-white">Networks</h2>
+              </div>
+              {[
+                {name:"Arc Testnet",   id:5042002, rpc:"https://rpc.testnet.arc.network",          active:true},
+                {name:"Ethereum",      id:1,        rpc:"https://eth.llamarpc.com",                  active:false},
+                {name:"Base",          id:8453,     rpc:"https://mainnet.base.org",                  active:false},
+                {name:"Polygon",       id:137,      rpc:"https://polygon-rpc.com",                   active:false},
+                {name:"Arbitrum One",  id:42161,    rpc:"https://arb1.arbitrum.io/rpc",              active:false},
+                {name:"Optimism",      id:10,       rpc:"https://mainnet.optimism.io",               active:false},
+              ].map(n=>(
+                <div key={n.id} className="flex items-center gap-3 p-4 bg-[#1a1b23] border border-white/8 rounded-2xl">
+                  <div className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", n.active?"bg-emerald-400":"bg-white/20")}/>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white">{n.name}</p>
+                    <p className="text-[10px] text-white/30 font-mono truncate">Chain {n.id}</p>
+                  </div>
+                  {n.active ? (
+                    <span className="text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 px-2 py-0.5 rounded-full font-semibold">Active</span>
+                  ) : (
+                    <button onClick={()=>toast(`Switch to ${n.name} via your browser wallet`,{icon:"🔗"})}
+                      className="text-[10px] text-white/40 hover:text-white border border-white/10 px-2 py-0.5 rounded-full transition-colors">Switch</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Tokens sub-screen ──────────────────────────────────────── */}
+          {tab === "settings" && settingsScreen === "tokens" && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <button onClick={()=>setSettingsScreen(null)} className="p-2 -ml-2 text-white/50 hover:text-white"><ChevronDown className="w-5 h-5 rotate-90"/></button>
+                <h2 className="text-base font-bold text-white">Custom Tokens</h2>
+              </div>
+              <div className="bg-[#1a1b23] border border-white/8 rounded-2xl p-4 space-y-3">
+                <p className="text-xs text-white/40">Add a custom ERC-20 token by contract address</p>
+                <input placeholder="0x Contract address…" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm font-mono text-white focus:outline-none focus:border-glow-accent/50 placeholder-white/25"/>
+                <input placeholder="Symbol (e.g. TOKEN)" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-glow-accent/50 placeholder-white/25"/>
+                <input placeholder="Decimals (e.g. 18)" type="number" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-glow-accent/50 placeholder-white/25"/>
+                <button onClick={()=>toast("Custom token import — connect Circle wallet first",{icon:"🪙"})}
+                  className="w-full py-3 bg-glow-gradient text-white font-bold rounded-xl text-sm">+ Import Token</button>
+              </div>
+              <div className="bg-[#1a1b23] border border-white/8 rounded-2xl overflow-hidden">
+                <p className="px-4 py-3 text-xs font-semibold text-white/40 uppercase tracking-wider border-b border-white/6">Arc Testnet Tokens</p>
+                {[
+                  {symbol:"USDC",  addr:"0x3600000000000000000000000000000000000000", decimals:18},
+                  {symbol:"EURC",  addr:"0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a", decimals:6},
+                  {symbol:"cirBTC",addr:"0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF", decimals:8},
+                  {symbol:"USYC",  addr:"0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C", decimals:6},
+                ].map(t=>(
+                  <div key={t.symbol} className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-0">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{background:CHAIN_BG[t.symbol]??"#7c3aed"}}>{t.symbol.slice(0,2)}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white">{t.symbol}</p>
+                      <p className="text-[10px] font-mono text-white/30 truncate">{t.addr.slice(0,18)}…</p>
+                    </div>
+                    <span className="text-[10px] text-emerald-400 bg-emerald-500/15 border border-emerald-500/20 px-2 py-0.5 rounded-full">Added</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── DeFi sub-screen ────────────────────────────────────────── */}
+          {tab === "settings" && settingsScreen === "defi" && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <button onClick={()=>setSettingsScreen(null)} className="p-2 -ml-2 text-white/50 hover:text-white"><ChevronDown className="w-5 h-5 rotate-90"/></button>
+                <h2 className="text-base font-bold text-white">DeFi Positions</h2>
+              </div>
+              <div className="bg-[#1a1b23] border border-white/8 rounded-2xl p-5 text-center space-y-3">
+                <Zap className="w-10 h-10 text-glow-accent/40 mx-auto"/>
+                <p className="text-sm font-semibold text-white">No active positions</p>
+                <p className="text-xs text-white/40">Lend, borrow, or provide liquidity on Arc Testnet to see positions here.</p>
+                <a href="/defi" className="inline-block px-5 py-2.5 bg-glow-gradient text-white font-bold rounded-xl text-sm mt-2">Go to DeFi →</a>
+              </div>
             </div>
           )}
         </div>

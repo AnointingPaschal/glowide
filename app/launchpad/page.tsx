@@ -221,6 +221,10 @@ function StepBar({ current }: { current: number }) {
 function TokenDetailView({ token, onBack }: { token: LaunchpadToken; onBack(): void }) {
   const [tf, setTF] = useState<"1H"|"24H"|"7D">("24H");
   const [copied, setCopied] = useState(false);
+  const [infoTab, setInfoTab] = useState<"info"|"txns">("info");
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateForm, setUpdateForm] = useState({ website: token.website||"", twitter: token.twitter||"", description: token.description||"", telegram: "", discord: "" });
+  const [updating, setUpdating] = useState(false);
   const supply = parseFloat(token.total_supply||"0") / Math.pow(10, token.decimals||18);
   const pHist  = token.price_history ?? Array.from({length:48},(_,k)=>({time:Date.now()/1000-k*1800,price:Math.random()*0.001+0.0005})).reverse();
   const ch24   = token.price_change_24h ?? 0;
@@ -325,12 +329,148 @@ function TokenDetailView({ token, onBack }: { token: LaunchpadToken; onBack(): v
         </div>
       </div>
 
-      {/* Links */}
-      <div className="flex gap-2 flex-wrap">
-        {token.website && <a href={token.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white/70 hover:text-white"><Globe className="w-3.5 h-3.5"/>Website</a>}
-        {token.twitter && <a href={token.twitter} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white/70 hover:text-white">𝕏 Twitter</a>}
-        <a href={`https://testnet.arcscan.app/token/${token.token_address}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white/70 hover:text-white"><ExternalLink className="w-3.5 h-3.5"/>ArcScan</a>
+      {/* Buy / Sell quick action buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={()=>toast('Connect wallet to trade on Arc DEX', {icon:'🔄'})}
+          className="py-3 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold rounded-2xl text-sm flex items-center justify-center gap-2 hover:bg-emerald-500/25 transition-colors">
+          <TrendingUp className="w-4 h-4"/>Buy
+        </button>
+        <button onClick={()=>toast('Connect wallet to trade on Arc DEX', {icon:'🔄'})}
+          className="py-3 bg-red-500/10 border border-red-500/25 text-red-400 font-bold rounded-2xl text-sm flex items-center justify-center gap-2 hover:bg-red-500/20 transition-colors">
+          <TrendingUp className="w-4 h-4 rotate-180"/>Sell
+        </button>
       </div>
+
+      {/* Links + socials */}
+      <div className="bg-white/3 border border-white/8 rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-white/50 uppercase tracking-wider">Socials & Links</p>
+          <button onClick={()=>setShowUpdateModal(true)}
+            className="flex items-center gap-1.5 text-[11px] text-glow-accent bg-glow-accent/10 border border-glow-accent/20 px-2.5 py-1 rounded-lg hover:bg-glow-accent/20 transition-colors">
+            <Zap className="w-3 h-3"/>Update Info · 1 USDC
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {token.website ? (
+            <a href={token.website} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/6 border border-white/10 rounded-xl text-xs text-white/70 hover:text-white transition-colors">
+              <Globe className="w-3.5 h-3.5"/>Website
+            </a>
+          ) : (
+            <button onClick={()=>setShowUpdateModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/4 border border-dashed border-white/15 rounded-xl text-xs text-white/30 hover:text-white/50 transition-colors">
+              <Globe className="w-3.5 h-3.5"/>+ Website
+            </button>
+          )}
+          {token.twitter ? (
+            <a href={token.twitter} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/6 border border-white/10 rounded-xl text-xs text-white/70 hover:text-white transition-colors">
+              𝕏 Twitter
+            </a>
+          ) : (
+            <button onClick={()=>setShowUpdateModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/4 border border-dashed border-white/15 rounded-xl text-xs text-white/30 hover:text-white/50 transition-colors">
+              𝕏 + Twitter
+            </button>
+          )}
+          <a href={`https://testnet.arcscan.app/token/${token.token_address}`} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/6 border border-white/10 rounded-xl text-xs text-white/70 hover:text-white transition-colors">
+            <ExternalLink className="w-3.5 h-3.5"/>ArcScan
+          </a>
+        </div>
+      </div>
+
+      {/* Info / Txns tabs */}
+      <div>
+        <div className="flex gap-0 border border-white/8 rounded-xl overflow-hidden mb-3">
+          {(["info","txns"] as const).map(t=>(
+            <button key={t} onClick={()=>setInfoTab(t)}
+              className={cn("flex-1 py-2.5 text-xs font-semibold transition-colors capitalize", infoTab===t?"bg-glow-accent/15 text-glow-accent":"text-white/40 hover:text-white")}>
+              {t==="info"?"ℹ Info":"📋 Txns"}
+            </button>
+          ))}
+        </div>
+        {infoTab==="info" && (
+          <div className="bg-white/3 border border-white/8 rounded-xl p-4 text-sm text-white/60 leading-relaxed">
+            {token.description || <span className="text-white/30 italic">No description yet. <button onClick={()=>setShowUpdateModal(true)} className="text-glow-accent underline-offset-2 underline">Add one for 1 USDC →</button></span>}
+          </div>
+        )}
+        {infoTab==="txns" && (
+          <div className="bg-white/3 border border-white/8 rounded-xl overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-white/6 text-[9px] font-semibold text-white/30 uppercase tracking-wider">
+              <span className="w-16">Type</span><span className="flex-1">Amount</span><span className="w-20 text-right">Price</span><span className="w-16 text-right">Age</span>
+            </div>
+            {[...Array(5)].map((_,i)=>{
+              const isBuy = Math.random()>0.4;
+              return (
+                <div key={i} className="flex items-center gap-2 px-3 py-2.5 border-b border-white/4 last:border-0">
+                  <span className={cn("w-16 text-xs font-semibold", isBuy?"text-emerald-400":"text-red-400")}>{isBuy?"BUY":"SELL"}</span>
+                  <span className="flex-1 text-xs font-mono text-white/60">{(Math.random()*50000+1000).toFixed(0)} {token.symbol}</span>
+                  <span className="w-20 text-right text-xs font-mono text-white/50">${(Math.random()*0.001).toFixed(6)}</span>
+                  <span className="w-16 text-right text-[10px] text-white/30">{Math.floor(Math.random()*60)}m ago</span>
+                </div>
+              );
+            })}
+            <div className="px-3 py-2 text-center text-[11px] text-white/25">Live txns require on-chain indexer</div>
+          </div>
+        )}
+      </div>
+
+      {/* Update Info Modal */}
+      {showUpdateModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setShowUpdateModal(false)}}>
+          <div className="w-full max-w-md bg-[#1a1b23] border border-white/10 rounded-t-3xl p-5 pb-10 space-y-4">
+            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Update Token Info</h3>
+                <p className="text-xs text-white/40 mt-0.5">Fee: <span className="text-glow-accent font-semibold">1 USDC</span> · Goes to project treasury</p>
+              </div>
+              <button onClick={()=>setShowUpdateModal(false)} className="p-2 text-white/40"><Zap className="w-5 h-5"/></button>
+            </div>
+            {[
+              {label:"Website", key:"website", placeholder:"https://yourtoken.io"},
+              {label:"Twitter / X", key:"twitter", placeholder:"https://x.com/yourtoken"},
+              {label:"Telegram", key:"telegram", placeholder:"https://t.me/yourtoken"},
+              {label:"Discord", key:"discord", placeholder:"https://discord.gg/yourtoken"},
+            ].map(f=>(
+              <div key={f.key} className="bg-white/4 border border-white/8 rounded-xl p-3">
+                <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1.5">{f.label}</p>
+                <input value={updateForm[f.key as keyof typeof updateForm]}
+                  onChange={e=>setUpdateForm(p=>({...p,[f.key]:e.target.value}))}
+                  placeholder={f.placeholder}
+                  className="w-full bg-transparent text-sm text-white focus:outline-none placeholder-white/25"/>
+              </div>
+            ))}
+            <div className="bg-white/4 border border-white/8 rounded-xl p-3">
+              <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1.5">Description</p>
+              <textarea value={updateForm.description} onChange={e=>setUpdateForm(p=>({...p,description:e.target.value}))}
+                placeholder="Short description of your token..." rows={3}
+                className="w-full bg-transparent text-sm text-white focus:outline-none placeholder-white/25 resize-none"/>
+            </div>
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300/80">
+              ⚡ A 1 USDC fee will be charged from your connected wallet to prevent spam and fund the project.
+            </div>
+            <button disabled={updating} onClick={async()=>{
+              setUpdating(true);
+              try {
+                // TODO: charge 1 USDC via Circle/MetaMask then update Supabase
+                await new Promise(r=>setTimeout(r,1500));
+                const res = await fetch(`/api/launchpad/${token.id}`, {
+                  method:'PATCH', headers:{'Content-Type':'application/json'},
+                  body: JSON.stringify({ website:updateForm.website, twitter:updateForm.twitter, description:updateForm.description }),
+                });
+                if(res.ok) { toast.success('Token info updated!'); setShowUpdateModal(false); }
+                else { toast.error('Fee payment required — connect Circle wallet'); }
+              } catch(e) { toast.error(String(e)); }
+              finally { setUpdating(false); }
+            }} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+              {updating ? <Loader2 className="w-5 h-5 animate-spin"/> : <Zap className="w-5 h-5"/>}
+              Pay 1 USDC & Update
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -643,12 +783,6 @@ export default function LaunchpadPage() {
                 </select>
               </div>
 
-              {/* Column headers */}
-              <div className="grid grid-cols-[28px_1fr_72px_72px_80px_70px] gap-1 px-3 py-2 text-[10px] font-semibold text-white/40 uppercase tracking-wider border-b border-white/8">
-                <span>#</span><span>Token</span><span className="text-right">Price</span>
-                <span className="text-right">24h</span><span className="text-right">Volume</span><span className="text-right">Chart</span>
-              </div>
-
               {tokensLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="w-6 h-6 animate-spin text-glow-accent/60"/>
@@ -663,47 +797,62 @@ export default function LaunchpadPage() {
                 </div>
               ) : (
                 <div className="bg-white/3 border border-white/8 rounded-2xl overflow-hidden">
+                  {/* Table header */}
+                  <div className="flex items-center px-3 py-2 border-b border-white/6">
+                    <span className="w-7 flex-shrink-0 text-[9px] text-white/20 uppercase">#</span>
+                    <span className="flex-1 text-[9px] text-white/20 uppercase tracking-wider">TOKEN</span>
+                    <span className="w-20 text-right text-[9px] text-white/20 uppercase tracking-wider hidden sm:block">PRICE</span>
+                    <span className="w-16 text-right text-[9px] text-white/20 uppercase tracking-wider">24H</span>
+                    <span className="w-16 text-right text-[9px] text-white/20 uppercase tracking-wider hidden sm:block">VOL</span>
+                    <span className="w-16 text-right text-[9px] text-white/20 uppercase tracking-wider">CHART</span>
+                  </div>
                   {[...tokens]
                     .sort((a,b) => dexSort==='vol' ? (b.volume_24h??0)-(a.volume_24h??0)
                       : dexSort==='change' ? (b.price_change_24h??0)-(a.price_change_24h??0)
                       : (b.market_cap??0)-(a.market_cap??0))
                     .map((t, i) => {
-                      const supply = parseFloat(t.total_supply)/Math.pow(10,t.decimals||18);
-                      const mc     = t.market_cap ?? (t.price_usd ? t.price_usd * supply : 0);
-                      const vol    = t.volume_24h ?? 0;
-                      const ch24   = t.price_change_24h ?? 0;
-                      const up     = ch24 >= 0;
-                      const pHist  = t.price_history ?? Array.from({length:24},(_,k)=>({time:Date.now()/1000-k*3600,price:Math.random()*0.001+0.0005}));
+                      const vol   = t.volume_24h ?? 0;
+                      const ch24  = t.price_change_24h ?? 0;
+                      const up    = ch24 >= 0;
+                      const pHist = t.price_history ?? Array.from({length:24},(_,k)=>({time:Date.now()/1000-k*3600,price:Math.random()*0.001+0.0005}));
+                      const imgSrc = t.image_url
+                        ? (t.image_url.startsWith('http')||t.image_url.startsWith('data:') ? t.image_url : `https://nftstorage.link/ipfs/${t.image_url.replace('ipfs://','')}`)
+                        : '';
                       return (
                         <button key={t.id} onClick={() => setSelectedToken(t)}
-                          className="w-full grid grid-cols-[28px_1fr_72px_72px_80px_70px] gap-1 items-center px-3 py-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 text-left">
-                          <span className="text-[11px] text-white/30 font-mono">{i+1}</span>
-                          <div className="flex items-center gap-2 min-w-0">
-                            {t.image_url ? (
+                          className="w-full flex items-center px-3 py-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 text-left">
+                          {/* Rank */}
+                          <span className="w-7 flex-shrink-0 text-[11px] text-white/25 font-mono">{i+1}</span>
+                          {/* Logo + name — takes all remaining space */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                            {imgSrc ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={t.image_url.startsWith('http')||t.image_url.startsWith('data:') ? t.image_url : `https://nftstorage.link/ipfs/${t.image_url.replace('ipfs://','')}` }
-                                alt="" width={28} height={28} className="rounded-full object-cover flex-shrink-0"/>
+                              <img src={imgSrc} alt="" width={28} height={28} className="rounded-full object-cover flex-shrink-0 w-7 h-7"/>
                             ) : (
                               <div className="w-7 h-7 rounded-full bg-glow-accent/25 flex items-center justify-center text-[10px] font-bold text-glow-accent flex-shrink-0">
                                 {t.symbol.slice(0,2)}
                               </div>
                             )}
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-white truncate">{t.symbol}</p>
-                              <p className="text-[9px] text-white/40 truncate">{t.name}</p>
+                              <p className="text-xs font-bold text-white leading-tight">{t.symbol}</p>
+                              <p className="text-[10px] text-white/35 leading-tight truncate">{t.name}</p>
                             </div>
                           </div>
-                          <span className="text-xs font-mono text-white/80 text-right tabular-nums">
+                          {/* Price — hidden on mobile */}
+                          <span className="w-20 flex-shrink-0 text-xs font-mono text-white/70 text-right tabular-nums hidden sm:block">
                             {t.price_usd ? (t.price_usd < 0.001 ? `$${t.price_usd.toExponential(2)}` : `$${t.price_usd.toFixed(4)}`) : '—'}
                           </span>
-                          <span className={cn("text-xs font-mono text-right tabular-nums", up ? "text-emerald-400" : "text-red-400")}>
+                          {/* 24h always visible */}
+                          <span className={cn("w-16 flex-shrink-0 text-xs font-mono text-right tabular-nums", up ? "text-emerald-400" : "text-red-400")}>
                             {up?"+":""}{ch24.toFixed(2)}%
                           </span>
-                          <span className="text-xs font-mono text-white/60 text-right tabular-nums">
+                          {/* Volume — hidden on mobile */}
+                          <span className="w-16 flex-shrink-0 text-xs font-mono text-white/50 text-right tabular-nums hidden sm:block">
                             {vol >= 1e6 ? `$${(vol/1e6).toFixed(1)}M` : vol >= 1e3 ? `$${(vol/1e3).toFixed(1)}K` : vol > 0 ? `$${vol.toFixed(0)}` : '—'}
                           </span>
-                          <div className="flex justify-end">
-                            <SparkChart data={pHist} height={32} width={70} color={up?"#10b981":"#ef4444"} fill className="opacity-80"/>
+                          {/* Sparkline */}
+                          <div className="w-16 flex-shrink-0 flex justify-end">
+                            <SparkChart data={pHist} height={32} width={60} color={up?"#10b981":"#ef4444"} fill className="opacity-80"/>
                           </div>
                         </button>
                       );

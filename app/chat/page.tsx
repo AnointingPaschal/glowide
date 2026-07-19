@@ -171,28 +171,31 @@ export default function ChatPage() {
         throw new Error(err.error ?? 'Request failed');
       }
 
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('No stream');
-      const decoder = new TextDecoder();
-      let full = '';
+      // API returns plain JSON (not a stream)
+      const data = await res.json() as { content?: string; error?: string; toolCall?: { id: string; name: string; args: Record<string, unknown> } };
+      if (data.error) throw new Error(data.error);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6);
-          if (data === '[DONE]') break;
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta?.content ?? '';
-            full += delta;
-            useChatStore.setState({ streamingContent: full });
-          } catch { /* skip */ }
-        }
+      const content = data.content ?? '';
+
+      // Animate content character by character so it feels like streaming
+      useChatStore.setState({ isStreaming: true, streamingContent: '' });
+      const chunkSize = 6;
+      for (let i = 0; i < content.length; i += chunkSize) {
+        if (abortRef.current?.signal.aborted) break;
+        useChatStore.setState({ streamingContent: content.slice(0, i + chunkSize) });
+        await new Promise(r => setTimeout(r, 12));
       }
+      useChatStore.setState({ streamingContent: content });
       useChatStore.getState().finalizeStream(sessionId!);
+
+      // If AI returned a tool call, append a pending-confirm message
+      if (data.toolCall) {
+        addMessage(sessionId!, {
+          role: 'assistant',
+          content: JSON.stringify({ __toolCall: data.toolCall }),
+          session_id: sessionId!,
+        });
+      }
 
       // Save session to DB after AI responds
       if (isConnected && address) {
@@ -210,7 +213,7 @@ export default function ChatPage() {
       setStreaming(false);
       addMessage(sessionId!, {
         role: 'assistant',
-        content: `❌ ${(err as Error).message}. Check your OpenRouter API key in Admin.`,
+        content: `❌ ${(err as Error).message}`,
         session_id: sessionId!,
       });
     }
