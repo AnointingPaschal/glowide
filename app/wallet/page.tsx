@@ -579,8 +579,9 @@ export default function WalletPage() {
 
   // ── Setup Modal ──────────────────────────────────────────────────────────────
   const SetupModal = (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border border-glow-border rounded-t-3xl p-6 space-y-5 pb-10">
+    <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
+      <div className=" p-6 space-y-5 pb-10">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4"/>
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-glow-gradient flex items-center justify-center"><Shield className="w-6 h-6 text-glow-text"/></div>
@@ -597,9 +598,17 @@ export default function WalletPage() {
           </div>
         ))}
         {setupStep==="welcome" && (
-          <button onClick={setupCircle} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2">
-            <Plus className="w-5 h-5"/>Create MPC Wallet
-          </button>
+          <div className="space-y-3">
+            <div className="bg-amber-500/8 border border-amber-500/20 rounded-2xl p-3.5 space-y-1.5">
+              <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0"/>Circle API Key Format</p>
+              <p className="text-[11px] text-amber-300/80 leading-relaxed">Your <code className="bg-black/20 px-1 rounded">CIRCLE_API_KEY</code> in Vercel must have 3 parts:</p>
+              <code className="text-[10px] text-amber-200/70 bg-black/20 px-2 py-1 rounded block">TEST_API_KEY:your-id:your-secret</code>
+              <p className="text-[11px] text-amber-300/80">Get it at <a href="https://console.circle.com" target="_blank" rel="noopener noreferrer" className="underline">console.circle.com</a> → API Keys</p>
+            </div>
+            <button onClick={setupCircle} className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2">
+              <Plus className="w-5 h-5"/>Create MPC Wallet
+            </button>
+          </div>
         )}
         {setupStep==="loading" && (
           <div className="text-center py-3 space-y-2">
@@ -613,45 +622,56 @@ export default function WalletPage() {
 
   // ── Send Modal ───────────────────────────────────────────────────────────────
   const SendModal = (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border border-glow-border rounded-t-3xl p-5 pb-10 space-y-4">
-        <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-glow-text">Send USDC</h3>
-          <button onClick={()=>setModal(null)} className="p-2 text-glow-muted"><X className="w-5 h-5"/></button>
-        </div>
-        <div className="bg-glow-surface border-2 border-glow-border rounded-2xl overflow-hidden">
-          <div className="p-4 border-b border-glow-border">
-            <p className="text-[10px] text-glow-muted uppercase tracking-wider mb-2">Recipient</p>
+    <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
+        <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mt-3 mb-4"/>
+        <div className="px-5 pb-10 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-glow-text">Send USDC</h3>
+            <button onClick={()=>setModal(null)} className="p-2 text-glow-muted rounded-xl hover:bg-glow-surface"><X className="w-5 h-5"/></button>
+          </div>
+          {/* Recipient */}
+          <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+            <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Recipient</p>
             <input value={sendTo} onChange={e=>setSendTo(e.target.value)} placeholder="0x wallet address…"
-              className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/50"/>
+              className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40"/>
           </div>
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] text-glow-muted uppercase tracking-wider">Amount</p>
-              <button className="text-xs text-glow-accent font-semibold">Max</button>
+          {/* Amount */}
+          <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider">Amount</p>
+              <button className="text-xs text-glow-accent font-semibold bg-glow-accent/10 px-2.5 py-1 rounded-lg">Max</button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <input value={sendAmt} onChange={e=>setSendAmt(e.target.value)} type="number" min="0" placeholder="0.00"
-                className="flex-1 text-2xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/40"/>
-              <span className="text-sm font-bold text-glow-accent bg-glow-accent/10 px-2.5 py-1 rounded-xl">USDC</span>
+                className="flex-1 min-w-0 text-3xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
+              <div className="flex-shrink-0 flex items-center gap-1.5 bg-glow-accent/10 border border-glow-accent/25 px-3 py-2 rounded-xl">
+                <div className="w-5 h-5 rounded-full bg-[#2775CA] flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0">$</div>
+                <span className="text-sm font-bold text-glow-accent">USDC</span>
+              </div>
             </div>
           </div>
+          {!hasCircle && (
+            <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0"/>
+              <p className="text-xs text-amber-400/90">Set up Circle MPC Wallet for non-custodial sends</p>
+            </div>
+          )}
+          <button onClick={handleSend} disabled={loading||!sendTo||!sendAmt}
+            className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 text-base">
+            {loading?<Loader2 className="w-5 h-5 animate-spin"/>:<Send className="w-5 h-5"/>}
+            Send {sendAmt||"0"} USDC
+          </button>
         </div>
-        {!hasCircle && <p className="text-xs text-amber-400/80 text-center flex items-center justify-center gap-1"><AlertTriangle className="w-3.5 h-3.5"/>Create a Circle Wallet first for MPC security</p>}
-        <button onClick={handleSend} disabled={loading||!sendTo||!sendAmt}
-          className="w-full py-3.5 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
-          {loading?<Loader2 className="w-5 h-5 animate-spin"/>:<Send className="w-5 h-5"/>}
-          Send {sendAmt||"0"} USDC
-        </button>
       </div>
     </div>
   );
 
   // ── CCTP Modal ───────────────────────────────────────────────────────────────
   const CCTPModal = (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border border-glow-border rounded-t-3xl p-5 pb-10 space-y-4">
+    <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
+      <div className=" p-5 pb-10 space-y-4">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-glow-text">CCTP Bridge</h3><p className="text-xs text-glow-muted">Native USDC burn+mint — no wrapped tokens</p></div>
@@ -693,8 +713,9 @@ export default function WalletPage() {
 
   // ── Gateway Modal ─────────────────────────────────────────────────────────────
   const GatewayModal = (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border border-glow-border rounded-t-3xl p-5 pb-10 space-y-4">
+    <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
+      <div className=" p-5 pb-10 space-y-4">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-glow-text">Gateway Transfer</h3><p className="text-xs text-glow-muted">&lt;500ms · Unified balance</p></div>
@@ -736,8 +757,9 @@ export default function WalletPage() {
 
   // ── Nanopay Modal ──────────────────────────────────────────────────────────
   const NanopayModal = (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border border-glow-border rounded-t-3xl p-5 pb-10 space-y-4">
+    <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
+      <div className=" p-5 pb-10 space-y-4">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2"/>
         <div className="flex items-center justify-between">
           <div><h3 className="text-base font-bold text-glow-text">Nanopayment</h3><p className="text-xs text-glow-muted">Gas-free · x402 · from $0.000001</p></div>
@@ -771,8 +793,9 @@ export default function WalletPage() {
 
   // ── Receive Modal ───────────────────────────────────────────────────────────
   const ReceiveModal = (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
-      <div className="w-full bg-glow-card border border-glow-border rounded-t-3xl p-5 pb-10">
+    <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+      <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
+      <div className=" p-5 pb-10">
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4"/>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-base font-bold text-glow-text">Receive USDC</h3>
@@ -997,17 +1020,17 @@ export default function WalletPage() {
 
         {/* ── Top bar ─────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0">
-          <button onClick={()=>setModal("wallets")} className="flex items-center gap-2 bg-glow-surface border border-glow-border rounded-xl px-3 py-2 hover:bg-black/8 dark:hover:bg-white/10 transition-colors active:scale-95">
-            <div className="w-6 h-6 rounded-full bg-glow-gradient flex items-center justify-center text-[10px] font-bold text-white">
-              {displayAddr.slice(2,4).toUpperCase()}
+          <button onClick={()=>setModal("wallets")} className="flex items-center gap-2 bg-glow-surface border border-glow-border rounded-xl px-3 py-2 hover:bg-glow-accent/5 hover:border-glow-accent/30 transition-colors active:scale-95">
+            <div className="w-6 h-6 rounded-full bg-glow-gradient flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
+              {displayAddr.slice(2,4).toUpperCase()||"CC"}
             </div>
-            <span className="text-xs font-medium text-white">{shortAddr(displayAddr)}</span>
+            <span className="text-xs font-medium text-glow-text">{shortAddr(displayAddr)||"Connect"}</span>
             <ChevronDown className="w-3.5 h-3.5 text-glow-muted"/>
           </button>
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 bg-glow-surface border border-glow-border rounded-xl px-3 py-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400"/>
-              <span className="text-xs font-medium text-white">Arc Testnet</span>
+            <button className="flex items-center gap-1.5 bg-glow-surface border border-glow-border rounded-xl px-3 py-2 hover:bg-glow-accent/5 hover:border-glow-accent/30 transition-colors">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0"/>
+              <span className="text-xs font-medium text-glow-text">Arc Testnet</span>
               <ChevronDown className="w-3.5 h-3.5 text-glow-muted"/>
             </button>
           </div>
