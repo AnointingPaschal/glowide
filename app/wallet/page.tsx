@@ -435,46 +435,30 @@ export default function WalletPage() {
       .catch(() => {});
   }, []);
 
-  // Read on-chain ERC-20 balances directly from Arc Testnet RPC
+  // Read on-chain ERC-20 balances via server-side Arc RPC (avoids CORS/timeout issues)
   useEffect(() => {
     const circleAddr = circle.wallets.find(w => w.id === circle.activeWalletId)?.address;
-    const addr = (circleAddr ?? mmAddr)?.toLowerCase();
-    if (!addr || addr === "0x") return; // wait until address is available
+    const addr = circleAddr ?? mmAddr;
+    if (!addr || addr.length < 10) return;
 
-    const ARC_TOKENS_LIST = [
-      { symbol:"USDC",   address:"0x3600000000000000000000000000000000000000", decimals:18 },
-      { symbol:"EURC",   address:"0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a", decimals:6  },
-      { symbol:"cirBTC", address:"0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF", decimals:8  },
-      { symbol:"USYC",   address:"0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C", decimals:6  },
-    ];
-    const paddedAddr = "000000000000000000000000" + addr.replace("0x","");
-
-    const fetchBalances = () => Promise.all(ARC_TOKENS_LIST.map(async t => {
+    const fetchBalances = async () => {
       try {
-        const res = await fetch(ARC_RPC, {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ jsonrpc:"2.0", id:1, method:"eth_call",
-            params:[{ to:t.address, data:"0x70a08231" + paddedAddr }, "latest"],
-          }),
-          signal: AbortSignal.timeout(8000),
-        });
-        const d = await res.json() as { result?:string };
-        if (d.result && d.result !== "0x" && d.result !== "0x0" && d.result.length > 2) {
-          const amt = Number(BigInt(d.result)) / Math.pow(10, t.decimals);
-          return { symbol:t.symbol, amount: amt.toFixed(amt > 0 ? 6 : 0) };
+        setLoadingBal(true);
+        const res = await fetch(`/api/wallet/arc-balances?address=${encodeURIComponent(addr)}`);
+        if (!res.ok) return;
+        const d = await res.json() as { balances?: Record<string, { amount: string }> };
+        if (d.balances) {
+          const bals: Record<string, string> = {};
+          Object.entries(d.balances).forEach(([sym, b]) => { bals[sym] = b.amount; });
+          setOnChainBals(bals);
         }
-        return { symbol:t.symbol, amount:"0" };
-      } catch { return { symbol:t.symbol, amount:"0" }; }
-    })).then(results => {
-      const bals: Record<string,string> = {};
-      results.forEach(r => { bals[r.symbol] = r.amount; });
-      setOnChainBals(bals);
-    });
+      } catch { /* silent */ }
+      finally { setLoadingBal(false); }
+    };
 
     fetchBalances();
-    // Retry once after 3s in case RPC was slow
-    const retry = setTimeout(fetchBalances, 3000);
-    return () => clearTimeout(retry);
+    const interval = setInterval(fetchBalances, 30000); // auto-refresh every 30s
+    return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mmAddr, circle.activeWalletId, circle.wallets.length, balRefreshTick]);
 
@@ -513,34 +497,38 @@ export default function WalletPage() {
 
   // Circle setup
   const setupCircle = async () => {
-    setSetupStep("loading"); setLoading(true);
+    setSetupStep("loading");
     try {
-      const uid = `glow-${mmAddr?.toLowerCase() ?? Date.now()}`;
-      const cR = await fetch("/api/circle/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create",userId:uid})});
-      const cD = await cR.json() as {user?:{id:string};error?:string};
-      const userId = cD.user?.id ?? uid;
-      const tR = await fetch("/api/circle/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"token",userId})});
-      const tD = await tR.json() as {userToken?:string;encryptionKey?:string;error?:string};
-      if (!tD.userToken) throw new Error(tD.error ?? "Token failed");
-      circle.setSession(userId, tD.userToken, tD.encryptionKey ?? "", Date.now()+3600000);
-      const iR = await fetch("/api/circle/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"initialize",userToken:tD.userToken})});
-      const iD = await iR.json() as {challengeId?:string;error?:string};
-      if (!iD.challengeId) throw new Error(iD.error ?? "Init failed");
-      if (sdkRef.current) {
-        sdkRef.current.setAuthentication({userToken:tD.userToken,encryptionKey:tD.encryptionKey??""});
-        sdkRef.current.execute(iD.challengeId,(err)=>{
-          if(err){toast.error(`Setup failed: ${(err as Error).message}`);return;}
-          circle.setInit(true); circle.setPinSet(true);
-          setSetupStep("done"); setModal(null);
-          toast.success("✓ Circle Wallet created!"); loadBalances();
-        });
-      } else {
-        circle.setInit(true); setSetupStep("done"); setModal(null); loadBalances();
+      // Use Developer-Controlled Wallets — no PIN, no SDK, works on all testnets
+      const res = await fetch("/api/circle/dev-wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create" }),
+      });
+      const d = await res.json() as { wallet?: { id: string; address: string; blockchain: string }; error?: string };
+      if (d.error) throw new Error(d.error);
+      if (d.wallet) {
+        circle.setWallets([{
+          id: d.wallet.id,
+          address: d.wallet.address,
+          blockchain: d.wallet.blockchain,
+          state: "LIVE",
+          walletSetId: "",
+          custodyType: "DEVELOPER",
+          balances: [],
+        }]);
+        circle.setActive(d.wallet.id);
+        circle.setInit(true);
+        setSetupStep("done");
+        setModal(null);
+        toast.success(`✓ Developer wallet created: ${d.wallet.address.slice(0,10)}…`);
+        setBalRefreshTick(t => t + 1);
       }
-    } catch(e){ toast.error(String(e)); setSetupStep("welcome"); }
-    finally { setLoading(false); }
+    } catch (e) {
+      toast.error(String(e));
+      setSetupStep("welcome");
+    }
   };
-
   // Send
   const handleSend = async () => {
     if (!sendTo||!sendAmt){toast.error("Fill all fields");return;}
@@ -593,13 +581,13 @@ export default function WalletPage() {
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4"/>
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-glow-gradient flex items-center justify-center"><Shield className="w-6 h-6 text-glow-text"/></div>
-          <div><h3 className="text-base font-bold text-glow-text">Circle MPC Wallet</h3><p className="text-xs text-glow-muted">Non-custodial · PIN protected</p></div>
+          <div><h3 className="text-base font-bold text-glow-text">Circle Developer Wallet</h3><p className="text-xs text-glow-muted">Server-signed · No PIN · Testnet</p></div>
         </div>
         {[
-          {icon:KeyRound,  text:"2-of-2 MPC — Circle never holds your full key"},
-          {icon:Zap,       text:"Gasless: pay fees in USDC via Circle Paymaster"},
-          {icon:Globe,     text:"Cross-chain in <500ms via Circle Gateway"},
-          {icon:Coins,     text:"Nanopayments from $0.000001 — zero gas"},
+          {icon:Shield,    text:"Developer-controlled — server signs transactions"},
+          {icon:Zap,       text:"No PIN required — works instantly on testnet"},
+          {icon:Globe,     text:"ETH Sepolia — USDC + ERC-20 support"},
+          {icon:Coins,     text:"Arc Testnet balances auto-refresh every 30s"},
         ].map(f=>(
           <div key={f.text} className="flex items-center gap-3 text-sm text-glow-muted">
             <f.icon className="w-4 h-4 text-glow-accent flex-shrink-0"/>{f.text}
@@ -662,7 +650,7 @@ export default function WalletPage() {
           {!hasCircle && (
             <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
               <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0"/>
-              <p className="text-xs text-amber-400/90">Set up Circle MPC Wallet for non-custodial sends</p>
+              <p className="text-xs text-amber-400/90">Set up Circle Dev Wallet for non-custodial sends</p>
             </div>
           )}
           <button onClick={handleSend} disabled={loading||!sendTo||!sendAmt}
@@ -1102,8 +1090,8 @@ export default function WalletPage() {
                   className="mx-4 flex items-center gap-3 p-3.5 bg-glow-accent/10 border border-glow-accent/20 rounded-2xl hover:bg-glow-accent/15 transition-colors">
                   <Shield className="w-5 h-5 text-glow-accent flex-shrink-0"/>
                   <div className="text-left min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-glow-text">Set up Circle MPC Wallet</p>
-                    <p className="text-xs text-glow-muted">Non-custodial · Gasless · CCTP + Gateway</p>
+                    <p className="text-sm font-semibold text-glow-text">Set up Circle Dev Wallet</p>
+                    <p className="text-xs text-glow-muted">Server-signed · No PIN · Testnet ready</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-glow-muted"/>
                 </button>
