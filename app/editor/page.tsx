@@ -12,6 +12,7 @@ import { VerifyPanel }   from "@/components/editor/panels/VerifyPanel";
 import { UnitTestPanel } from "@/components/editor/panels/UnitTestPanel";
 import { GasPanel }      from "@/components/editor/panels/GasPanel";
 import { GitPanel }      from "@/components/editor/panels/GitPanel";
+import { DebuggerPanel } from "@/components/editor/panels/DebuggerPanel";
 import { FileTreePanel } from "@/components/filesystem/FileTree";
 import { useEditorStore } from "@/store/editorStore";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
@@ -20,7 +21,7 @@ import {
   BookOpen, ChevronRight, ChevronDown, X, Terminal as TermIcon,
   Code2, Zap, Shield, GitBranch, Star, FileCode, Plus,
   ArrowRight, CheckCircle, AlertTriangle, BadgeCheck,
-  FlaskConical, Gauge, FolderTree, Settings,
+  FlaskConical, Gauge, FolderTree, Settings, Bug,
 } from "lucide-react";
 import type { CompileOutput } from "@/lib/compiler";
 import type { Language } from "@/types";
@@ -35,7 +36,7 @@ const DIFFICULTY_COLOR = {
 };
 
 // ── Sidebar plugin icons ─────────────────────────────────────────────────────
-type Plugin = "files"|"samples"|"deploy"|"chat"|"analysis"|"test"|"verify"|"gas"|"git"|"settings";
+type Plugin = "files"|"samples"|"deploy"|"chat"|"analysis"|"test"|"verify"|"gas"|"debugger"|"git"|"settings";
 
 const PLUGINS: Array<{id:Plugin; icon:React.ElementType; label:string; group:"top"|"bottom"}> = [
   { id:"files",    icon:FolderTree,    label:"File Explorer",      group:"top"    },
@@ -45,6 +46,7 @@ const PLUGINS: Array<{id:Plugin; icon:React.ElementType; label:string; group:"to
   { id:"test",     icon:FlaskConical,  label:"Unit Testing",       group:"top"    },
   { id:"verify",   icon:BadgeCheck,    label:"Verify Contract",    group:"top"    },
   { id:"gas",      icon:Gauge,         label:"Gas Profiler",       group:"top"    },
+  { id:"debugger", icon:Bug,           label:"Debugger",           group:"top"    },
   { id:"git",      icon:GitBranch,     label:"Git",                group:"top"    },
   { id:"chat",     icon:MessageSquare, label:"AI Assistant",       group:"bottom" },
   { id:"settings", icon:Settings,      label:"Settings",           group:"bottom" },
@@ -102,6 +104,18 @@ export default function EditorPage() {
   const { tabs, activeTabId, isTerminalOpen, toggleTerminal, closeTab, setActiveTab, lastCompileResult, setCompileResult: storeSet } = useEditorStore();
 
   const [activePlugin,   setActivePlugin]   = useState<Plugin>("files");
+
+  // Allow other components (e.g. GitPanel's "Load Project") to switch the
+  // active sidebar plugin without prop-drilling through the whole tree.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const plugin = (e as CustomEvent<Plugin>).detail;
+      if (plugin) setActivePlugin(plugin);
+    };
+    window.addEventListener("glowide:switch-plugin", handler);
+    return () => window.removeEventListener("glowide:switch-plugin", handler);
+  }, []);
+
   const [compileResult,  setCompileResult]  = useState<CompileOutput|null>(null);
   const [isCompiling,    setIsCompiling]    = useState(false);
   const [buildLog,       setBuildLog]       = useState<Array<{type:"info"|"success"|"error"|"warn";text:string;ts:number}>>([]);
@@ -261,6 +275,7 @@ export default function EditorPage() {
       case "test":     return <UnitTestPanel/>;
       case "verify":   return <VerifyPanel compiled={combinedResult}/>;
       case "gas":      return <GasPanel compiled={combinedResult}/>;
+      case "debugger": return <DebuggerPanel/>;
       case "git":      return <GitPanel/>;
       case "chat":     return <ChatPanel compact editorMode/>;
       case "settings": return (
