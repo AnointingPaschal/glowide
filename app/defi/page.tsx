@@ -372,41 +372,6 @@ export default function DeFiPage() {
           {view==="overview" && (
             <div className="space-y-4">
               {/* Contract deployment status */}
-              {addrsLoading && (
-                <div className="bg-glow-card border border-glow-border rounded-2xl p-3 flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 text-glow-muted animate-spin flex-shrink-0"/>
-                  <p className="text-xs text-glow-muted">Checking deployed contract addresses…</p>
-                </div>
-              )}
-              {!addrsLoading && !contractsDeployed && (
-                <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5"/>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-amber-300">Smart Contracts Not Deployed</p>
-                    <p className="text-xs text-amber-300/70 mt-0.5">Deploy GlowLendingPool, GlowPaymentStream, and GlowYieldVault from Admin → Deploy to enable on-chain DeFi. Actions currently use Circle transfers as fallback.</p>
-                    <div className="flex flex-wrap gap-3 mt-1.5">
-                      <a href="/admin" className="text-xs text-amber-300 underline underline-offset-2 hover:text-amber-200">Go to Admin → Deploy →</a>
-                      <button onClick={()=>{ setAddrsLoading(true); fetch("/api/admin/public-settings").then(r=>r.json()).then(d=>{ setContractAddrs({ lendingPool:d.lending_pool_address??"", paymentStream:d.payment_stream_address??"", yieldVault:d.yield_vault_address??"" }); }).finally(()=>setAddrsLoading(false)); }}
-                        className="text-xs text-amber-300 underline underline-offset-2 hover:text-amber-200">
-                        Refresh status →
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {!addrsLoading && contractsDeployed && (
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3 space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/>
-                    <p className="text-xs text-emerald-400 font-medium">Smart contracts deployed on Arc Testnet — DeFi actions are live</p>
-                  </div>
-                  <div className="pl-6 space-y-0.5">
-                    <p className="text-[10px] font-mono text-emerald-400/60 truncate">Lending: {LENDING_POOL}</p>
-                    <p className="text-[10px] font-mono text-emerald-400/60 truncate">Streams: {PAYMENT_STREAM}</p>
-                    <p className="text-[10px] font-mono text-emerald-400/60 truncate">Vault: {YIELD_VAULT}</p>
-                  </div>
-                </div>
-              )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {STATS_CARDS.map(s=>(
                   <div key={s.label} className="bg-glow-card border border-glow-border rounded-2xl p-4">
