@@ -1,6 +1,6 @@
 "use client";
 export const dynamic = "force-dynamic";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useWalletStore } from "@/store/walletStore";
 import { useCircleStore } from "@/store/circleStore";
@@ -176,10 +176,31 @@ export default function DeFiPage() {
 
   const hasWallet = isConnected || circle.wallets.length > 0;
 
-  const USDC_ARC       = "0x3600000000000000000000000000000000000000";
-  const LENDING_POOL   = process.env.NEXT_PUBLIC_LENDING_POOL_ADDRESS   ?? "";
-  const PAYMENT_STREAM = process.env.NEXT_PUBLIC_PAYMENT_STREAM_ADDRESS ?? "";
-  const YIELD_VAULT    = process.env.NEXT_PUBLIC_YIELD_VAULT_ADDRESS    ?? "";
+  const USDC_ARC = "0x3600000000000000000000000000000000000000";
+
+  // Contract addresses come from the database (set the moment Admin > Deploy
+  // finishes deploying each contract) — NOT build-time env vars, which would
+  // require a Vercel redeploy every time a contract is redeployed.
+  const [contractAddrs, setContractAddrs] = useState({ lendingPool: "", paymentStream: "", yieldVault: "" });
+  const [addrsLoading, setAddrsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/admin/public-settings")
+      .then(r => r.json())
+      .then(d => {
+        setContractAddrs({
+          lendingPool:   d.lending_pool_address   ?? "",
+          paymentStream: d.payment_stream_address ?? "",
+          yieldVault:    d.yield_vault_address    ?? "",
+        });
+      })
+      .catch(() => {})
+      .finally(() => setAddrsLoading(false));
+  }, []);
+
+  const LENDING_POOL   = contractAddrs.lendingPool;
+  const PAYMENT_STREAM = contractAddrs.paymentStream;
+  const YIELD_VAULT    = contractAddrs.yieldVault;
   const contractsDeployed = !!(LENDING_POOL && PAYMENT_STREAM && YIELD_VAULT);
   const ARC_TOKENS_MAP: Record<string,string> = {
     USDC:  "0x3600000000000000000000000000000000000000",
@@ -351,28 +372,39 @@ export default function DeFiPage() {
           {view==="overview" && (
             <div className="space-y-4">
               {/* Contract deployment status */}
-              {!contractsDeployed && (
+              {addrsLoading && (
+                <div className="bg-glow-card border border-glow-border rounded-2xl p-3 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-glow-muted animate-spin flex-shrink-0"/>
+                  <p className="text-xs text-glow-muted">Checking deployed contract addresses…</p>
+                </div>
+              )}
+              {!addrsLoading && !contractsDeployed && (
                 <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5"/>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-amber-300">Smart Contracts Not Deployed</p>
-                    <p className="text-xs text-amber-300/70 mt-0.5">Deploy GlowLendingPool, GlowPaymentStream, and GlowYieldVault on Arc Testnet to enable on-chain DeFi. Actions currently use Circle transfers as fallback.</p>
-                    <button onClick={async()=>{
-                      try {
-                        const r = await fetch("/api/admin/deploy-defi",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contract:"all"})});
-                        const d = await r.json() as {steps?:string[]};
-                        toast(d.steps?.join("\n") ?? "Check /api/admin/deploy-defi for instructions", {icon:"📋", duration:8000});
-                      } catch(e){toast.error(String(e));}
-                    }} className="mt-2 text-xs text-amber-300 underline underline-offset-2 hover:text-amber-200">
-                      View deployment instructions →
-                    </button>
+                    <p className="text-xs text-amber-300/70 mt-0.5">Deploy GlowLendingPool, GlowPaymentStream, and GlowYieldVault from Admin → Deploy to enable on-chain DeFi. Actions currently use Circle transfers as fallback.</p>
+                    <div className="flex flex-wrap gap-3 mt-1.5">
+                      <a href="/admin" className="text-xs text-amber-300 underline underline-offset-2 hover:text-amber-200">Go to Admin → Deploy →</a>
+                      <button onClick={()=>{ setAddrsLoading(true); fetch("/api/admin/public-settings").then(r=>r.json()).then(d=>{ setContractAddrs({ lendingPool:d.lending_pool_address??"", paymentStream:d.payment_stream_address??"", yieldVault:d.yield_vault_address??"" }); }).finally(()=>setAddrsLoading(false)); }}
+                        className="text-xs text-amber-300 underline underline-offset-2 hover:text-amber-200">
+                        Refresh status →
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
-              {contractsDeployed && (
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3 flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/>
-                  <p className="text-xs text-emerald-400 font-medium">Smart contracts deployed on Arc Testnet — DeFi actions are live</p>
+              {!addrsLoading && contractsDeployed && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/>
+                    <p className="text-xs text-emerald-400 font-medium">Smart contracts deployed on Arc Testnet — DeFi actions are live</p>
+                  </div>
+                  <div className="pl-6 space-y-0.5">
+                    <p className="text-[10px] font-mono text-emerald-400/60 truncate">Lending: {LENDING_POOL}</p>
+                    <p className="text-[10px] font-mono text-emerald-400/60 truncate">Streams: {PAYMENT_STREAM}</p>
+                    <p className="text-[10px] font-mono text-emerald-400/60 truncate">Vault: {YIELD_VAULT}</p>
+                  </div>
                 </div>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

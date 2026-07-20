@@ -8,6 +8,8 @@ const PUBLIC_KEYS = [
   "available_models","default_model","free_deployments",
   "site_name","site_tagline","site_description","logo_url","primary_color",
   "usdc_logo_url","eurc_logo_url","cirbtc_logo_url","arc_logo_url","usyc_logo_url",
+  "treasury_address","launchpad_factory",
+  "lending_pool_address","payment_stream_address","yield_vault_address",
 ];
 
 export async function GET() {
