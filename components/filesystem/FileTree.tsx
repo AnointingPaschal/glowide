@@ -183,22 +183,43 @@ export function FileTreePanel() {
 
   useEffect(() => { if (showNewProject) inputRef.current?.focus(); }, [showNewProject]);
   useEffect(() => { if (addRoot) rootRef.current?.focus(); }, [addRoot]);
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
 
   return (
     <div className="flex flex-col h-full bg-glow-surface text-xs select-none">
       {/* Project selector */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-glow-border flex-shrink-0">
-        <select
-          value={activeProjectId ?? ""}
-          onChange={e => setActiveProject(e.target.value || null)}
-          className="flex-1 bg-transparent text-xs text-glow-text focus:outline-none truncate"
-        >
-          <option value="">— Select Project —</option>
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <button onClick={() => setShowNewProject(true)} className="ml-1 p-1 rounded text-glow-muted hover:text-glow-text hover:bg-glow-card" title="New Project">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-glow-border flex-shrink-0 relative">
+        <button onClick={() => setProjectDropdownOpen(v => !v)}
+          className="flex-1 flex items-center justify-between gap-1.5 bg-transparent text-xs text-glow-text hover:text-glow-accent transition-colors min-w-0 py-0.5">
+          <span className="truncate">{activeProject?.name ?? "— Select Project —"}</span>
+          <ChevronDown className={cn("w-3.5 h-3.5 flex-shrink-0 text-glow-muted transition-transform", projectDropdownOpen && "rotate-180")}/>
+        </button>
+        <button onClick={() => setShowNewProject(true)} className="ml-1 p-1 rounded text-glow-muted hover:text-glow-text hover:bg-glow-card flex-shrink-0" title="New Project">
           <Plus className="w-3.5 h-3.5" />
         </button>
+
+        {projectDropdownOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setProjectDropdownOpen(false)}/>
+            <div className="absolute left-3 right-3 top-full mt-1 bg-glow-card border border-glow-border rounded-xl shadow-2xl z-50 overflow-hidden max-h-72 overflow-y-auto">
+              <button onClick={() => { setActiveProject(null); setProjectDropdownOpen(false); }}
+                className={cn("w-full text-left px-3 py-2 text-xs transition-colors",
+                  !activeProjectId ? "bg-glow-accent/15 text-glow-accent-light font-medium" : "text-glow-muted hover:bg-glow-surface hover:text-glow-text")}>
+                — Select Project —
+              </button>
+              {projects.map(p => (
+                <button key={p.id} onClick={() => { setActiveProject(p.id); setProjectDropdownOpen(false); }}
+                  className={cn("w-full text-left px-3 py-2 text-xs truncate transition-colors",
+                    activeProjectId === p.id ? "bg-glow-accent/15 text-glow-accent-light font-medium" : "text-glow-text hover:bg-glow-surface")}>
+                  {p.name}
+                </button>
+              ))}
+              {projects.length === 0 && (
+                <p className="px-3 py-3 text-[11px] text-glow-muted/50 text-center">No projects yet</p>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* New project input */}
