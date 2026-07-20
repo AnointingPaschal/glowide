@@ -1,6 +1,16 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseREST } from "@/lib/supabase-server";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+function readContractFile(filename: string): string {
+  try {
+    return readFileSync(join(process.cwd(), "contracts", filename), "utf8");
+  } catch {
+    return ""; // caller checks for empty source and returns a clear 400 instead of crashing
+  }
+}
 
 const ADMIN_WALLET = (process.env.NEXT_PUBLIC_ADMIN_WALLET ?? "").toLowerCase();
 
@@ -21,6 +31,9 @@ export async function POST(req: NextRequest) {
   const sources: Record<string, string> = {
     GlowIDETreasury: TREASURY_SOURCE,
     GlowLaunchpad:   LAUNCHPAD_SOURCE,
+    GlowLendingPool:   readContractFile("GlowLendingPool.sol"),
+    GlowPaymentStream: readContractFile("GlowPaymentStream.sol"),
+    GlowYieldVault:    readContractFile("GlowYieldVault.sol"),
   };
 
   const source = sources[contractName];
@@ -50,6 +63,9 @@ export async function PATCH(req: NextRequest) {
   const settingsKey = {
     GlowIDETreasury: "treasury_address",
     GlowLaunchpad:   "launchpad_factory",
+    GlowLendingPool:   "lending_pool_address",
+    GlowPaymentStream: "payment_stream_address",
+    GlowYieldVault:    "yield_vault_address",
   }[contractName];
 
   const errors: string[] = [];

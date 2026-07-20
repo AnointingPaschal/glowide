@@ -208,6 +208,7 @@ export default function AdminPage() {
     deploymentFeePercent:'0', freeDeployments:'3',
     verificationFee:'0', launchpadFee:'0', feesEnabled:false,
     treasuryAddress:'', launchpadFactory:'', adminWallet: address ?? '',
+    lendingPoolAddress:'', paymentStreamAddress:'', yieldVaultAddress:'',
   });
   const [siteSettings, setSiteSettings] = useState({
     siteName:'GlowIDE', siteTagline:'AI-Powered Web3 IDE', siteDescription:'Build smarter on Web3',
@@ -246,6 +247,9 @@ export default function AdminPage() {
           ...(m.fees_enabled              && {feesEnabled:         m.fees_enabled==='true'}),
           ...(m.treasury_address          && {treasuryAddress:     m.treasury_address}),
           ...(m.launchpad_factory         && {launchpadFactory:    m.launchpad_factory}),
+          ...(m.lending_pool_address      && {lendingPoolAddress:   m.lending_pool_address}),
+          ...(m.payment_stream_address    && {paymentStreamAddress: m.payment_stream_address}),
+          ...(m.yield_vault_address       && {yieldVaultAddress:    m.yield_vault_address}),
           ...(m.admin_wallet              && {adminWallet:         m.admin_wallet}),
         }));
         if (m.site_name)        setSiteSettings(p => ({...p, siteName:       m.site_name}));
@@ -304,6 +308,9 @@ export default function AdminPage() {
         fees_enabled:            String(settings.feesEnabled),
         treasury_address:         settings.treasuryAddress,
         launchpad_factory:        settings.launchpadFactory || '',
+        lending_pool_address:     settings.lendingPoolAddress || '',
+        payment_stream_address:   settings.paymentStreamAddress || '',
+        yield_vault_address:      settings.yieldVaultAddress || '',
         // treasury_address already set above
         //         settings.treasuryAddress,
         admin_wallet:            settings.adminWallet || address || '',
@@ -435,6 +442,9 @@ export default function AdminPage() {
 
       if (contractId === 'GlowIDETreasury') setSettings(p => ({...p, treasuryAddress: contractAddress}));
       if (contractId === 'GlowLaunchpad')   setSettings(p => ({...p, launchpadFactory: contractAddress}));
+      if (contractId === 'GlowLendingPool')   setSettings(p => ({...p, lendingPoolAddress: contractAddress}));
+      if (contractId === 'GlowPaymentStream') setSettings(p => ({...p, paymentStreamAddress: contractAddress}));
+      if (contractId === 'GlowYieldVault')    setSettings(p => ({...p, yieldVaultAddress: contractAddress}));
 
       setContractBuildStatus(p => ({ ...p, [contractId]: { compiled:true, deployed:true, address:contractAddress, txHash } }));
       toast.success(`${contractId} deployed + saved!`);
@@ -908,6 +918,51 @@ export default function AdminPage() {
                 status={contractBuildStatus['GlowLaunchpad'] ?? {}}
                 isConnected={isConnected}
                 onSaveAddress={(val) => setSettings(p => ({...p, launchpadFactory: val}))}
+              />
+
+              <ContractArgInputs
+                cid="GlowLendingPool"
+                title="GlowLendingPool"
+                description="Over-collateralized USDC/EURC/cirBTC/USYC lending — supply, borrow, repay, liquidate. Powers /defi Lend & Borrow."
+                color="#22c55e"
+                labels={['_treasury (protocol fee recipient)']}
+                defaults={[address ?? '']}
+                currentAddress={settings.lendingPoolAddress ?? ''}
+                onDeploy={deployContract}
+                deployingId={deployingContract}
+                status={contractBuildStatus['GlowLendingPool'] ?? {}}
+                isConnected={isConnected}
+                onSaveAddress={(val) => setSettings(p => ({...p, lendingPoolAddress: val}))}
+              />
+
+              <ContractArgInputs
+                cid="GlowPaymentStream"
+                title="GlowPaymentStream"
+                description="Per-second USDC streaming payments with cancel + pro-rata refund. Powers /defi Payments streams."
+                color="#06b6d4"
+                labels={[]}
+                defaults={[]}
+                currentAddress={settings.paymentStreamAddress ?? ''}
+                onDeploy={deployContract}
+                deployingId={deployingContract}
+                status={contractBuildStatus['GlowPaymentStream'] ?? {}}
+                isConnected={isConnected}
+                onSaveAddress={(val) => setSettings(p => ({...p, paymentStreamAddress: val}))}
+              />
+
+              <ContractArgInputs
+                cid="GlowYieldVault"
+                title="GlowYieldVault"
+                description="ERC-4626-style USDC savings vault — deposit/withdraw shares, owner-injected yield. Powers /defi Yield vaults."
+                color="#f59e0b"
+                labels={['_name (vault token name)','_symbol (vault token symbol)','_asset (underlying token, e.g. USDC)']}
+                defaults={['USDC Savings Vault', 'gUSDC', '0x3600000000000000000000000000000000000000']}
+                currentAddress={settings.yieldVaultAddress ?? ''}
+                onDeploy={deployContract}
+                deployingId={deployingContract}
+                status={contractBuildStatus['GlowYieldVault'] ?? {}}
+                isConnected={isConnected}
+                onSaveAddress={(val) => setSettings(p => ({...p, yieldVaultAddress: val}))}
               />
             </div>
           )}
