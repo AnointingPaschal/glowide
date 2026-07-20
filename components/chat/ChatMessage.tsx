@@ -344,6 +344,19 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
   const [editVal, setEditVal] = useState(message.content);
   const isUser = message.role === "user";
 
+  // Detect tool-call messages (JSON payload created by chat/page.tsx after AI
+  // requests a transaction) and render the interactive confirm card instead
+  // of raw JSON text.
+  const toolCallData = useMemo(() => {
+    if (isUser || isStreaming) return null;
+    const trimmed = message.content.trim();
+    if (!trimmed.startsWith("{") || !trimmed.includes("__toolCall")) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as { __toolCall?: { id: string; name: string; args: Record<string, unknown> } };
+      return parsed.__toolCall ?? null;
+    } catch { return null; }
+  }, [isUser, isStreaming, message.content]);
+
   // Detect all code blocks in this message
   const blocks = useMemo(() =>
     !isUser && !isStreaming ? detectBlocks(message.content) : [],
@@ -400,6 +413,20 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
               {onEdit && <TinyBtn icon={Edit3} label="Edit" onClick={()=>{setEditing(true);setEditVal(message.content);}}/>}
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Tool-call message (AI requested a real transaction) ─────────────────────
+  if (!isUser && toolCallData) {
+    return (
+      <div className="px-3 py-1.5 group animate-slide-in-left">
+        <div className="flex items-start gap-2.5">
+          <AIAvatar isStreaming={false}/>
+          <div className="flex-1 min-w-0">
+            <TxConfirmCard toolCall={toolCallData} onExecute={()=>{}} onReject={()=>{}}/>
+          </div>
         </div>
       </div>
     );
