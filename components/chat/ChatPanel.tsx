@@ -38,7 +38,7 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
   const circle = useCircleStore();
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
   const fsStore = useFileSystemStore();
-  const { nodes, activeProjectId, updateContent: updateFileContent, createFile } = fsStore;
+  const { nodes, activeProjectId, updateContent: updateFileContent, createFile, createDirectory } = fsStore;
   const [input, setInput] = useState("");
   const [models, setModels] = useState<PublicModel[]>([]);
   const [modelDropOpen, setModelDropOpen] = useState(false);
@@ -98,20 +98,39 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
 
   // Apply detected code blocks to the right file — matched by filename if the
   // AI specified one, otherwise falls back to whatever tab is currently open.
+  // Walks a path like "contracts/token", creating any missing directories
+  // along the way, and returns the final parentId to create/find a file in.
+  const ensureDirPath = (dirParts: string[], projectId: string): string | null => {
+    let parentId: string | null = null;
+    for (const part of dirParts) {
+      const liveNodes = useFileSystemStore.getState().nodes;
+      let dir = liveNodes.find(n => n.projectId === projectId && n.type === "directory" && n.parentId === parentId && n.name === part);
+      if (!dir) dir = createDirectory(parentId, part, projectId);
+      parentId = dir.id;
+    }
+    return parentId;
+  };
+
   const applyBlocksToFiles = (blocks: DetectedBlock[]) => {
     let applied = 0;
     for (const block of blocks) {
       if (block.filename) {
-        // Try to find an existing file by name in the active project
+        // Support nested paths, e.g. "contracts/token/MyToken.sol" — creates
+        // any missing folders automatically.
+        const parts = block.filename.split("/").filter(Boolean);
+        const name = parts.pop();
+        if (!name) continue;
+        const parentId = activeProjectId ? ensureDirPath(parts, activeProjectId) : null;
+        const liveNodes = useFileSystemStore.getState().nodes;
         const existing = activeProjectId
-          ? nodes.find(n => n.projectId === activeProjectId && n.type === "file" && n.name === block.filename)
+          ? liveNodes.find(n => n.projectId === activeProjectId && n.type === "file" && n.parentId === parentId && n.name === name)
           : undefined;
         if (existing) {
           updateFileContent(existing.id, block.code);
           if (existing.id === activeTabId) updateTabContent(activeTabId, block.code);
           applied++;
         } else if (activeProjectId) {
-          createFile(null, block.filename, activeProjectId, block.code);
+          createFile(parentId, name, activeProjectId, block.code);
           applied++;
         }
       } else if (activeTabId) {

@@ -403,7 +403,7 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
               </div>
             </div>
           ) : (
-            <div className="bg-gradient-to-br from-glow-accent to-purple-700 rounded-xl rounded-tr-sm px-3 py-2 text-xs text-white shadow-sm shadow-glow-accent/15 whitespace-pre-wrap break-words">
+            <div className="bg-gradient-to-br from-glow-accent to-purple-700 rounded-xl rounded-tr-sm px-3 py-2 text-[11px] text-white shadow-sm shadow-glow-accent/15 whitespace-pre-wrap break-words">
               {message.content}
             </div>
           )}
@@ -439,11 +439,11 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
         <AIAvatar isStreaming={isStreaming}/>
         <div className="flex-1 min-w-0">
           <div className={cn(
-            "text-xs leading-relaxed text-glow-text prose prose-invert max-w-none",
-            "prose-p:my-1.5 prose-p:text-xs prose-p:text-glow-text prose-p:leading-relaxed",
+            "text-[11px] leading-relaxed text-glow-text prose prose-invert max-w-none",
+            "prose-p:my-1.5 prose-p:text-[11px] prose-p:text-glow-text prose-p:leading-relaxed",
             "prose-headings:text-glow-text prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1",
-            "prose-h1:text-sm prose-h2:text-sm prose-h3:text-xs",
-            "prose-ul:my-1.5 prose-li:my-0 prose-li:text-xs prose-li:text-glow-text",
+            "prose-h1:text-xs prose-h2:text-xs prose-h3:text-[11px]",
+            "prose-ul:my-1.5 prose-li:my-0 prose-li:text-[11px] prose-li:text-glow-text",
             "prose-ol:my-1.5",
             "prose-strong:text-glow-text prose-strong:font-semibold",
             "prose-a:text-glow-cyan",
