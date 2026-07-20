@@ -25,7 +25,7 @@ function detectLanguage(name: string): Language {
     sol: "solidity", ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
     json: "json", md: "markdown", css: "css", html: "html", yml: "yaml", yaml: "yaml",
   };
-  return map[ext] ?? "plaintext";
+  return map[ext] ?? "markdown";
 }
 
 export function GitPanel() {
