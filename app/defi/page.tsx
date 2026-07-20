@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useWalletStore } from "@/store/walletStore";
 import { useCircleStore } from "@/store/circleStore";
+import { useLocalWalletStore } from "@/store/localWalletStore";
+import { useActiveWalletStore } from "@/store/activeWalletStore";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import {
@@ -54,7 +56,13 @@ type DeFiView = "overview"|"lend"|"borrow"|"swap"|"liquidity"|"yield"|"payments"
 
 // ── Token badge ───────────────────────────────────────────────────────────────
 const TOKEN_BG: Record<string,string> = { USDC:"#2775CA", EURC:"#7c3aed", cirBTC:"#f7931a", USYC:"#16a34a" };
-function TokenBadge({ symbol, size=8 }: { symbol:string; size?:number }) {
+function TokenBadge({ symbol, size=8, logoUrl }: { symbol:string; size?:number; logoUrl?:string }) {
+  if (logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={logoUrl} alt={symbol} className={`w-${size} h-${size} rounded-full object-cover flex-shrink-0`}/>
+    );
+  }
   return (
     <div className={`w-${size} h-${size} rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0`}
       style={{ background: TOKEN_BG[symbol] ?? "#7c3aed" }}>
@@ -64,12 +72,12 @@ function TokenBadge({ symbol, size=8 }: { symbol:string; size?:number }) {
 }
 
 // ── Pool Row ──────────────────────────────────────────────────────────────────
-function PoolRow({ pool, mode, onAction }:
-  { pool:typeof LENDING_POOLS[0]; mode:"supply"|"borrow"; onAction(p:typeof LENDING_POOLS[0]):void }) {
+function PoolRow({ pool, mode, onAction, logoUrl }:
+  { pool:typeof LENDING_POOLS[0]; mode:"supply"|"borrow"; onAction(p:typeof LENDING_POOLS[0]):void; logoUrl?:string }) {
   const apy = mode==="supply" ? pool.supplyAPY : pool.borrowAPY;
   return (
     <div className="flex items-center gap-3 p-4 bg-glow-card border border-glow-border rounded-2xl hover:border-glow-accent/30 transition-all">
-      <TokenBadge symbol={pool.asset}/>
+      <TokenBadge symbol={pool.asset} logoUrl={logoUrl}/>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
           <span className="text-sm font-semibold text-glow-text">{pool.asset}</span>
@@ -123,14 +131,14 @@ function VaultCard({ vault, onClick }: { vault:typeof YIELD_VAULTS[0]; onClick()
 }
 
 // ── Liquidity Pair Row ────────────────────────────────────────────────────────
-function LiqRow({ pair, onClick }: { pair:typeof LIQUIDITY_PAIRS[0]; onClick():void }) {
+function LiqRow({ pair, onClick, logos }: { pair:typeof LIQUIDITY_PAIRS[0]; onClick():void; logos?:Record<string,string> }) {
   const [t0, t1] = pair.pair.split("/");
   return (
     <button onClick={onClick}
       className="w-full flex items-center gap-3 p-4 bg-glow-card border border-glow-border rounded-2xl hover:border-glow-accent/30 transition-all text-left">
       <div className="flex -space-x-2 flex-shrink-0">
-        <TokenBadge symbol={t0} size={8}/>
-        <TokenBadge symbol={t1} size={8}/>
+        <TokenBadge symbol={t0} size={8} logoUrl={logos?.[t0]}/>
+        <TokenBadge symbol={t1} size={8} logoUrl={logos?.[t1]}/>
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-glow-text">{pair.pair}</p>
@@ -165,6 +173,8 @@ function Modal({ title, desc, children, onClose }:
 export default function DeFiPage() {
   const { isConnected, address } = useWalletStore();
   const circle = useCircleStore();
+  const localWallet = useLocalWalletStore();
+  const { active: activeWalletKey } = useActiveWalletStore();
   const [view, setView]   = useState<DeFiView>("overview");
   const [modal, setModal] = useState<string|null>(null);
   const [amount, setAmount] = useState("");
@@ -173,8 +183,105 @@ export default function DeFiPage() {
   const [lendMode, setLendMode] = useState<"supply"|"borrow">("supply");
   const [payStream, setPayStream] = useState({ recipient:"", ratePerHr:"", duration:"24" });
   const [treasury, setTreasury] = useState({ signers:"", threshold:"2", name:"" });
+  const [tokenLogos, setTokenLogos] = useState<Record<string,string>>({});
 
-  const hasWallet = isConnected || circle.wallets.length > 0;
+  // Password prompt for local self-custody wallet signing (never stored — asked fresh each time)
+  const [pwPrompt, setPwPrompt] = useState<{ resolve:(pw:string|null)=>void } | null>(null);
+  const askPassword = () => new Promise<string|null>(resolve => setPwPrompt({ resolve }));
+
+  // Fetch admin-uploaded token logos
+  useEffect(() => {
+    fetch("/api/admin/public-settings").then(r=>r.json()).then(d=>{
+      const logos: Record<string,string> = {};
+      if (d.usdc_logo_url)   logos.USDC   = d.usdc_logo_url;
+      if (d.eurc_logo_url)   logos.EURC   = d.eurc_logo_url;
+      if (d.cirbtc_logo_url) logos.cirBTC = d.cirbtc_logo_url;
+      if (d.usyc_logo_url)   logos.USYC   = d.usyc_logo_url;
+      if (Object.keys(logos).length) setTokenLogos(logos);
+    }).catch(()=>{});
+  }, []);
+
+  // Single source of truth for which wallet is active — same resolution the
+  // Wallet page uses, so DeFi actions work no matter which wallet type you're on.
+  const resolvedActive = activeWalletKey ?? (
+    localWallet.wallets.length > 0 ? { type: "local" as const, id: localWallet.activeWalletId ?? localWallet.wallets[0].id } :
+    circle.wallets.length > 0     ? { type: "circle" as const, id: circle.activeWalletId ?? circle.wallets[0].id } :
+    address                        ? { type: "metamask" as const } :
+    null
+  );
+  const hasWallet = !!resolvedActive;
+
+  // ── Minimal ABI encoder for the handful of function signatures DeFi calls need ──
+  function encodeUint256(n: string | bigint): string { return BigInt(n).toString(16).padStart(64, "0"); }
+  function encodeAddress(addr: string): string { return addr.replace(/^0x/i, "").toLowerCase().padStart(64, "0"); }
+  const SELECTORS: Record<string,string> = {
+    "supply(address,uint256)":                       "f2b9fdb8",
+    "borrow(address,uint256)":                        "4b8a3529",
+    "repay(address,uint256)":                         "22867d78",
+    "withdraw(address,uint256)":                      "f3fef3a3",
+    "deposit(uint256)":                                "b6b55f25",
+    "createStream(address,address,uint256,uint256)":  "b61b6ce2",
+  };
+  function encodeCall(sig: string, params: Array<string|bigint>): string {
+    const selector = SELECTORS[sig];
+    if (!selector) throw new Error(`Unknown function signature: ${sig}`);
+    const types = sig.slice(sig.indexOf("(")+1, sig.lastIndexOf(")")).split(",");
+    const encoded = types.map((t, i) => t === "address" ? encodeAddress(String(params[i])) : encodeUint256(params[i])).join("");
+    return "0x" + selector + encoded;
+  }
+
+  // ── Universal contract-call dispatcher: signs with whichever wallet is active ──
+  async function executeContractCall(opts: { contractAddress: string; signature: string; params: Array<string|bigint>; blockchain?: string }): Promise<{ txHash?: string; error?: string }> {
+    if (!resolvedActive) return { error: "No wallet connected" };
+
+    if (resolvedActive.type === "circle") {
+      const res = await fetch("/api/circle/dev-wallet", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          action: "contract", walletId: resolvedActive.id, blockchain: opts.blockchain ?? "ETH-SEPOLIA",
+          contractAddress: opts.contractAddress,
+          abiFunctionSignature: opts.signature,
+          abiParameters: opts.params.map(p => typeof p === "bigint" ? p.toString() : p),
+        }),
+      });
+      const d = await res.json() as { id?: string; txHash?: string; error?: string };
+      if (d.error) return { error: d.error };
+      return { txHash: d.txHash ?? d.id };
+    }
+
+    const data = encodeCall(opts.signature, opts.params);
+
+    if (resolvedActive.type === "metamask") {
+      const provider = (window as Window & { ethereum?: { request: (a:{method:string; params?:unknown[]}) => Promise<unknown> } }).ethereum;
+      if (!provider) return { error: "No wallet provider found" };
+      try {
+        const txHash = await provider.request({
+          method: "eth_sendTransaction",
+          params: [{ from: address, to: opts.contractAddress, data }],
+        }) as string;
+        return { txHash };
+      } catch (e) { return { error: (e as Error).message }; }
+    }
+
+    if (resolvedActive.type === "local") {
+      const wallet = localWallet.wallets.find(w => w.id === resolvedActive.id);
+      if (!wallet) return { error: "Wallet not found" };
+      const password = await askPassword();
+      if (!password) return { error: "Signing cancelled" };
+      try {
+        const { ethers } = await import("ethers");
+        const decrypted = await ethers.Wallet.fromEncryptedJson(wallet.encryptedJson, password);
+        const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
+        const connected = decrypted.connect(provider);
+        const tx = await connected.sendTransaction({ to: opts.contractAddress, data });
+        return { txHash: tx.hash };
+      } catch (e) {
+        return { error: /password|invalid/i.test(String(e)) ? "Incorrect password" : (e as Error).message };
+      }
+    }
+
+    return { error: "Unsupported wallet type" };
+  }
 
   const USDC_ARC = "0x3600000000000000000000000000000000000000";
 
@@ -212,110 +319,73 @@ export default function DeFiPage() {
   // ── Lend/Borrow action — real Circle execute if wallet present
   const handleLend = async () => {
     if (!amount) { toast.error("Enter amount"); return; }
+    if (!hasWallet) { toast.error("Connect a wallet first — go to Wallet page"); return; }
+    if (!selectedPool) return;
     setLoading(true);
     try {
-      if (circle.userToken && circle.activeWalletId && selectedPool) {
-        if (contractsDeployed && lendMode === "supply") {
-          // Call supply(address token, uint256 amount) on GlowLendingPool
-          const tokenAddr = ARC_TOKENS_MAP[selectedPool.asset] ?? USDC_ARC;
-          const decimals  = selectedPool.asset === "cirBTC" ? 8 : 6;
-          const amtInt    = Math.floor(parseFloat(amount) * Math.pow(10, decimals)).toString();
-          const res = await fetch("/api/circle/transactions", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "contract",
-              userToken: circle.userToken,
-              walletId: circle.activeWalletId,
-              blockchain: "ARC-TESTNET",
-              contractAddress: LENDING_POOL,
-              abiFunctionSignature: "supply(address,uint256)",
-              abiParameters: [tokenAddr, amtInt],
-            }),
-          });
-          const d = await res.json() as { challengeId?: string; error?: string };
-          if (d.error) throw new Error(d.error);
-          toast.success(`✓ Supplied ${amount} ${selectedPool.asset} at ${selectedPool.supplyAPY}% APY${d.challengeId ? " — confirm PIN" : ""}`);
-        } else if (contractsDeployed && lendMode === "borrow") {
-          const tokenAddr = ARC_TOKENS_MAP[selectedPool.asset] ?? USDC_ARC;
-          const decimals  = selectedPool.asset === "cirBTC" ? 8 : 6;
-          const amtInt    = Math.floor(parseFloat(amount) * Math.pow(10, decimals)).toString();
-          const res = await fetch("/api/circle/transactions", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "contract",
-              userToken: circle.userToken,
-              walletId: circle.activeWalletId,
-              blockchain: "ARC-TESTNET",
-              contractAddress: LENDING_POOL,
-              abiFunctionSignature: "borrow(address,uint256)",
-              abiParameters: [tokenAddr, amtInt],
-            }),
-          });
-          const d = await res.json() as { challengeId?: string; error?: string };
-          if (d.error) throw new Error(d.error);
-          toast.success(`✓ Borrowed ${amount} ${selectedPool.asset} at ${selectedPool.borrowAPY}% APY${d.challengeId ? " — confirm PIN" : ""}`);
-        } else {
-          // Contracts not deployed yet: fall back to transfer
-          const res = await fetch("/api/circle/transactions", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "transfer",
-              userToken: circle.userToken,
-              walletId: circle.activeWalletId,
-              destinationAddress: address ?? USDC_ARC,
-              amounts: [amount],
-              blockchain: "ARC-TESTNET",
-              tokenAddress: ARC_TOKENS_MAP[selectedPool.asset] ?? USDC_ARC,
-            }),
-          });
-          const d = await res.json() as { challengeId?: string; error?: string };
-          if (d.error) throw new Error(d.error);
-          toast.success(`✓ ${lendMode === "supply" ? "Supplied" : "Borrowed"} ${amount} ${selectedPool.asset} at ${lendMode === "supply" ? selectedPool.supplyAPY : selectedPool.borrowAPY}% APY${d.challengeId ? " — confirm PIN" : ""}`);
-        }
+      const tokenAddr = ARC_TOKENS_MAP[selectedPool.asset] ?? USDC_ARC;
+      const decimals  = selectedPool.asset === "cirBTC" ? 8 : 6;
+      const amtInt    = BigInt(Math.floor(parseFloat(amount) * Math.pow(10, decimals)));
+
+      if (contractsDeployed) {
+        const { txHash, error } = await executeContractCall({
+          contractAddress: LENDING_POOL,
+          signature: lendMode === "supply" ? "supply(address,uint256)" : "borrow(address,uint256)",
+          params: [tokenAddr, amtInt],
+          blockchain: "ARC-TESTNET",
+        });
+        if (error) throw new Error(error);
+        toast.success(`✓ ${lendMode === "supply" ? "Supplied" : "Borrowed"} ${amount} ${selectedPool.asset} at ${lendMode === "supply" ? selectedPool.supplyAPY : selectedPool.borrowAPY}% APY${txHash ? ` — ${txHash.slice(0,10)}…` : ""}`);
+      } else if (resolvedActive?.type === "circle") {
+        // Contracts not deployed yet: fall back to a plain transfer so the demo still moves funds
+        const res = await fetch("/api/circle/dev-wallet", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "transfer", walletId: resolvedActive.id,
+            to: address ?? USDC_ARC, amount, blockchain: "ETH-SEPOLIA",
+            tokenAddress: ARC_TOKENS_MAP[selectedPool.asset] ?? USDC_ARC,
+          }),
+        });
+        const d = await res.json() as { txHash?:string; error?:string };
+        if (d.error) throw new Error(d.error);
+        toast.success(`✓ ${lendMode === "supply" ? "Supplied" : "Borrowed"} ${amount} ${selectedPool.asset} at ${lendMode === "supply" ? selectedPool.supplyAPY : selectedPool.borrowAPY}% APY`);
       } else {
-        await new Promise(r => setTimeout(r, 900));
-        toast(`ℹ️ ${lendMode === "supply" ? "Supply" : "Borrow"} ${amount} ${selectedPool?.asset} at ${lendMode === "supply" ? selectedPool?.supplyAPY : selectedPool?.borrowAPY}% APY — connect Circle wallet to execute on-chain`, { duration: 4000 });
+        toast("Deploy GlowLendingPool from Admin → Deploy to enable this on-chain", { icon:"ℹ️", duration:4000 });
       }
       setModal(null); setAmount("");
     } catch(e) { toast.error(String(e)); }
     finally { setLoading(false); }
   };
 
-  // ── Payment stream — Circle transfer for now, on-chain stream contract coming
+  // ── Payment stream — real on-chain stream if contracts are deployed, Circle transfer fallback otherwise
   const handleStreamCreate = async () => {
     if (!payStream.recipient || !payStream.ratePerHr) { toast.error("Fill all fields"); return; }
+    if (!hasWallet) { toast.error("Connect a wallet first — go to Wallet page"); return; }
     setLoading(true);
     try {
       const durationSec = parseInt(payStream.duration) * 3600;
       const totalAmt    = (parseFloat(payStream.ratePerHr) * parseFloat(payStream.duration)).toFixed(6);
-      const totalInt    = Math.floor(parseFloat(totalAmt) * 1e6).toString();
+      const totalInt    = BigInt(Math.floor(parseFloat(totalAmt) * 1e6));
 
-      if (circle.userToken && circle.activeWalletId) {
-        const res = await fetch("/api/circle/transactions", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(contractsDeployed ? {
-            action: "contract",
-            userToken: circle.userToken,
-            walletId: circle.activeWalletId,
-            blockchain: "ARC-TESTNET",
-            contractAddress: PAYMENT_STREAM,
-            abiFunctionSignature: "createStream(address,address,uint256,uint256)",
-            abiParameters: [payStream.recipient, USDC_ARC, totalInt, durationSec.toString()],
-          } : {
-            action: "transfer",
-            userToken: circle.userToken,
-            walletId: circle.activeWalletId,
-            destinationAddress: payStream.recipient,
-            amounts: [totalAmt],
-            blockchain: "ARC-TESTNET",
-            tokenAddress: USDC_ARC,
-          }),
+      if (contractsDeployed) {
+        const { txHash, error } = await executeContractCall({
+          contractAddress: PAYMENT_STREAM,
+          signature: "createStream(address,address,uint256,uint256)",
+          params: [payStream.recipient, USDC_ARC, totalInt, BigInt(durationSec)],
+          blockchain: "ARC-TESTNET",
         });
-        const d = await res.json() as { challengeId?: string; error?: string };
+        if (error) throw new Error(error);
+        toast.success(`✓ Stream created on-chain: ${payStream.ratePerHr} USDC/hr × ${payStream.duration}h = ${totalAmt} USDC${txHash ? ` — ${txHash.slice(0,10)}…` : ""}`);
+      } else if (resolvedActive?.type === "circle") {
+        const res = await fetch("/api/circle/dev-wallet", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action:"transfer", walletId:resolvedActive.id, to:payStream.recipient, amount:totalAmt, blockchain:"ETH-SEPOLIA", tokenAddress:USDC_ARC }),
+        });
+        const d = await res.json() as { txHash?:string; error?:string };
         if (d.error) throw new Error(d.error);
-        toast.success(`✓ Stream ${contractsDeployed ? "created on-chain" : "sent"}: ${payStream.ratePerHr} USDC/hr × ${payStream.duration}h = ${totalAmt} USDC${d.challengeId ? " — confirm PIN" : ""}`);
+        toast.success(`✓ Sent: ${payStream.ratePerHr} USDC/hr × ${payStream.duration}h = ${totalAmt} USDC`);
       } else {
-        toast.success(`✓ Stream queued: ${payStream.ratePerHr} USDC/hr to ${payStream.recipient.slice(0,8)}… — connect Circle wallet to execute`);
+        toast("Deploy GlowPaymentStream from Admin → Deploy to enable this on-chain", { icon:"ℹ️", duration:4000 });
       }
       setModal(null);
     } catch(e) { toast.error(String(e)); }
@@ -429,7 +499,7 @@ export default function DeFiPage() {
                 </div>
                 <div className="space-y-2">
                   {LENDING_POOLS.slice(0,2).map(pool=>(
-                    <PoolRow key={pool.asset} pool={pool} mode="supply"
+                    <PoolRow key={pool.asset} pool={pool} mode="supply" logoUrl={tokenLogos[pool.asset]}
                       onAction={p=>{setSelectedPool(p);setLendMode("supply");setModal("lend");}}/>
                   ))}
                 </div>
@@ -445,7 +515,7 @@ export default function DeFiPage() {
                 Supply stablecoins to earn yield. Funds are immediately available as collateral for borrowers.
               </div>
               {LENDING_POOLS.map(pool=>(
-                <PoolRow key={pool.asset} pool={pool} mode="supply"
+                <PoolRow key={pool.asset} pool={pool} mode="supply" logoUrl={tokenLogos[pool.asset]}
                   onAction={p=>{setSelectedPool(p);setLendMode("supply");setModal("lend");}}/>
               ))}
             </div>
@@ -459,7 +529,7 @@ export default function DeFiPage() {
                 Borrow against your collateral. Maintain health factor above 1.0 to avoid liquidation.
               </div>
               {LENDING_POOLS.map(pool=>(
-                <PoolRow key={pool.asset} pool={pool} mode="borrow"
+                <PoolRow key={pool.asset} pool={pool} mode="borrow" logoUrl={tokenLogos[pool.asset]}
                   onAction={p=>{setSelectedPool(p);setLendMode("borrow");setModal("lend");}}/>
               ))}
             </div>
@@ -533,7 +603,7 @@ export default function DeFiPage() {
                 </button>
               </div>
               {LIQUIDITY_PAIRS.map(pair=>(
-                <LiqRow key={pair.pair} pair={pair} onClick={()=>{setModal("add-liq");}}/>
+                <LiqRow key={pair.pair} pair={pair} logos={tokenLogos} onClick={()=>{setModal("add-liq");}}/>
               ))}
             </div>
           )}
@@ -748,30 +818,29 @@ export default function DeFiPage() {
               </div>
               <button onClick={async()=>{
                 if (!amount) return;
+                if (!hasWallet) { toast.error("Connect a wallet first — go to Wallet page"); return; }
                 setLoading(true);
                 try {
-                  if (circle.userToken && circle.activeWalletId) {
-                    const amtInt = Math.floor(parseFloat(amount) * 1e6).toString();
-                    const res = await fetch("/api/circle/transactions", {
-                      method:"POST", headers:{"Content-Type":"application/json"},
-                      body: JSON.stringify(contractsDeployed ? {
-                        action:"contract", userToken:circle.userToken, walletId:circle.activeWalletId,
-                        blockchain:"ARC-TESTNET", contractAddress: YIELD_VAULT,
-                        abiFunctionSignature: "deposit(uint256)",
-                        abiParameters: [amtInt],
-                      } : {
-                        action:"transfer", userToken:circle.userToken, walletId:circle.activeWalletId,
-                        destinationAddress: address ?? USDC_ARC,
-                        amounts:[amount], blockchain:"ARC-TESTNET",
-                        tokenAddress: USDC_ARC,
-                      }),
+                  if (contractsDeployed) {
+                    const amtInt = BigInt(Math.floor(parseFloat(amount) * 1e6));
+                    const { txHash, error } = await executeContractCall({
+                      contractAddress: YIELD_VAULT,
+                      signature: "deposit(uint256)",
+                      params: [amtInt],
+                      blockchain: "ARC-TESTNET",
                     });
-                    const d = await res.json() as { challengeId?:string; error?:string };
+                    if (error) throw new Error(error);
+                    toast.success(`✓ Deposited ${amount} USDC to yield vault${txHash ? ` — ${txHash.slice(0,10)}…` : ""}`);
+                  } else if (resolvedActive?.type === "circle") {
+                    const res = await fetch("/api/circle/dev-wallet", {
+                      method:"POST", headers:{"Content-Type":"application/json"},
+                      body: JSON.stringify({ action:"transfer", walletId:resolvedActive.id, to:address ?? USDC_ARC, amount, blockchain:"ETH-SEPOLIA", tokenAddress:USDC_ARC }),
+                    });
+                    const d = await res.json() as { txHash?:string; error?:string };
                     if (d.error) throw new Error(d.error);
-                    toast.success(`✓ Deposited ${amount} USDC to yield vault${d.challengeId?" — confirm PIN":""}`);
+                    toast.success(`✓ Deposited ${amount} USDC`);
                   } else {
-                    await new Promise(r=>setTimeout(r,700));
-                    toast.success("✓ Deposit queued — connect Circle wallet to execute on-chain");
+                    toast("Deploy GlowYieldVault from Admin → Deploy to enable this on-chain", { icon:"ℹ️", duration:4000 });
                   }
                   setModal(null); setAmount("");
                 } catch(e) { toast.error(String(e)); }
@@ -827,7 +896,34 @@ export default function DeFiPage() {
             </div>
           </Modal>
         )}
+
+        {/* ── Password prompt for local self-custody wallet signing ────────── */}
+        {pwPrompt && <PasswordPromptModal onSubmit={(pw)=>{ pwPrompt.resolve(pw); setPwPrompt(null); }} onCancel={()=>{ pwPrompt.resolve(null); setPwPrompt(null); }}/>}
       </div>
     </AppLayout>
+  );
+}
+
+function PasswordPromptModal({ onSubmit, onCancel }: { onSubmit:(pw:string)=>void; onCancel:()=>void }) {
+  const [pw, setPw] = useState("");
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/75 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget) onCancel();}}>
+      <div className="w-full max-w-md bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10 space-y-4">
+        <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mb-2"/>
+        <div className="flex items-center gap-2">
+          <Lock className="w-4 h-4 text-glow-accent"/>
+          <h3 className="text-base font-bold text-glow-text">Confirm Transaction</h3>
+        </div>
+        <p className="text-xs text-glow-muted">Enter your wallet password to sign this transaction. Nothing is stored — you'll be asked again next time.</p>
+        <input value={pw} onChange={e=>setPw(e.target.value)} type="password" autoFocus
+          onKeyDown={e=>{if(e.key==="Enter"&&pw) onSubmit(pw);}}
+          placeholder="Wallet password"
+          className="w-full bg-glow-surface border-2 border-glow-border rounded-2xl px-4 py-3 text-sm text-glow-text focus:outline-none focus:border-glow-accent/50"/>
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="flex-1 py-3 bg-glow-surface border border-glow-border text-glow-muted font-semibold rounded-2xl">Cancel</button>
+          <button onClick={()=>pw && onSubmit(pw)} disabled={!pw} className="flex-1 py-3 bg-glow-gradient text-white font-bold rounded-2xl disabled:opacity-50">Sign & Send</button>
+        </div>
+      </div>
+    </div>
   );
 }
