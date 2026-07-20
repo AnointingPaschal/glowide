@@ -8,7 +8,7 @@ import { useCircleStore } from "@/store/circleStore";
 import { useChatStore } from "@/store/chatStore";
 import { ChatMessage } from "./ChatMessage";
 import { Button } from "@/components/ui/Button";
-import { Send, Plus, Sparkles, Code2, Bug, RefreshCw, Zap, ChevronDown } from "lucide-react";
+import { Send, Plus, Sparkles, Code2, Bug, RefreshCw, Zap, ChevronDown, ShieldCheck, ShieldOff, FilePlus2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PublicModel } from "@/app/api/models/route";
 
@@ -19,22 +19,64 @@ const QUICK_PROMPTS = [
   { icon: <Sparkles className="w-3 h-3" />, label: "Explain", prompt: "Explain how this works: " },
 ];
 
+// Detect fenced code blocks, optionally with a filename in the info string
+// e.g. ```solidity MyToken.sol\n...``` or plain ```solidity\n...```
+interface DetectedBlock { lang: string; filename?: string; code: string; }
+function detectBlocks(content: string): DetectedBlock[] {
+  const blocks: DetectedBlock[] = [];
+  const re = /```(\w+)(?:\s+([^\n]+))?\n([\s\S]*?)```/g;
+  let m;
+  while ((m = re.exec(content)) !== null) {
+    blocks.push({ lang: m[1], filename: m[2]?.trim(), code: m[3].trim() });
+  }
+  return blocks;
+}
+
 export function ChatPanel({ compact = false, editorMode = false }: { compact?: boolean; editorMode?: boolean }) {
   const { sessions, activeSessionId, createSession, addMessage, isStreaming, streamingContent, setStreaming, model, setModel } = useChatStore();
   const { address } = useWalletStore();
   const circle = useCircleStore();
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
-  const { nodes, updateContent: updateFileContent } = useFileSystemStore();
+  const fsStore = useFileSystemStore();
+  const { nodes, activeProjectId, updateContent: updateFileContent, createFile } = fsStore;
   const [input, setInput] = useState("");
   const [models, setModels] = useState<PublicModel[]>([]);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // ── Per-session code-edit permission ─────────────────────────────────────
+  // Resets on every page load/mount (i.e. "per session") — the AI can only
+  // write to the user's files after they explicitly grant it once, then it
+  // applies changes automatically for the rest of this session.
+  const [editPermission, setEditPermission] = useState<"unset"|"granted"|"denied">("unset");
+  const [pendingApply, setPendingApply] = useState<{ blocks: DetectedBlock[]; sessionId: string } | null>(null);
+
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const messages = useMemo(() => activeSession?.messages || [], [activeSession]);
   const activeTab = tabs.find(t => t.id === activeTabId);
   const selectedModel = models.find(m => m.id === model) ?? models[0];
+
+  // All files in the active project — gives the AI awareness of the codebase
+  // structure beyond just the currently open tab.
+  const projectFilePaths = useMemo(() => {
+    if (!activeProjectId) return [];
+    const buildPath = (node: typeof nodes[number]): string => {
+      const parts: string[] = [node.name];
+      let cur = node;
+      while (cur.parentId) {
+        const parent = nodes.find(n => n.id === cur.parentId);
+        if (!parent) break;
+        parts.unshift(parent.name);
+        cur = parent;
+      }
+      return parts.join("/");
+    };
+    return nodes
+      .filter(n => n.projectId === activeProjectId && n.type === "file")
+      .map(buildPath)
+      .slice(0, 100); // cap for prompt size
+  }, [nodes, activeProjectId]);
 
   // Fetch available models
   useEffect(() => {
@@ -54,8 +96,37 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
     useChatStore.getState().finalizeStream(activeSessionId ?? "");
   };
 
-  const sendMessage = async () => {
-    const trimmed = input.trim();
+  // Apply detected code blocks to the right file — matched by filename if the
+  // AI specified one, otherwise falls back to whatever tab is currently open.
+  const applyBlocksToFiles = (blocks: DetectedBlock[]) => {
+    let applied = 0;
+    for (const block of blocks) {
+      if (block.filename) {
+        // Try to find an existing file by name in the active project
+        const existing = activeProjectId
+          ? nodes.find(n => n.projectId === activeProjectId && n.type === "file" && n.name === block.filename)
+          : undefined;
+        if (existing) {
+          updateFileContent(existing.id, block.code);
+          if (existing.id === activeTabId) updateTabContent(activeTabId, block.code);
+          applied++;
+        } else if (activeProjectId) {
+          createFile(null, block.filename, activeProjectId, block.code);
+          applied++;
+        }
+      } else if (activeTabId) {
+        // No filename given — apply to the currently active tab
+        updateTabContent(activeTabId, block.code);
+        const node = nodes.find(n => n.id === activeTabId);
+        if (node) updateFileContent(node.id, block.code);
+        applied++;
+      }
+    }
+    return applied;
+  };
+
+  const sendMessage = async (overrideInput?: string) => {
+    const trimmed = (overrideInput ?? input).trim();
     if (!trimmed || isStreaming) return;
 
     let sessionId = activeSessionId;
@@ -71,6 +142,9 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
     const contextContent = activeTab
       ? `\n\nContext from current file (${activeTab.name}):\n\`\`\`${activeTab.language}\n${activeTab.content.slice(0, 3000)}\n\`\`\``
       : "";
+    const fileListContext = projectFilePaths.length
+      ? `\n\nProject files (${projectFilePaths.length}): ${projectFilePaths.join(", ")}`
+      : "";
 
     try {
       abortRef.current = new AbortController();
@@ -79,12 +153,11 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [...messages.map(m => ({ role: m.role, content: m.content })), { role: "user", content: trimmed + contextContent }],
+          messages: [...messages.map(m => ({ role: m.role, content: m.content })), { role: "user", content: trimmed + contextContent + fileListContext }],
           model: model || selectedModel?.id,
           sessionId,
           walletContext: {
             circleUserId: circle.circleUserId,
-            userToken:    circle.userToken,
             wallets:      circle.wallets,
             address:      address,
           },
@@ -100,54 +173,48 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
         throw new Error(err.error || "Request failed");
       }
 
-      // Handle both streaming SSE and plain JSON responses
-      const contentType = response.headers.get("content-type") ?? "";
-      let fullContent = "";
-      let toolCallData: { id: string; name: string; args: Record<string, unknown> } | undefined;
+      // API returns plain JSON (non-streaming) — animate it into streamingContent
+      // so it still feels like a live response, then finalize into a real message.
+      const json = await response.json() as {
+        content?: string; error?: string;
+        toolCall?: { id: string; name: string; args: Record<string, unknown> };
+      };
+      if (json.error) throw new Error(json.error);
+      const fullContent = json.content ?? "";
 
-      if (contentType.includes("application/json")) {
-        // Non-streaming JSON (tool calls, simple responses)
-        const json = await response.json() as { content?: string; toolCall?: typeof toolCallData; error?: string };
-        if (json.error) throw new Error(json.error);
-        fullContent = json.content ?? "";
-        toolCallData = json.toolCall;
-      } else {
-        // Streaming SSE
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error("No stream");
-        const decoder = new TextDecoder();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value);
-          for (const line of chunk.split("\n")) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6);
-              if (data === "[DONE]") break;
-              try {
-                const parsed = JSON.parse(data);
-                const content = parsed.choices?.[0]?.delta?.content || "";
-                fullContent += content;
-                useChatStore.setState({ streamingContent: fullContent });
-              } catch { /* skip */ }
-            }
-          }
-        }
+      useChatStore.setState({ isStreaming: true, streamingContent: "" });
+      const chunkSize = 8;
+      for (let i = 0; i < fullContent.length; i += chunkSize) {
+        if (abortRef.current?.signal.aborted) break;
+        useChatStore.setState({ streamingContent: fullContent.slice(0, i + chunkSize) });
+        await new Promise(r => setTimeout(r, 10));
       }
-
-      // If editorMode: auto-apply code blocks to editor
-      if (editorMode && fullContent && activeTabId) {
-        const codeMatch = fullContent.match(/```(?:\w+)?\n([\s\S]+?)```/);
-        if (codeMatch) {
-          const code = codeMatch[1].trim();
-          updateTabContent(activeTabId, code);
-          // Also persist to filesystem
-          const node = nodes.find(n => n.id === activeTabId);
-          if (node) updateFileContent(node.id, code);
-          terminalLog("AI applied code changes to editor", "ai");
-        }
-      }
+      useChatStore.setState({ streamingContent: fullContent });
       useChatStore.getState().finalizeStream(sessionId!);
+
+      // Tool call (real transaction request) — render as an interactive card
+      if (json.toolCall) {
+        addMessage(sessionId!, {
+          role: "assistant",
+          content: JSON.stringify({ __toolCall: json.toolCall }),
+          session_id: sessionId!,
+        });
+      }
+
+      // editorMode: detect code blocks and either apply immediately (if the
+      // user already granted permission this session) or ask first.
+      if (editorMode && fullContent) {
+        const blocks = detectBlocks(fullContent);
+        if (blocks.length > 0) {
+          if (editPermission === "granted") {
+            const applied = applyBlocksToFiles(blocks);
+            if (applied) terminalLog(`AI applied changes to ${applied} file(s)`, "ai");
+          } else if (editPermission === "unset") {
+            setPendingApply({ blocks, sessionId: sessionId! });
+          }
+          // if "denied", silently skip — code stays visible in chat only
+        }
+      }
     } catch (err) {
       setStreaming(false);
       addMessage(sessionId!, {
@@ -162,86 +229,118 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
+  const grantPermission = (grant: boolean) => {
+    setEditPermission(grant ? "granted" : "denied");
+    if (grant && pendingApply) {
+      const applied = applyBlocksToFiles(pendingApply.blocks);
+      if (applied) terminalLog(`AI applied changes to ${applied} file(s)`, "ai");
+    }
+    setPendingApply(null);
+  };
+
   return (
     <div className={cn("flex flex-col h-full bg-glow-bg", compact && "border-l border-glow-border")}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-glow-border bg-glow-surface/50 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-glow-accent" />
-          <span className="text-sm font-semibold glow-text hidden sm:block">AI Assistant</span>
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-glow-border bg-glow-surface/60 flex-shrink-0 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-lg bg-glow-gradient flex items-center justify-center flex-shrink-0">
+            <Zap className="w-3.5 h-3.5 text-white" />
+          </div>
+          <span className="text-sm font-semibold text-glow-text hidden sm:block truncate">AI Assistant</span>
         </div>
 
-        {/* Model selector */}
-        {models.length > 0 && (
-          <div className="relative">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Model selector */}
+          {models.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setModelDropOpen(!modelDropOpen)}
+                className="flex items-center gap-1.5 px-2 py-1 bg-glow-card border border-glow-border rounded-lg text-xs text-gray-300 hover:border-glow-accent/40 transition-colors max-w-[120px]"
+              >
+                <span className="truncate">{selectedModel?.name ?? "Select model"}</span>
+                <ChevronDown className={cn("w-3 h-3 text-glow-muted flex-shrink-0 transition-transform", modelDropOpen && "rotate-180")} />
+              </button>
+
+              {modelDropOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setModelDropOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 w-64 bg-glow-card border border-glow-border rounded-xl shadow-card-shadow z-50 overflow-hidden animate-fade-in">
+                    <div className="p-2 border-b border-glow-border">
+                      <p className="text-xs font-medium text-gray-400 px-1">Select Model</p>
+                    </div>
+                    <div className="p-1 max-h-64 overflow-y-auto">
+                      {["premium","fast","coding"].map(tier => {
+                        const tierModels = models.filter(m => m.tier === tier);
+                        if (!tierModels.length) return null;
+                        return (
+                          <div key={tier}>
+                            <p className="text-[10px] text-gray-600 uppercase tracking-wider px-2 py-1">{tier}</p>
+                            {tierModels.map(m => (
+                              <button
+                                key={m.id}
+                                onClick={() => { setModel(m.id); setModelDropOpen(false); }}
+                                className={cn(
+                                  "w-full flex items-start gap-2 px-2 py-2 rounded-lg text-left transition-colors",
+                                  (model || selectedModel?.id) === m.id ? "bg-glow-accent/10 text-glow-accent-light" : "hover:bg-glow-surface text-gray-300"
+                                )}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate">{m.name}</p>
+                                  <p className="text-[10px] text-gray-500">{m.provider} · {m.context_length ? `${(m.context_length/1000).toFixed(0)}k ctx` : ""}</p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Per-session edit permission indicator */}
+          {editorMode && (
             <button
-              onClick={() => setModelDropOpen(!modelDropOpen)}
-              className="flex items-center gap-1.5 px-2 py-1 bg-glow-card border border-glow-border rounded-lg text-xs text-gray-300 hover:border-glow-accent/40 transition-colors max-w-[140px] sm:max-w-none"
+              onClick={() => setEditPermission(p => p === "granted" ? "denied" : "granted")}
+              title={editPermission === "granted" ? "AI can edit your files this session — click to revoke" : "AI cannot edit files — click to allow for this session"}
+              className={cn("flex items-center gap-1 px-1.5 py-1 rounded-lg border text-[10px] font-medium transition-colors",
+                editPermission === "granted"
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                  : "bg-glow-card border-glow-border text-glow-muted hover:text-glow-text")}
             >
-              <span className="truncate">{selectedModel?.name ?? "Select model"}</span>
-              <ChevronDown className={cn("w-3 h-3 text-glow-muted flex-shrink-0 transition-transform", modelDropOpen && "rotate-180")} />
+              {editPermission === "granted" ? <ShieldCheck className="w-3 h-3"/> : <ShieldOff className="w-3 h-3"/>}
             </button>
+          )}
 
-            {modelDropOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setModelDropOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 w-64 bg-glow-card border border-glow-border rounded-xl shadow-card-shadow z-50 overflow-hidden animate-fade-in">
-                  <div className="p-2 border-b border-glow-border">
-                    <p className="text-xs font-medium text-gray-400 px-1">Select Model</p>
-                  </div>
-                  <div className="p-1 max-h-64 overflow-y-auto">
-                    {["premium","fast","coding"].map(tier => {
-                      const tierModels = models.filter(m => m.tier === tier);
-                      if (!tierModels.length) return null;
-                      return (
-                        <div key={tier}>
-                          <p className="text-[10px] text-gray-600 uppercase tracking-wider px-2 py-1">{tier}</p>
-                          {tierModels.map(m => (
-                            <button
-                              key={m.id}
-                              onClick={() => { setModel(m.id); setModelDropOpen(false); }}
-                              className={cn(
-                                "w-full flex items-start gap-2 px-2 py-2 rounded-lg text-left transition-colors",
-                                (model || selectedModel?.id) === m.id ? "bg-glow-accent/10 text-glow-accent-light" : "hover:bg-glow-surface text-gray-300"
-                              )}
-                            >
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium truncate">{m.name}</p>
-                                <p className="text-[10px] text-gray-500">{m.provider} · {m.context_length ? `${(m.context_length/1000).toFixed(0)}k ctx` : ""}</p>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        <Button variant="ghost" size="icon" onClick={() => createSession()} title="New chat" className="h-7 w-7">
-          <Plus className="w-4 h-4" />
-        </Button>
+          <Button variant="ghost" size="icon" onClick={() => createSession()} title="New chat" className="h-7 w-7">
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-            <div className="w-10 h-10 rounded-2xl bg-glow-gradient flex items-center justify-center mb-3 shadow-glow-sm">
-              <Sparkles className="w-5 h-5 text-white" />
+            <div className="w-12 h-12 rounded-2xl bg-glow-gradient flex items-center justify-center mb-3 shadow-glow-sm">
+              <Sparkles className="w-6 h-6 text-white" />
             </div>
             <h3 className="text-sm font-semibold text-glow-text mb-1">GlowIDE AI</h3>
-            <p className="text-xs text-glow-muted mb-4 max-w-48">Your intelligent Web3 coding partner.</p>
+            <p className="text-xs text-glow-muted mb-4 max-w-52">Your intelligent Web3 coding partner. Ask about your code, generate contracts, or execute real transactions.</p>
             <div className="grid grid-cols-2 gap-1.5 w-full max-w-xs">
               {QUICK_PROMPTS.map(qp => (
-                <button key={qp.label} onClick={() => setInput(qp.prompt)} className="flex items-center gap-2 p-2 bg-glow-card border border-glow-border rounded-lg text-xs text-glow-muted hover:text-glow-text hover:border-glow-accent/40 transition-colors text-left">
+                <button key={qp.label} onClick={() => setInput(qp.prompt)} className="flex items-center gap-2 p-2.5 bg-glow-card border border-glow-border rounded-xl text-xs text-glow-muted hover:text-glow-text hover:border-glow-accent/40 transition-colors text-left">
                   {qp.icon} {qp.label}
                 </button>
               ))}
             </div>
+            {editorMode && (
+              <p className="text-[10px] text-glow-muted/50 mt-4 flex items-center gap-1">
+                <ShieldOff className="w-3 h-3"/> File editing is off — tap the shield above to allow it
+              </p>
+            )}
           </div>
         ) : (
           <div className="py-2">
@@ -257,11 +356,32 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
         )}
       </div>
 
+      {/* Permission prompt — appears the first time the AI wants to write code */}
+      {pendingApply && (
+        <div className="mx-3 mb-2 p-3 bg-glow-accent/8 border border-glow-accent/25 rounded-xl flex-shrink-0 space-y-2">
+          <div className="flex items-start gap-2">
+            <FilePlus2 className="w-4 h-4 text-glow-accent flex-shrink-0 mt-0.5"/>
+            <p className="text-xs text-glow-text">
+              AI wants to write changes to {pendingApply.blocks.length} file{pendingApply.blocks.length>1?"s":""} this session. Allow it?
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => grantPermission(true)}
+              className="flex-1 py-1.5 bg-glow-gradient text-white text-xs font-semibold rounded-lg">Allow this session</button>
+            <button onClick={() => grantPermission(false)}
+              className="flex-1 py-1.5 bg-glow-card border border-glow-border text-glow-muted text-xs font-semibold rounded-lg">Not now</button>
+          </div>
+        </div>
+      )}
+
       {/* Context indicator */}
       {activeTab && (
-        <div className="mx-3 mb-1 px-2 py-1 bg-glow-card border border-glow-border rounded-lg flex items-center gap-2 flex-shrink-0">
-          <Code2 className="w-3 h-3 text-glow-muted flex-shrink-0" />
+        <div className="mx-3 mb-2 px-2.5 py-1.5 bg-glow-card border border-glow-border rounded-lg flex items-center gap-2 flex-shrink-0">
+          <Code2 className="w-3 h-3 text-glow-accent flex-shrink-0" />
           <span className="text-xs text-glow-muted truncate">Context: {activeTab.name}</span>
+          {projectFilePaths.length > 0 && (
+            <span className="text-[10px] text-glow-muted/50 ml-auto flex-shrink-0">+{projectFilePaths.length} files</span>
+          )}
         </div>
       )}
 
@@ -275,7 +395,7 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
             onKeyDown={onKeyDown}
             placeholder="Ask anything about your code…"
             rows={1}
-            className="flex-1 bg-transparent text-sm text-glow-text placeholder:text-glow-muted resize-none focus:outline-none min-h-[20px] max-h-32 overflow-y-auto"
+            className="flex-1 min-w-0 bg-transparent text-sm text-glow-text placeholder:text-glow-muted resize-none focus:outline-none min-h-[20px] max-h-32 overflow-y-auto"
             onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 128) + "px"; }}
           />
           {isStreaming ? (
@@ -283,7 +403,7 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
               <span className="w-3 h-3 bg-current rounded-sm" />
             </Button>
           ) : (
-            <Button onClick={sendMessage} disabled={!input.trim()} size="icon" className="self-end flex-shrink-0 h-8 w-8">
+            <Button onClick={() => sendMessage()} disabled={!input.trim()} size="icon" className="self-end flex-shrink-0 h-8 w-8">
               <Send className="w-3.5 h-3.5" />
             </Button>
           )}
