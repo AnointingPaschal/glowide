@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Send, Plus, Sparkles, Code2, Bug, RefreshCw, Zap, ChevronDown, ShieldCheck, ShieldOff, FilePlus2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PublicModel } from "@/app/api/models/route";
+import { useSiteSettings } from "@/hooks/useSiteSettings";
 import { usePreferencesStore } from "@/store/preferencesStore";
 
 const QUICK_PROMPTS = [
@@ -36,6 +37,7 @@ function detectBlocks(content: string): DetectedBlock[] {
 
 export function ChatPanel({ compact = false, editorMode = false }: { compact?: boolean; editorMode?: boolean }) {
   const { sessions, activeSessionId, createSession, addMessage, isStreaming, streamingContent, setStreaming, model, setModel } = useChatStore();
+  const siteSettings = useSiteSettings();
   const { address } = useWalletStore();
   const circle = useCircleStore();
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
@@ -329,8 +331,11 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-glow-border bg-glow-surface/60 flex-shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-6 h-6 rounded-lg bg-glow-gradient flex items-center justify-center flex-shrink-0">
-            <Zap className="w-3.5 h-3.5 text-white" />
+          <div className="w-6 h-6 rounded-lg bg-glow-gradient flex items-center justify-center flex-shrink-0 overflow-hidden">
+            {siteSettings.logoUrl
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={siteSettings.logoUrl} alt={siteSettings.siteName} className="w-full h-full object-contain" onError={e => { (e.target as HTMLImageElement).style.display="none"; }}/>
+              : <Zap className="w-3.5 h-3.5 text-white" />}
           </div>
           <span className="text-sm font-semibold text-glow-text hidden sm:block truncate">AI Assistant</span>
         </div>
@@ -414,10 +419,13 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
       <div className="flex-1 overflow-y-auto min-h-0">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-glow-gradient flex items-center justify-center mb-3 shadow-glow-sm">
-              <Sparkles className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-2xl bg-glow-gradient flex items-center justify-center mb-3 shadow-glow-sm overflow-hidden">
+              {siteSettings.logoUrl
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={siteSettings.logoUrl} alt={siteSettings.siteName} className="w-full h-full object-contain p-1.5" onError={e => { (e.target as HTMLImageElement).style.display="none"; }}/>
+                : <Sparkles className="w-6 h-6 text-white" />}
             </div>
-            <h3 className="text-sm font-semibold text-glow-text mb-1">GlowIDE AI</h3>
+            <h3 className="text-sm font-semibold text-glow-text mb-1">{siteSettings.siteName} AI</h3>
             <p className="text-xs text-glow-muted mb-4 max-w-52">Your intelligent Web3 coding partner. Ask about your code, generate contracts, or execute real transactions.</p>
             <div className="grid grid-cols-2 gap-1.5 w-full max-w-xs">
               {QUICK_PROMPTS.map(qp => (
