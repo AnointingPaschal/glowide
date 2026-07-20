@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useWalletStore } from "@/store/walletStore";
 import { useFileSystemStore, type FSNode } from "@/store/fileSystemStore";
 import { useEditorStore } from "@/store/editorStore";
+import { usePreferencesStore } from "@/store/preferencesStore";
 import { Terminal as TermIcon, X, Maximize2, Minimize2, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -63,6 +64,7 @@ export function Terminal() {
   const fsStore = useFileSystemStore();
   const { nodes, activeProjectId, createFile, createDirectory, deleteNode, updateContent, moveNode } = fsStore;
   const { openFile } = useEditorStore();
+  const terminalFontSize = usePreferencesStore(s => s.terminalFontSize);
 
   useEffect(() => {
     (window as unknown as { __walletAddress?: string }).__walletAddress = address ?? undefined;
@@ -292,7 +294,8 @@ export function Terminal() {
   };
 
   return (
-    <div className={cn("flex flex-col bg-[#080810] border-t border-glow-border font-mono text-xs transition-all", expanded ? "fixed inset-4 z-50 rounded-2xl border border-glow-border shadow-2xl" : "h-full")}>
+    <div className={cn("flex flex-col bg-[#080810] border-t border-glow-border font-mono transition-all", expanded ? "fixed inset-4 z-50 rounded-2xl border border-glow-border shadow-2xl" : "h-full")}
+      style={{ fontSize: `${terminalFontSize}px` }}>
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-glow-border/50 bg-glow-surface/50 flex-shrink-0">
         <TermIcon className="w-3.5 h-3.5 text-glow-accent" />
@@ -327,7 +330,7 @@ export function Terminal() {
         <ChevronRight className={cn("w-3.5 h-3.5 flex-shrink-0", heredoc ? "text-amber-400" : "text-glow-cyan")} />
         <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
           placeholder={heredoc ? `> heredoc: ${heredoc.path} (end with ${heredoc.delimiter})` : "Enter command… (try: help)"}
-          className="flex-1 min-w-0 bg-transparent text-glow-text placeholder-glow-muted/30 focus:outline-none text-xs"
+          className="flex-1 min-w-0 bg-transparent text-glow-text placeholder-glow-muted/30 focus:outline-none"
           autoComplete="off" spellCheck={false} disabled={running}
         />
       </div>

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Send, Plus, Sparkles, Code2, Bug, RefreshCw, Zap, ChevronDown, ShieldCheck, ShieldOff, FilePlus2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PublicModel } from "@/app/api/models/route";
+import { usePreferencesStore } from "@/store/preferencesStore";
 
 const QUICK_PROMPTS = [
   { icon: <Code2 className="w-3 h-3" />, label: "Generate code", prompt: "Generate code for: " },
@@ -47,10 +48,13 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // ── Per-session code-edit permission ─────────────────────────────────────
-  // Resets on every page load/mount (i.e. "per session") — the AI can only
-  // write to the user's files after they explicitly grant it once, then it
-  // applies changes automatically for the rest of this session.
-  const [editPermission, setEditPermission] = useState<"unset"|"granted"|"denied">("unset");
+  // Defaults to resetting on every page load ("per session"), unless the
+  // user has opted into "remember my choice" in Settings, in which case we
+  // reuse whatever they picked last time instead of asking again.
+  const prefs = usePreferencesStore();
+  const [editPermission, setEditPermission] = useState<"unset"|"granted"|"denied">(
+    () => (prefs.rememberAIPermission ? prefs.aiDefaultPermission : "unset")
+  );
   const [pendingApply, setPendingApply] = useState<{ blocks: DetectedBlock[]; sessionId: string } | null>(null);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
@@ -307,7 +311,9 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
   };
 
   const grantPermission = (grant: boolean) => {
-    setEditPermission(grant ? "granted" : "denied");
+    const decision = grant ? "granted" : "denied";
+    setEditPermission(decision);
+    if (prefs.rememberAIPermission) prefs.setAIDefaultPermission(decision);
     if (grant && pendingApply) {
       const shellBlocks = pendingApply.blocks.filter(b => SHELL_LANGS.has(b.lang.toLowerCase()));
       const fileBlocks  = pendingApply.blocks.filter(b => !SHELL_LANGS.has(b.lang.toLowerCase()));
@@ -383,7 +389,11 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
           {/* Per-session edit permission indicator */}
           {editorMode && (
             <button
-              onClick={() => setEditPermission(p => p === "granted" ? "denied" : "granted")}
+              onClick={() => setEditPermission(p => {
+                const next = p === "granted" ? "denied" : "granted";
+                if (prefs.rememberAIPermission) prefs.setAIDefaultPermission(next);
+                return next;
+              })}
               title={editPermission === "granted" ? "AI can edit your files this session — click to revoke" : "AI cannot edit files — click to allow for this session"}
               className={cn("flex items-center gap-1 px-1.5 py-1 rounded-lg border text-[10px] font-medium transition-colors",
                 editPermission === "granted"

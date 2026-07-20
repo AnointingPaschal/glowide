@@ -13,6 +13,7 @@ import { VerifyPanel }   from "@/components/editor/panels/VerifyPanel";
 import { UnitTestPanel } from "@/components/editor/panels/UnitTestPanel";
 import { GasPanel }      from "@/components/editor/panels/GasPanel";
 import { GitPanel }      from "@/components/editor/panels/GitPanel";
+import { SettingsPanel } from "@/components/editor/panels/SettingsPanel";
 import { DebuggerPanel } from "@/components/editor/panels/DebuggerPanel";
 import { FileTreePanel } from "@/components/filesystem/FileTree";
 import { useEditorStore } from "@/store/editorStore";
@@ -29,6 +30,7 @@ import type { Language } from "@/types";
 import { ARC_SAMPLES, type SampleProject } from "@/lib/arc-samples";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
+import { usePreferencesStore } from "@/store/preferencesStore";
 
 const DIFFICULTY_COLOR = {
   beginner:     "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
@@ -104,6 +106,7 @@ function SamplesPanel({ onLoad }: { onLoad:(p:SampleProject)=>void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function EditorPage() {
   const { tabs, activeTabId, isTerminalOpen, toggleTerminal, setTerminalOpen, closeTab, setActiveTab, lastCompileResult, setCompileResult: storeSet } = useEditorStore();
+  const prefs = usePreferencesStore();
 
   const [activePlugin,   setActivePlugin]   = useState<Plugin>("files");
   const [showChatPanel,  setShowChatPanel]  = useState(false);
@@ -216,7 +219,7 @@ export default function EditorPage() {
   const compile = useCallback(async () => {
     if (!activeTab) { toast.error("Open a Solidity file first"); return; }
     if (!activeTab.name.endsWith(".sol")) { toast.error("Select a .sol file to compile"); return; }
-    setTerminalOpen(true);
+    if (prefs.autoOpenTerminalOnCompile) setTerminalOpen(true);
     setIsCompiling(true); setCompileResult(null);
     log(`Compiling ${activeTab.name} (solc ${solcVersion})…`, "info");
     try {
@@ -282,23 +285,7 @@ export default function EditorPage() {
       case "debugger": return <DebuggerPanel/>;
       case "git":      return <GitPanel/>;
       case "chat":     return <ChatPanel compact editorMode/>;
-      case "settings": return (
-        <div className="p-4 space-y-4">
-          <p className="text-sm font-semibold text-glow-text">Editor Settings</p>
-          <div className="space-y-2">
-            <label className="text-[10px] text-glow-muted/60 uppercase tracking-wider block">Theme</label>
-            <select className="w-full bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-xs text-glow-text">
-              <option>VS Code Dark</option><option>GitHub Dark</option><option>Monokai</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] text-glow-muted/60 uppercase tracking-wider block">Font Size</label>
-            <select className="w-full bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-xs text-glow-text">
-              <option>12px</option><option>13px</option><option>14px</option><option>16px</option>
-            </select>
-          </div>
-        </div>
-      );
+      case "settings": return <SettingsPanel/>;
     }
   };
 
