@@ -1,8 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useEditorStore } from "@/store/editorStore";
 import { useFileSystemStore } from "@/store/fileSystemStore";
-import { GitBranch, Download, Github, Loader2, CheckCircle, AlertTriangle, FolderTree, Folder, File as FileIcon } from "lucide-react";
+import { useGitHubStore } from "@/store/githubStore";
+import { GitBranch, Download, Github, Loader2, CheckCircle, AlertTriangle, FolderTree, Folder, File as FileIcon, LogOut, Upload, ExternalLink, ChevronDown } from "lucide-react";
 import type { Language } from "@/types";
 
 const GITHUB_RAW = "https://raw.githubusercontent.com";
@@ -37,7 +38,110 @@ export function GitPanel() {
   const [repoInfo, setRepoInfo] = useState<{owner:string; repo:string; branch:string}|null>(null);
   const [loadingProject, setLoadingProject] = useState(false);
 
+  // ── GitHub connection (Personal Access Token) ─────────────────────────────
+  const gh = useGitHubStore();
+  const [tokenInput, setTokenInput] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [myRepos, setMyRepos] = useState<Array<{full_name:string; default_branch:string; private:boolean}>>([]);
+  const [reposOpen, setReposOpen] = useState(false);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+
+  // ── Commit & push ──────────────────────────────────────────────────────────
+  const [commitMsg, setCommitMsg] = useState("");
+  const [committing, setCommitting] = useState(false);
+
   const fsStore = useFileSystemStore();
+  const { nodes, activeProjectId } = fsStore;
+  const binding = activeProjectId ? gh.bindings[activeProjectId] : undefined;
+
+  const connectGitHub = async () => {
+    if (!tokenInput.trim()) return;
+    setConnecting(true);
+    try {
+      const res = await fetch("https://api.github.com/user", {
+        headers: { Authorization: `Bearer ${tokenInput.trim()}`, Accept: "application/vnd.github+json" },
+      });
+      if (!res.ok) throw new Error(res.status === 401 ? "Invalid token" : `GitHub error ${res.status}`);
+      const user = await res.json() as { login: string };
+      gh.setToken(tokenInput.trim(), user.login);
+      setTokenInput("");
+      setStatus({type:"success", msg:`✓ Connected as ${user.login}`});
+    } catch (e) {
+      setStatus({type:"error", msg:String((e as Error).message ?? e)});
+    } finally { setConnecting(false); }
+  };
+
+  const disconnectGitHub = () => {
+    gh.setToken(null, null);
+    setMyRepos([]);
+    setStatus(null);
+  };
+
+  const loadMyRepos = async () => {
+    if (!gh.token) return;
+    setReposOpen(v => !v);
+    if (myRepos.length > 0) return; // already loaded
+    setLoadingRepos(true);
+    try {
+      const res = await fetch("https://api.github.com/user/repos?sort=updated&per_page=50", {
+        headers: { Authorization: `Bearer ${gh.token}`, Accept: "application/vnd.github+json" },
+      });
+      if (!res.ok) throw new Error(`GitHub error ${res.status}`);
+      const repos = await res.json() as Array<{full_name:string; default_branch:string; private:boolean}>;
+      setMyRepos(repos);
+    } catch (e) { setStatus({type:"error", msg:String((e as Error).message ?? e)}); }
+    finally { setLoadingRepos(false); }
+  };
+
+  const pickRepo = (fullName: string, defaultBranch: string) => {
+    setUrl(`https://github.com/${fullName}`);
+    setBranch(defaultBranch);
+    setReposOpen(false);
+  };
+
+  // Files in the active project that differ from the last-synced snapshot
+  const changedFiles = useMemo(() => {
+    if (!binding || !activeProjectId) return [];
+    const buildPath = (node: typeof nodes[number]): string => {
+      const parts: string[] = [node.name];
+      let cur = node;
+      while (cur.parentId) {
+        const parent = nodes.find(n => n.id === cur.parentId);
+        if (!parent) break;
+        parts.unshift(parent.name);
+        cur = parent;
+      }
+      return parts.join("/");
+    };
+    return nodes
+      .filter(n => n.projectId === activeProjectId && n.type === "file")
+      .map(n => ({ path: buildPath(n), content: n.content ?? "" }))
+      .filter(f => binding.snapshot[f.path] !== f.content);
+  }, [nodes, activeProjectId, binding]);
+
+  const commitAndPush = async () => {
+    if (!binding || !gh.token || !activeProjectId || changedFiles.length === 0) return;
+    setCommitting(true);
+    try {
+      const res = await fetch("/api/github/commit", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          token: gh.token, owner: binding.owner, repo: binding.repo, branch: binding.branch,
+          message: commitMsg, files: changedFiles,
+        }),
+      });
+      const d = await res.json() as { ok?: boolean; error?: string; commitUrl?: string; filesChanged?: number };
+      if (d.error) throw new Error(d.error);
+      // Update snapshot so these files no longer show as "changed"
+      const newSnapshot = { ...binding.snapshot };
+      changedFiles.forEach(f => { newSnapshot[f.path] = f.content; });
+      gh.updateSnapshot(activeProjectId, newSnapshot);
+      setCommitMsg("");
+      setStatus({type:"success", msg:`✓ Pushed ${d.filesChanged} file(s) to ${binding.owner}/${binding.repo}`});
+    } catch (e) {
+      setStatus({type:"error", msg:`Push failed: ${e}`});
+    } finally { setCommitting(false); }
+  };
 
   // ── Clone: fetch the FULL recursive file tree (files + folders) in one call ──
   const cloneRepo = async () => {
@@ -45,17 +149,18 @@ export function GitPanel() {
     if (!match) { setStatus({type:"error",msg:"Invalid GitHub URL"}); return; }
     const [, owner, repo] = match;
     setLoading(true); setStatus(null); setTree([]); setRepoInfo(null);
+    const authHeaders: HeadersInit = gh.token ? { Authorization: `Bearer ${gh.token}` } : {};
     try {
       // Resolve the actual default branch if the user left it as "main" but repo uses "master" etc.
       let useBranch = branch;
-      const repoMetaRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`);
+      const repoMetaRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers: authHeaders });
       if (repoMetaRes.ok) {
         const meta = await repoMetaRes.json() as { default_branch?: string };
         if (!branch || branch === "main") useBranch = meta.default_branch ?? "main";
       }
 
       // Recursive tree API — returns EVERY file and folder in the repo in one request
-      const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/trees/${useBranch}?recursive=1`);
+      const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/trees/${useBranch}?recursive=1`, { headers: authHeaders });
       if (!res.ok) throw new Error(`GitHub: ${res.status} ${res.statusText}`);
       const data = await res.json() as { tree: TreeEntry[]; truncated?: boolean };
 
@@ -108,18 +213,21 @@ export function GitPanel() {
 
       const files = tree.filter(e => e.type === "blob");
       let loaded = 0;
+      const snapshot: Record<string,string> = {};
+      const authHeaders: HeadersInit = gh.token ? { Authorization: `Bearer ${gh.token}` } : {};
       // Download in small concurrent batches to stay fast without hammering GitHub
       const BATCH = 8;
       for (let i = 0; i < files.length; i += BATCH) {
         const batch = files.slice(i, i + BATCH);
         await Promise.all(batch.map(async (f) => {
           try {
-            const content = await fetch(`${GITHUB_RAW}/${owner}/${repo}/${b}/${f.path}`).then(r => r.text());
+            const content = await fetch(`${GITHUB_RAW}/${owner}/${repo}/${b}/${f.path}`, { headers: authHeaders }).then(r => r.text());
             const parts = f.path.split("/");
             const name = parts[parts.length - 1];
             const parentPath = parts.slice(0, -1).join("/");
             const parentId = dirIdByPath.get(parentPath) || null;
             fsStore.createFile(parentId, name, project.id, content);
+            snapshot[f.path] = content;
             loaded++;
           } catch { /* skip unreadable file, continue with the rest */ }
         }));
@@ -127,6 +235,9 @@ export function GitPanel() {
       }
 
       fsStore.setActiveProject(project.id);
+      if (gh.token) {
+        gh.setBinding(project.id, { owner, repo, branch: b, snapshot });
+      }
       setStatus({type:"success", msg:`✓ Project "${repo}" created with ${loaded} file(s) — switching to File Explorer`});
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent("glowide:switch-plugin", { detail: "files" }));
@@ -166,6 +277,83 @@ export function GitPanel() {
           <GitBranch className="w-4 h-4 text-glow-accent"/>
           <span className="text-sm font-semibold text-glow-text">Git</span>
         </div>
+
+        {/* ── GitHub connection ────────────────────────────────────────── */}
+        <div className="mb-3 p-3 bg-glow-surface border border-glow-border rounded-xl space-y-2">
+          {gh.token ? (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Github className="w-4 h-4 text-glow-text flex-shrink-0"/>
+                  <span className="text-xs text-glow-text font-medium truncate">Connected as {gh.username}</span>
+                </div>
+                <button onClick={disconnectGitHub} title="Disconnect"
+                  className="p-1.5 text-glow-muted hover:text-red-400 transition-colors flex-shrink-0">
+                  <LogOut className="w-3.5 h-3.5"/>
+                </button>
+              </div>
+              <button onClick={loadMyRepos}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 bg-glow-bg border border-glow-border rounded-lg text-xs text-glow-muted hover:text-glow-text transition-colors">
+                <span>{loadingRepos ? "Loading repos…" : "My Repositories"}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${reposOpen?"rotate-180":""}`}/>
+              </button>
+              {reposOpen && (
+                <div className="max-h-40 overflow-y-auto space-y-0.5 border border-glow-border rounded-lg p-1">
+                  {loadingRepos && <p className="text-[10px] text-glow-muted/50 text-center py-2">Loading…</p>}
+                  {!loadingRepos && myRepos.length === 0 && <p className="text-[10px] text-glow-muted/50 text-center py-2">No repos found</p>}
+                  {myRepos.map(r => (
+                    <button key={r.full_name} onClick={() => pickRepo(r.full_name, r.default_branch)}
+                      className="w-full flex items-center gap-1.5 px-2 py-1.5 hover:bg-glow-card rounded-md text-left transition-colors">
+                      <span className="text-[11px] text-glow-text truncate flex-1">{r.full_name}</span>
+                      {r.private && <span className="text-[9px] text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded flex-shrink-0">private</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-[10px] text-glow-muted/70">Connect GitHub to push commits and access private repos.</p>
+              <div className="flex gap-2">
+                <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)} type="password"
+                  placeholder="Personal Access Token (ghp_...)"
+                  className="flex-1 min-w-0 bg-glow-bg border border-glow-border rounded-lg px-2.5 py-1.5 text-xs text-glow-text placeholder-glow-muted/30 focus:outline-none focus:border-glow-accent/50"/>
+                <button onClick={connectGitHub} disabled={connecting||!tokenInput.trim()}
+                  className="flex-shrink-0 px-2.5 py-1.5 bg-glow-gradient text-white text-xs font-semibold rounded-lg disabled:opacity-50">
+                  {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : "Connect"}
+                </button>
+              </div>
+              <a href="https://github.com/settings/tokens/new?scopes=repo&description=GlowIDE" target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-glow-accent hover:underline">
+                Generate a token with "repo" scope <ExternalLink className="w-2.5 h-2.5"/>
+              </a>
+            </>
+          )}
+        </div>
+
+        {/* ── Commit & Push (only when the active project is bound to a repo) ── */}
+        {binding && (
+          <div className="mb-3 p-3 bg-glow-accent/5 border border-glow-accent/20 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-glow-text">{binding.owner}/{binding.repo}</span>
+              <span className="text-[10px] text-glow-muted">{binding.branch}</span>
+            </div>
+            <p className="text-[10px] text-glow-muted">{changedFiles.length} file{changedFiles.length!==1?"s":""} changed</p>
+            {changedFiles.length > 0 && (
+              <>
+                <input value={commitMsg} onChange={e=>setCommitMsg(e.target.value)}
+                  placeholder={`Update ${changedFiles.length} file(s) via GlowIDE`}
+                  className="w-full bg-glow-bg border border-glow-border rounded-lg px-2.5 py-1.5 text-xs text-glow-text placeholder-glow-muted/30 focus:outline-none focus:border-glow-accent/50"/>
+                <button onClick={commitAndPush} disabled={committing}
+                  className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-glow-gradient text-white text-xs font-semibold rounded-lg disabled:opacity-50">
+                  {committing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Upload className="w-3.5 h-3.5"/>}
+                  {committing ? "Pushing…" : "Commit & Push"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         <p className="text-[10px] text-glow-muted/60 mb-3">Clone a full GitHub repo — folders and all — into a real project.</p>
 
         <div className="space-y-2">
