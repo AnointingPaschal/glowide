@@ -42,7 +42,8 @@ export function GitPanel() {
   const gh = useGitHubStore();
   const [tokenInput, setTokenInput] = useState("");
   const [connecting, setConnecting] = useState(false);
-  const [myRepos, setMyRepos] = useState<Array<{full_name:string; default_branch:string; private:boolean}>>([]);
+  const [myRepos, setMyRepos] = useState<Array<{full_name:string; default_branch:string; private:boolean; language:string|null; stargazers_count:number; updated_at:string; owner:{login:string; avatar_url:string}}>>([]);
+  const [repoSearch, setRepoSearch] = useState("");
   const [reposOpen, setReposOpen] = useState(false);
   const [loadingRepos, setLoadingRepos] = useState(false);
 
@@ -83,12 +84,21 @@ export function GitPanel() {
     if (myRepos.length > 0) return; // already loaded
     setLoadingRepos(true);
     try {
-      const res = await fetch("https://api.github.com/user/repos?sort=updated&per_page=50", {
-        headers: { Authorization: `Bearer ${gh.token}`, Accept: "application/vnd.github+json" },
-      });
-      if (!res.ok) throw new Error(`GitHub error ${res.status}`);
-      const repos = await res.json() as Array<{full_name:string; default_branch:string; private:boolean}>;
-      setMyRepos(repos);
+      // Paginate through every page GitHub returns — "all your repos", not just the first 50
+      const allRepos: typeof myRepos = [];
+      let page = 1;
+      while (true) {
+        const res = await fetch(`https://api.github.com/user/repos?sort=updated&per_page=100&page=${page}&affiliation=owner,collaborator,organization_member`, {
+          headers: { Authorization: `Bearer ${gh.token}`, Accept: "application/vnd.github+json" },
+        });
+        if (!res.ok) throw new Error(`GitHub error ${res.status}`);
+        const batch = await res.json() as typeof myRepos;
+        allRepos.push(...batch);
+        if (batch.length < 100) break; // last page
+        page++;
+        if (page > 10) break; // safety cap at 1000 repos
+      }
+      setMyRepos(allRepos);
     } catch (e) { setStatus({type:"error", msg:String((e as Error).message ?? e)}); }
     finally { setLoadingRepos(false); }
   };
@@ -294,20 +304,39 @@ export function GitPanel() {
               </div>
               <button onClick={loadMyRepos}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 bg-glow-bg border border-glow-border rounded-lg text-xs text-glow-muted hover:text-glow-text transition-colors">
-                <span>{loadingRepos ? "Loading repos…" : "My Repositories"}</span>
+                <span>{loadingRepos ? "Loading all repos…" : myRepos.length > 0 ? `My Repositories (${myRepos.length})` : "My Repositories"}</span>
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${reposOpen?"rotate-180":""}`}/>
               </button>
               {reposOpen && (
-                <div className="max-h-40 overflow-y-auto space-y-0.5 border border-glow-border rounded-lg p-1">
-                  {loadingRepos && <p className="text-[10px] text-glow-muted/50 text-center py-2">Loading…</p>}
-                  {!loadingRepos && myRepos.length === 0 && <p className="text-[10px] text-glow-muted/50 text-center py-2">No repos found</p>}
-                  {myRepos.map(r => (
-                    <button key={r.full_name} onClick={() => pickRepo(r.full_name, r.default_branch)}
-                      className="w-full flex items-center gap-1.5 px-2 py-1.5 hover:bg-glow-card rounded-md text-left transition-colors">
-                      <span className="text-[11px] text-glow-text truncate flex-1">{r.full_name}</span>
-                      {r.private && <span className="text-[9px] text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded flex-shrink-0">private</span>}
-                    </button>
-                  ))}
+                <div className="space-y-1.5">
+                  {myRepos.length > 5 && (
+                    <input value={repoSearch} onChange={e=>setRepoSearch(e.target.value)}
+                      placeholder={`Search ${myRepos.length} repos…`}
+                      className="w-full bg-glow-bg border border-glow-border rounded-lg px-2 py-1.5 text-[11px] text-glow-text placeholder-glow-muted/40 focus:outline-none focus:border-glow-accent/50"/>
+                  )}
+                  <div className="max-h-52 overflow-y-auto space-y-0.5 border border-glow-border rounded-lg p-1">
+                    {loadingRepos && <p className="text-[10px] text-glow-muted/50 text-center py-3">Loading all your repos…</p>}
+                    {!loadingRepos && myRepos.length === 0 && <p className="text-[10px] text-glow-muted/50 text-center py-2">No repos found</p>}
+                    {myRepos
+                      .filter(r => !repoSearch.trim() || r.full_name.toLowerCase().includes(repoSearch.toLowerCase()))
+                      .map(r => (
+                      <button key={r.full_name} onClick={() => pickRepo(r.full_name, r.default_branch)}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-glow-card rounded-md text-left transition-colors">
+                        {r.owner?.avatar_url && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={r.owner.avatar_url} alt="" className="w-4 h-4 rounded-full flex-shrink-0"/>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[11px] text-glow-text truncate block">{r.full_name}</span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {r.language && <span className="text-[9px] text-glow-muted">{r.language}</span>}
+                            {r.stargazers_count > 0 && <span className="text-[9px] text-glow-muted">★ {r.stargazers_count}</span>}
+                          </div>
+                        </div>
+                        {r.private && <span className="text-[9px] text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded flex-shrink-0">private</span>}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </>

@@ -31,6 +31,7 @@ import { ARC_SAMPLES, type SampleProject } from "@/lib/arc-samples";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import { usePreferencesStore } from "@/store/preferencesStore";
+import { useFileSystemStore } from "@/store/fileSystemStore";
 
 const DIFFICULTY_COLOR = {
   beginner:     "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
@@ -43,7 +44,7 @@ type Plugin = "files"|"samples"|"deploy"|"chat"|"analysis"|"test"|"verify"|"gas"
 
 const PLUGINS: Array<{id:Plugin; icon:React.ElementType; label:string; group:"top"|"bottom"}> = [
   { id:"files",    icon:FolderTree,    label:"File Explorer",      group:"top"    },
-  { id:"samples",  icon:BookOpen,      label:"Arc Workstation",    group:"top"    },
+  { id:"samples",  icon:BookOpen,      label:"Glow Lab",           group:"top"    },
   { id:"deploy",   icon:Rocket,        label:"Deploy & Run",       group:"top"    },
   { id:"analysis", icon:Shield,        label:"Static Analysis",    group:"top"    },
   { id:"test",     icon:FlaskConical,  label:"Unit Testing",       group:"top"    },
@@ -64,7 +65,7 @@ function SamplesPanel({ onLoad }: { onLoad:(p:SampleProject)=>void }) {
       <div className="px-3 pt-3 pb-2 border-b border-glow-border/40">
         <div className="flex items-center gap-2 mb-0.5">
           <BookOpen className="w-3.5 h-3.5 text-glow-accent"/>
-          <span className="text-xs font-semibold text-glow-text">Arc Workstation</span>
+          <span className="text-xs font-semibold text-glow-text">Glow Lab</span>
         </div>
         <p className="text-[10px] text-glow-muted/60">Production templates for Arc Testnet + Circle</p>
       </div>
@@ -107,6 +108,7 @@ function SamplesPanel({ onLoad }: { onLoad:(p:SampleProject)=>void }) {
 export default function EditorPage() {
   const { tabs, activeTabId, isTerminalOpen, toggleTerminal, setTerminalOpen, closeTab, setActiveTab, lastCompileResult, setCompileResult: storeSet } = useEditorStore();
   const prefs = usePreferencesStore();
+  const { nodes, activeProjectId } = useFileSystemStore();
 
   const [activePlugin,   setActivePlugin]   = useState<Plugin>("files");
   const [showChatPanel,  setShowChatPanel]  = useState(false);
@@ -242,6 +244,81 @@ export default function EditorPage() {
     finally    { setIsCompiling(false); }
   }, [activeTab, log, solcVersion, storeSet]);
 
+  // ── Preview: run any web project (static HTML/CSS/JS or a single React
+  // component file) in a new browser tab, regardless of framework, by
+  // assembling a self-contained document and opening it via a Blob URL. ──────
+  const buildNodePath = useCallback((node: { id:string; name:string; parentId:string|null }): string => {
+    const parts: string[] = [node.name];
+    let cur = node;
+    while (cur.parentId) {
+      const parent = nodes.find(n => n.id === cur.parentId);
+      if (!parent) break;
+      parts.unshift(parent.name);
+      cur = parent;
+    }
+    return parts.join("/");
+  }, [nodes]);
+
+  const runPreview = useCallback(() => {
+    const projectFiles = activeProjectId
+      ? nodes.filter(n => n.projectId === activeProjectId && n.type === "file").map(n => ({ path: buildNodePath(n), content: n.content ?? "" }))
+      : [];
+    const findFile = (path: string) => projectFiles.find(f => f.path === path || f.path.endsWith("/" + path));
+
+    // ── Case 1: project has an index.html — inline any local CSS/JS it references
+    const htmlFile = findFile("index.html") ?? (activeTab?.name === "index.html" ? { path: activeTab.name, content: activeTab.content } : undefined);
+    if (htmlFile) {
+      let html = htmlFile.content;
+      html = html.replace(/<link[^>]*href=["']([^"':]+\.css)["'][^>]*>/g, (match, href) => {
+        const css = findFile(href);
+        return css ? `<style>\n${css.content}\n</style>` : match;
+      });
+      html = html.replace(/<script[^>]*src=["']([^"':]+\.js)["'][^>]*><\/script>/g, (match, src) => {
+        const js = findFile(src);
+        return js ? `<script>\n${js.content}\n</script>` : match;
+      });
+      const blob = new Blob([html], { type: "text/html" });
+      window.open(URL.createObjectURL(blob), "_blank");
+      toast.success("Preview opened in new tab");
+      return;
+    }
+
+    // ── Case 2: active file is a React component (.tsx/.jsx) — transpile
+    // in-browser with Babel standalone and mount it, no build step needed.
+    if (activeTab && /\.(tsx|jsx)$/.test(activeTab.name) && /export default/.test(activeTab.content)) {
+      const componentName = activeTab.name.replace(/\.(tsx|jsx)$/, "");
+      const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"/><title>Preview — ${activeTab.name}</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>body{margin:0;background:#0a0a12;font-family:system-ui,sans-serif}</style>
+</head><body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react,typescript" data-type="module">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+${activeTab.content.replace(/export default/g, "const __Preview__ =").replace(/^import .*$/gm, "")}
+ReactDOM.createRoot(document.getElementById("root")).render(<__Preview__ />);
+</script>
+</body></html>`;
+      const blob = new Blob([html], { type: "text/html" });
+      window.open(URL.createObjectURL(blob), "_blank");
+      toast.success(`Previewing ${componentName} in new tab`);
+      return;
+    }
+
+    // ── Case 3: plain HTML/JS/CSS file with no project context ──────────────
+    if (activeTab && /\.html?$/.test(activeTab.name)) {
+      const blob = new Blob([activeTab.content], { type: "text/html" });
+      window.open(URL.createObjectURL(blob), "_blank");
+      toast.success("Preview opened in new tab");
+      return;
+    }
+
+    toast.error("No previewable file — open an index.html, or a .tsx/.jsx file with a default export");
+  }, [activeTab, activeProjectId, nodes, buildNodePath]);
+
   const downloadProject = async () => {
     if (!tabs.length) { toast.error("No files to download"); return; }
     try {
@@ -308,6 +385,7 @@ export default function EditorPage() {
             <ToolBtn icon={Save}     label="Save (Ctrl+S)"   onClick={handleSave}     disabled={!activeTab}/>
             <ToolBtn icon={Download} label="Download ZIP"    onClick={downloadProject} disabled={!tabs.length}/>
             <ToolBtn icon={TermIcon} label="Toggle terminal" onClick={toggleTerminal}  active={isTerminalOpen}/>
+            <ToolBtn icon={Play}     label="Preview (new tab)" onClick={runPreview}   disabled={!activeTab}/>
           </div>
 
           <div className="flex-1"/>
@@ -364,6 +442,8 @@ export default function EditorPage() {
               </button>
             </div>
           )}
+
+          <ToolBtn icon={MessageSquare} label="AI Assistant" onClick={()=>setShowChatPanel(v=>!v)} active={showChatPanel}/>
         </div>
 
         {/* ── Main layout ──────────────────────────────────────────────── */}
