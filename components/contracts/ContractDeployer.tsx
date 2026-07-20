@@ -156,7 +156,7 @@ function StepRow({ step }: { step:Step }) {
 // ══════════════════════════════════════════════════════════════════════════════
 export function ContractDeployer({ compiled }: { compiled: CompileOutput|null }) {
   const { address, isConnected, chainId } = useWalletStore();
-  const { tabs, activeTabId, lastCompileResult } = useEditorStore();
+  const { tabs, activeTabId, lastCompileResult, setTerminalOpen } = useEditorStore();
 
   // Use passed compiled OR fall back to store's last compile result
   const result = compiled ?? lastCompileResult;
@@ -211,6 +211,7 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
   // Compile the active file inline (from deploy panel)
   const compileInline = async () => {
     if (!activeTab?.content) { toast.error("No active .sol file"); return; }
+    setTerminalOpen(true);
     setCompilingInline(true);
     setInlineCompile(null);
     try {
@@ -247,6 +248,7 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
     if (!isConnected)           { toast.error("Connect your wallet first"); return; }
     if (!activeResult?.bytecode){ toast.error("No compiled contract"); return; }
     if (wrongChain)             { await switchChain(); return; }
+    setTerminalOpen(true);
 
     const provider = (window as Window&{ethereum?:EthProvider}).ethereum;
     if (!provider) { toast.error("No wallet provider"); return; }

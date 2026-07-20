@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { MonacoEditor } from "@/components/editor/MonacoEditor";
 import { EditorTabs } from "@/components/editor/EditorTabs";
 import { Terminal, terminalLog } from "@/components/editor/Terminal";
+import { TerminalTabs } from "@/components/editor/TerminalTabs";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ContractDeployer } from "@/components/contracts/ContractDeployer";
 import { AnalysisPanel } from "@/components/editor/panels/AnalysisPanel";
@@ -36,7 +37,7 @@ const DIFFICULTY_COLOR = {
 };
 
 // ── Sidebar plugin icons ─────────────────────────────────────────────────────
-type Plugin = "files"|"samples"|"deploy"|"chat"|"analysis"|"test"|"verify"|"gas"|"debugger"|"git"|"settings";
+type Plugin = "files"|"samples"|"deploy"|"chat"|"analysis"|"test"|"verify"|"gas"|"debugger"|"git"|"terminal"|"settings";
 
 const PLUGINS: Array<{id:Plugin; icon:React.ElementType; label:string; group:"top"|"bottom"}> = [
   { id:"files",    icon:FolderTree,    label:"File Explorer",      group:"top"    },
@@ -48,6 +49,7 @@ const PLUGINS: Array<{id:Plugin; icon:React.ElementType; label:string; group:"to
   { id:"gas",      icon:Gauge,         label:"Gas Profiler",       group:"top"    },
   { id:"debugger", icon:Bug,           label:"Debugger",           group:"top"    },
   { id:"git",      icon:GitBranch,     label:"Git",                group:"top"    },
+  { id:"terminal", icon:TermIcon,      label:"Terminal",           group:"bottom" },
   { id:"chat",     icon:MessageSquare, label:"AI Assistant",       group:"bottom" },
   { id:"settings", icon:Settings,      label:"Settings",           group:"bottom" },
 ];
@@ -101,7 +103,7 @@ function SamplesPanel({ onLoad }: { onLoad:(p:SampleProject)=>void }) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function EditorPage() {
-  const { tabs, activeTabId, isTerminalOpen, toggleTerminal, closeTab, setActiveTab, lastCompileResult, setCompileResult: storeSet } = useEditorStore();
+  const { tabs, activeTabId, isTerminalOpen, toggleTerminal, setTerminalOpen, closeTab, setActiveTab, lastCompileResult, setCompileResult: storeSet } = useEditorStore();
 
   const [activePlugin,   setActivePlugin]   = useState<Plugin>("files");
   const [showChatPanel,  setShowChatPanel]  = useState(false);
@@ -214,6 +216,7 @@ export default function EditorPage() {
   const compile = useCallback(async () => {
     if (!activeTab) { toast.error("Open a Solidity file first"); return; }
     if (!activeTab.name.endsWith(".sol")) { toast.error("Select a .sol file to compile"); return; }
+    setTerminalOpen(true);
     setIsCompiling(true); setCompileResult(null);
     log(`Compiling ${activeTab.name} (solc ${solcVersion})…`, "info");
     try {
@@ -388,6 +391,8 @@ export default function EditorPage() {
             {PLUGINS.filter(p=>p.group==="bottom").map(p=>(
               p.id === "chat"
                 ? <PluginBtn key={p.id} plugin={p} active={showChatPanel} onClick={()=>setShowChatPanel(v=>!v)}/>
+                : p.id === "terminal"
+                ? <PluginBtn key={p.id} plugin={p} active={isTerminalOpen} onClick={toggleTerminal}/>
                 : <PluginBtn key={p.id} plugin={p} active={activePlugin===p.id} onClick={()=>setActivePlugin(p.id)}/>
             ))}
           </div>
@@ -416,7 +421,7 @@ export default function EditorPage() {
                   {isTerminalOpen && (
                     <>
                       <PanelResizeHandle className="h-[3px] bg-glow-border/30 hover:bg-glow-accent/40 cursor-row-resize"/>
-                      <Panel defaultSize={28} minSize={12} maxSize={55}><Terminal/></Panel>
+                      <Panel defaultSize={28} minSize={12} maxSize={55}><TerminalTabs/></Panel>
                     </>
                   )}
                 </PanelGroup>

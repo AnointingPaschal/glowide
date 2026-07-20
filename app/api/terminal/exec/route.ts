@@ -68,7 +68,7 @@ async function listFilesRecursive(dir: string, base = ""): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   let out: string[] = [];
   for (const e of entries) {
-    if (e.name === "node_modules" || e.name === ".git") continue;
+    if (e.name === "node_modules" || e.name === ".git" || e.name === ".home" || e.name === ".npm-cache") continue;
     const rel = base ? `${base}/${e.name}` : e.name;
     if (e.isDirectory()) out = out.concat(await listFilesRecursive(join(dir, e.name), rel));
     else out.push(rel);
@@ -93,14 +93,24 @@ export async function POST(req: NextRequest) {
   try {
     workDir = await mkdtemp(join(tmpdir(), "glowide-"));
 
-    // Materialize provided project files into the sandbox
-    const before = new Map<string, number>(); // path -> size, for diffing afterward
+    // Materialize provided project files into the sandbox — keep exact
+    // content (not length/size) so the diff afterward is byte-for-byte
+    // accurate, not an approximation that breaks on any non-ASCII character.
+    const before = new Map<string, string>();
     for (const f of body.files ?? []) {
       const full = join(workDir, f.path);
       await mkdir(dirname(full), { recursive: true });
       await writeFile(full, f.content, "utf8");
-      before.set(f.path, f.content.length);
+      before.set(f.path, f.content);
     }
+
+    // Give npm/git/pip a real writable HOME inside our own sandbox instead of
+    // whatever ambient $HOME the serverless runtime reports (which is often
+    // not an actual writable directory here, causing ENOENT on npm's cache).
+    const fakeHome = join(workDir, ".home");
+    await mkdir(fakeHome, { recursive: true });
+    const npmCache = join(workDir, ".npm-cache");
+    await mkdir(npmCache, { recursive: true });
 
     let stdout = "", stderr = "", timedOut = false;
     try {
@@ -108,7 +118,15 @@ export async function POST(req: NextRequest) {
         cwd: workDir,
         timeout: 25_000,
         maxBuffer: 5 * 1024 * 1024,
-        env: { ...process.env, CI: "true", NO_COLOR: "1" },
+        env: {
+          ...process.env,
+          CI: "true",
+          NO_COLOR: "1",
+          HOME: fakeHome,
+          npm_config_cache: npmCache,
+          npm_config_update_notifier: "false",
+          npm_config_fund: "false",
+        },
       });
       stdout = result.stdout; stderr = result.stderr;
     } catch (e) {
@@ -122,16 +140,21 @@ export async function POST(req: NextRequest) {
       if (!stdout && !stderr) stderr = err.message;
     }
 
-    // Diff the directory to find files the command created or changed
+    // Diff the directory to find files the command actually created or
+    // changed — exact string comparison against what we wrote, so a file
+    // the command never touched is NEVER reported as "updated" no matter
+    // what characters it contains.
     const afterPaths = await listFilesRecursive(workDir);
     const updatedFiles: Array<{ path: string; content: string }> = [];
     for (const p of afterPaths) {
       try {
         const s = await stat(join(workDir, p));
         if (s.size > 2_000_000) continue; // skip anything huge (binaries, build output)
-        if (!before.has(p) || before.get(p) !== s.size) {
-          const content = await readFile(join(workDir, p), "utf8").catch(() => null);
-          if (content !== null) updatedFiles.push({ path: p, content });
+        const content = await readFile(join(workDir, p), "utf8").catch(() => null);
+        if (content === null) continue; // unreadable/binary, skip
+        const prior = before.get(p);
+        if (prior === undefined || prior !== content) {
+          updatedFiles.push({ path: p, content });
         }
       } catch { /* file vanished mid-diff, skip */ }
     }

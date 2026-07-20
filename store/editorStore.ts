@@ -35,6 +35,7 @@ interface EditorState {
   setTerminalHeight: (height: number) => void;
   toggleSidebar: () => void;
   toggleTerminal: () => void;
+  setTerminalOpen: (open: boolean) => void;
   toggleAIPanel: () => void;
   setAIPanelWidth: (width: number) => void;
   setTheme: (theme: "vs-dark" | "vs-light" | "hc-black") => void;
@@ -132,6 +133,7 @@ export const useEditorStore = create<EditorState>()(
       setTerminalHeight: (height) => set({ terminalHeight: height }),
       toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
       toggleTerminal: () => set((s) => ({ isTerminalOpen: !s.isTerminalOpen })),
+      setTerminalOpen: (open) => set({ isTerminalOpen: open }),
       toggleAIPanel: () => set((s) => ({ isAIPanelOpen: !s.isAIPanelOpen })),
       setAIPanelWidth: (width) => set({ aiPanelWidth: width }),
       setTheme: (theme) => set({ theme }),
