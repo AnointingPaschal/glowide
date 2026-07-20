@@ -175,9 +175,9 @@ export function GitPanel() {
           <div className="flex gap-2">
             <input value={branch} onChange={e=>setBranch(e.target.value)}
               placeholder="branch (auto-detected)"
-              className="flex-1 bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-xs text-glow-text placeholder-glow-muted/30 focus:outline-none focus:border-glow-accent/50"/>
+              className="flex-1 min-w-0 bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-xs text-glow-text placeholder-glow-muted/30 focus:outline-none focus:border-glow-accent/50"/>
             <button onClick={cloneRepo} disabled={loading||!url}
-              className="px-3 py-2 bg-glow-gradient text-white text-xs font-semibold rounded-xl disabled:opacity-50 flex items-center gap-1.5">
+              className="flex-shrink-0 px-3 py-2 bg-glow-gradient text-white text-xs font-semibold rounded-xl disabled:opacity-50 flex items-center gap-1.5">
               {loading?<Loader2 className="w-3.5 h-3.5 animate-spin"/>:<Github className="w-3.5 h-3.5"/>}
               Clone
             </button>

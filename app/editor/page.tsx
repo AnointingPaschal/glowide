@@ -104,6 +104,7 @@ export default function EditorPage() {
   const { tabs, activeTabId, isTerminalOpen, toggleTerminal, closeTab, setActiveTab, lastCompileResult, setCompileResult: storeSet } = useEditorStore();
 
   const [activePlugin,   setActivePlugin]   = useState<Plugin>("files");
+  const [showChatPanel,  setShowChatPanel]  = useState(false);
 
   // Allow other components (e.g. GitPanel's "Load Project") to switch the
   // active sidebar plugin without prop-drilling through the whole tree.
@@ -385,35 +386,60 @@ export default function EditorPage() {
             ))}
             <div className="flex-1"/>
             {PLUGINS.filter(p=>p.group==="bottom").map(p=>(
-              <PluginBtn key={p.id} plugin={p} active={activePlugin===p.id} onClick={()=>setActivePlugin(p.id)}/>
+              p.id === "chat"
+                ? <PluginBtn key={p.id} plugin={p} active={showChatPanel} onClick={()=>setShowChatPanel(v=>!v)}/>
+                : <PluginBtn key={p.id} plugin={p} active={activePlugin===p.id} onClick={()=>setActivePlugin(p.id)}/>
             ))}
           </div>
 
-          {/* ── Plugin panel ────────────────────────────────────────── */}
-          <div className="w-64 flex-shrink-0 border-r border-glow-border bg-[#080812] flex flex-col overflow-hidden">
-            <div className="px-3 py-2 border-b border-glow-border/50 flex-shrink-0">
-              <p className="text-[9px] font-bold text-glow-muted/50 uppercase tracking-widest">{pluginLabel}</p>
-            </div>
-            <div className="flex-1 overflow-hidden">{renderPlugin()}</div>
-          </div>
-
-          {/* ── Editor + terminal ────────────────────────────────────── */}
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <PanelGroup direction="vertical">
-              <Panel defaultSize={isTerminalOpen?72:100} minSize={35}>
-                <div className="flex flex-col h-full">
-                  <EditorTabs/>
-                  <div className="flex-1 overflow-hidden"><MonacoEditor/></div>
+          {/* ── Resizable: Plugin panel | Editor+Terminal | AI Chat ──── */}
+          <PanelGroup direction="horizontal" className="flex-1 min-w-0">
+            <Panel defaultSize={22} minSize={18} maxSize={38}>
+              <div className="h-full border-r border-glow-border bg-[#080812] flex flex-col overflow-hidden">
+                <div className="px-3 py-2 border-b border-glow-border/50 flex-shrink-0">
+                  <p className="text-[9px] font-bold text-glow-muted/50 uppercase tracking-widest">{pluginLabel}</p>
                 </div>
-              </Panel>
-              {isTerminalOpen && (
-                <>
-                  <PanelResizeHandle className="h-[3px] bg-glow-border/30 hover:bg-glow-accent/40 cursor-row-resize"/>
-                  <Panel defaultSize={28} minSize={12} maxSize={55}><Terminal/></Panel>
-                </>
-              )}
-            </PanelGroup>
-          </div>
+                <div className="flex-1 overflow-hidden">{renderPlugin()}</div>
+              </div>
+            </Panel>
+            <PanelResizeHandle className="w-[3px] bg-glow-border/30 hover:bg-glow-accent/40 cursor-col-resize"/>
+
+            <Panel defaultSize={showChatPanel ? 54 : 78} minSize={30}>
+              <div className="h-full overflow-hidden">
+                <PanelGroup direction="vertical">
+                  <Panel defaultSize={isTerminalOpen?72:100} minSize={35}>
+                    <div className="flex flex-col h-full">
+                      <EditorTabs/>
+                      <div className="flex-1 overflow-hidden"><MonacoEditor/></div>
+                    </div>
+                  </Panel>
+                  {isTerminalOpen && (
+                    <>
+                      <PanelResizeHandle className="h-[3px] bg-glow-border/30 hover:bg-glow-accent/40 cursor-row-resize"/>
+                      <Panel defaultSize={28} minSize={12} maxSize={55}><Terminal/></Panel>
+                    </>
+                  )}
+                </PanelGroup>
+              </div>
+            </Panel>
+
+            {showChatPanel && (
+              <>
+                <PanelResizeHandle className="w-[3px] bg-glow-border/30 hover:bg-glow-accent/40 cursor-col-resize"/>
+                <Panel defaultSize={24} minSize={20} maxSize={42}>
+                  <div className="h-full border-l border-glow-border bg-[#080812] flex flex-col overflow-hidden">
+                    <div className="px-3 py-2 border-b border-glow-border/50 flex-shrink-0 flex items-center justify-between">
+                      <p className="text-[9px] font-bold text-glow-muted/50 uppercase tracking-widest">AI Assistant</p>
+                      <button onClick={()=>setShowChatPanel(false)} className="text-glow-muted hover:text-glow-text">
+                        <X className="w-3.5 h-3.5"/>
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-hidden"><ChatPanel compact editorMode/></div>
+                  </div>
+                </Panel>
+              </>
+            )}
+          </PanelGroup>
         </div>
       </div>
     </AppLayout>

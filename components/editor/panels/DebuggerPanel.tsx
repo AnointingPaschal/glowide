@@ -75,9 +75,9 @@ export function DebuggerPanel() {
         <div className="flex gap-2">
           <input value={txHash} onChange={e=>setTxHash(e.target.value)} onKeyDown={e=>e.key==="Enter" && loadTrace()}
             placeholder="0x transaction hash…"
-            className="flex-1 bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-xs font-mono text-glow-text placeholder-glow-muted/30 focus:outline-none focus:border-glow-accent/50"/>
+            className="flex-1 min-w-0 bg-glow-bg border border-glow-border rounded-xl px-3 py-2 text-xs font-mono text-glow-text placeholder-glow-muted/30 focus:outline-none focus:border-glow-accent/50"/>
           <button onClick={loadTrace} disabled={loading||!txHash.trim()}
-            className="px-3 py-2 bg-glow-gradient text-white text-xs font-semibold rounded-xl disabled:opacity-50 flex items-center gap-1.5">
+            className="flex-shrink-0 px-3 py-2 bg-glow-gradient text-white text-xs font-semibold rounded-xl disabled:opacity-50 flex items-center gap-1.5">
             {loading?<Loader2 className="w-3.5 h-3.5 animate-spin"/>:<Search className="w-3.5 h-3.5"/>}
             Debug
           </button>

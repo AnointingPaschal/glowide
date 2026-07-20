@@ -362,13 +362,13 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
 
         {/* Wallet + chain status */}
         <div className="grid grid-cols-2 gap-2">
-          <div className={cn("p-2.5 rounded-xl border text-xs", isConnected?"border-emerald-500/20 bg-emerald-500/5":"border-amber-500/20 bg-amber-500/5")}>
+          <div className={cn("p-2.5 rounded-xl border text-xs min-w-0", isConnected?"border-emerald-500/20 bg-emerald-500/5":"border-amber-500/20 bg-amber-500/5")}>
             <p className="text-glow-muted/60 mb-0.5">Wallet</p>
-            <p className={isConnected?"text-emerald-400 font-mono":"text-amber-400"}>
+            <p className={cn("truncate", isConnected?"text-emerald-400 font-mono":"text-amber-400")}>
               {isConnected ? truncateAddress(address!,6) : "Not connected"}
             </p>
           </div>
-          <div className="p-2.5 rounded-xl border text-xs border-emerald-500/20 bg-emerald-500/5">
+          <div className="p-2.5 rounded-xl border text-xs min-w-0 border-emerald-500/20 bg-emerald-500/5">
             <p className="text-glow-muted/60 mb-0.5">Network</p>
             <p className="text-emerald-400 truncate">
               {chainId ? (
