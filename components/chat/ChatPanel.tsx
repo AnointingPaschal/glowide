@@ -22,6 +22,7 @@ const QUICK_PROMPTS = [
 // Detect fenced code blocks, optionally with a filename in the info string
 // e.g. ```solidity MyToken.sol\n...``` or plain ```solidity\n...```
 interface DetectedBlock { lang: string; filename?: string; code: string; }
+const SHELL_LANGS = new Set(["bash","sh","shell","zsh","console"]);
 function detectBlocks(content: string): DetectedBlock[] {
   const blocks: DetectedBlock[] = [];
   const re = /```(\w+)(?:\s+([^\n]+))?\n([\s\S]*?)```/g;
@@ -144,6 +145,59 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
     return applied;
   };
 
+  // Build a "folder/subfolder/name" path string for a project node
+  const buildNodePath = (node: {id:string; name:string; parentId:string|null}): string => {
+    const parts: string[] = [node.name];
+    let cur = node;
+    while (cur.parentId) {
+      const parent = nodes.find(n => n.id === cur.parentId);
+      if (!parent) break;
+      parts.unshift(parent.name);
+      cur = parent;
+    }
+    return parts.join("/");
+  };
+
+  // Execute AI-requested shell commands (```bash blocks) in the same server
+  // sandbox the interactive Terminal uses, log output there, and sync any
+  // files the command creates/modifies back into the project.
+  const runShellBlocks = async (blocks: DetectedBlock[]) => {
+    if (!activeProjectId) { terminalLog("No active project — can't run commands without one.", "warn"); return; }
+    const projectFiles = nodes
+      .filter(n => n.projectId === activeProjectId && n.type === "file")
+      .map(n => ({ path: buildNodePath(n), content: n.content ?? "" }));
+
+    for (const block of blocks) {
+      const commands = block.code.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+      for (const cmd of commands) {
+        terminalLog(`$ ${cmd}`, "ai");
+        try {
+          const res = await fetch("/api/terminal/exec", {
+            method: "POST", headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({ command: cmd, files: projectFiles }),
+          });
+          const d = await res.json() as { stdout?:string; stderr?:string; error?:string; updatedFiles?: Array<{path:string;content:string}> };
+          if (d.error) { terminalLog(d.error, "error"); continue; }
+          if (d.stdout) d.stdout.split("\n").forEach(l => l && terminalLog(l, "info"));
+          if (d.stderr) d.stderr.split("\n").forEach(l => l && terminalLog(l, "warn"));
+          if (d.updatedFiles?.length) {
+            for (const f of d.updatedFiles) {
+              const parts = f.path.split("/").filter(Boolean);
+              const name = parts.pop();
+              if (!name) continue;
+              const parentId = ensureDirPath(parts, activeProjectId);
+              const liveNodes = useFileSystemStore.getState().nodes;
+              const existing = liveNodes.find(n => n.projectId === activeProjectId && n.type === "file" && n.parentId === parentId && n.name === name);
+              if (existing) updateFileContent(existing.id, f.content);
+              else createFile(parentId, name, activeProjectId, f.content);
+            }
+            terminalLog(`Synced ${d.updatedFiles.length} file(s) from command output`, "success");
+          }
+        } catch (e) { terminalLog(`Execution failed: ${e}`, "error"); }
+      }
+    }
+  };
+
   const sendMessage = async (overrideInput?: string) => {
     const trimmed = (overrideInput ?? input).trim();
     if (!trimmed || isStreaming) return;
@@ -221,13 +275,17 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
       }
 
       // editorMode: detect code blocks and either apply immediately (if the
-      // user already granted permission this session) or ask first.
+      // user already granted permission this session) or ask first. File
+      // blocks get written to disk; ```bash blocks get executed for real.
       if (editorMode && fullContent) {
         const blocks = detectBlocks(fullContent);
         if (blocks.length > 0) {
+          const shellBlocks = blocks.filter(b => SHELL_LANGS.has(b.lang.toLowerCase()));
+          const fileBlocks  = blocks.filter(b => !SHELL_LANGS.has(b.lang.toLowerCase()));
           if (editPermission === "granted") {
-            const applied = applyBlocksToFiles(blocks);
+            const applied = fileBlocks.length ? applyBlocksToFiles(fileBlocks) : 0;
             if (applied) terminalLog(`AI applied changes to ${applied} file(s)`, "ai");
+            if (shellBlocks.length) await runShellBlocks(shellBlocks);
           } else if (editPermission === "unset") {
             setPendingApply({ blocks, sessionId: sessionId! });
           }
@@ -251,8 +309,11 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
   const grantPermission = (grant: boolean) => {
     setEditPermission(grant ? "granted" : "denied");
     if (grant && pendingApply) {
-      const applied = applyBlocksToFiles(pendingApply.blocks);
+      const shellBlocks = pendingApply.blocks.filter(b => SHELL_LANGS.has(b.lang.toLowerCase()));
+      const fileBlocks  = pendingApply.blocks.filter(b => !SHELL_LANGS.has(b.lang.toLowerCase()));
+      const applied = fileBlocks.length ? applyBlocksToFiles(fileBlocks) : 0;
       if (applied) terminalLog(`AI applied changes to ${applied} file(s)`, "ai");
+      if (shellBlocks.length) runShellBlocks(shellBlocks);
     }
     setPendingApply(null);
   };
@@ -363,11 +424,12 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
           </div>
         ) : (
           <div className="py-2">
-            {messages.map(msg => <ChatMessage key={msg.id} message={msg} />)}
+            {messages.map(msg => <ChatMessage key={msg.id} message={msg} editorMode={editorMode}/>)}
             {isStreaming && streamingContent && (
               <ChatMessage
                 message={{ id: "streaming", session_id: activeSessionId || "", role: "assistant", content: streamingContent, created_at: new Date().toISOString() }}
                 isStreaming
+                editorMode={editorMode}
               />
             )}
             <div ref={messagesEndRef} />
@@ -375,13 +437,20 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
         )}
       </div>
 
-      {/* Permission prompt — appears the first time the AI wants to write code */}
+      {/* Permission prompt — appears the first time the AI wants to write code or run a command */}
       {pendingApply && (
         <div className="mx-3 mb-2 p-3 bg-glow-accent/8 border border-glow-accent/25 rounded-xl flex-shrink-0 space-y-2">
           <div className="flex items-start gap-2">
             <FilePlus2 className="w-4 h-4 text-glow-accent flex-shrink-0 mt-0.5"/>
             <p className="text-xs text-glow-text">
-              AI wants to write changes to {pendingApply.blocks.length} file{pendingApply.blocks.length>1?"s":""} this session. Allow it?
+              {(() => {
+                const shellCount = pendingApply.blocks.filter(b => SHELL_LANGS.has(b.lang.toLowerCase())).length;
+                const fileCount  = pendingApply.blocks.length - shellCount;
+                const parts: string[] = [];
+                if (fileCount)  parts.push(`write to ${fileCount} file${fileCount>1?"s":""}`);
+                if (shellCount) parts.push(`run ${shellCount} command${shellCount>1?"s":""}`);
+                return `AI wants to ${parts.join(" and ")} this session. Allow it?`;
+              })()}
             </p>
           </div>
           <div className="flex gap-2">

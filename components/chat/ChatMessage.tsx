@@ -9,7 +9,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   Copy, Check, Edit3, RotateCcw, Eye,
   ChevronDown, Terminal, Code2, X, ExternalLink,
-  Hammer, FileCode, FolderOpen,
+  Hammer, FileCode, FolderOpen, FileEdit,
   CheckCircle, AlertTriangle, Loader2,
   Zap, Send, Globe, ArrowLeftRight, FolderPlus,
 } from "lucide-react";
@@ -21,6 +21,7 @@ interface ChatMessageProps {
   isStreaming?: boolean;
   onEdit?: (content: string) => void;
   onRetry?: () => void;
+  editorMode?: boolean;
 }
 
 // ── Detect code blocks in content ────────────────────────────────────────────
@@ -70,6 +71,38 @@ function PreviewModal({ code, lang, onClose }: { code:string; lang:string; onClo
             className="w-full h-full border-0" sandbox="allow-scripts allow-same-origin" title="Preview"/>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Compact action chip (editorMode) ──────────────────────────────────────────
+// Instead of dumping the full file/command into the chat transcript, show a
+// small collapsed pill describing what's happening. The actual apply/execute
+// logic already runs independently in ChatPanel — this is purely visual.
+const SHELL_LANGS = new Set(["bash","sh","shell","zsh","console"]);
+
+function ActionChip({ lang, filename, code }: { lang: string; filename?: string; code: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isShell = SHELL_LANGS.has(lang.toLowerCase());
+  const lineCount = code.split("\n").length;
+  const firstLine = code.split("\n")[0]?.trim().slice(0, 60) ?? "";
+
+  return (
+    <div className="my-1.5 rounded-xl border border-glow-border/50 bg-glow-surface/60 overflow-hidden">
+      <button onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-glow-card/40 transition-colors text-left">
+        {isShell
+          ? <Terminal className="w-3.5 h-3.5 text-glow-cyan flex-shrink-0"/>
+          : <FileEdit className="w-3.5 h-3.5 text-glow-accent flex-shrink-0"/>}
+        <span className="text-[11px] text-glow-text font-medium truncate flex-1">
+          {isShell ? `Run: ${firstLine}` : filename ? `Writing ${filename}` : `Code block`}
+        </span>
+        <span className="text-[10px] text-glow-muted/60 flex-shrink-0">{lineCount}L</span>
+        <ChevronDown className={cn("w-3 h-3 text-glow-muted flex-shrink-0 transition-transform", expanded && "rotate-180")}/>
+      </button>
+      {expanded && (
+        <pre className="px-3 py-2 text-[10px] font-mono text-glow-muted/80 border-t border-glow-border/30 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap break-words">{code}</pre>
+      )}
     </div>
   );
 }
@@ -338,7 +371,7 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
   );
 }
 
-export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessageProps) {
+export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode }: ChatMessageProps) {
   const [copied, setCopied]   = useState(false);
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState(message.content);
@@ -453,23 +486,33 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry }: ChatMessa
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                code({ className, children }) {
-                  const match = /language-(\w+)/.exec(className||"");
-                  const lang  = match?.[1]??"";
-                  const code  = String(children).replace(/\n$/,"");
-                  if (!className) {
-                    return <code className="bg-[#1a1a2e] text-glow-cyan px-1 py-0.5 rounded text-[11px] font-mono border border-glow-border/30">{children}</code>;
-                  }
-                  // Detect filename from preceding text (e.g. "```typescript filename.ts")
-                  const isSol = lang==="sol"||lang==="solidity";
-                  return (
-                    <CodeBlock code={code} lang={lang}
-                      onCompile={isSol ? ()=>handleCompile(code,lang) : undefined}
-                      onCreateProject={isMultiFile ? handleCreateProject : undefined}
-                      isProject={isMultiFile}
-                    />
-                  );
-                },
+                code: (() => {
+                  let blockCounter = -1; // reset each render pass, incremented per fenced block
+                  return function CodeRenderer({ className, children }: { className?: string; children?: React.ReactNode }) {
+                    const match = /language-(\w+)/.exec(className||"");
+                    const lang  = match?.[1]??"";
+                    const code  = String(children).replace(/\n$/,"");
+                    if (!className) {
+                      return <code className="bg-[#1a1a2e] text-glow-cyan px-1 py-0.5 rounded text-[11px] font-mono border border-glow-border/30">{children}</code>;
+                    }
+                    blockCounter++;
+                    const filename = blocks[blockCounter]?.filename;
+                    // In editorMode, show a compact action chip instead of the full
+                    // code dump — the file/command is applied behind the scenes by
+                    // ChatPanel; the chat transcript just needs to say what happened.
+                    if (editorMode) {
+                      return <ActionChip lang={lang} filename={filename} code={code}/>;
+                    }
+                    const isSol = lang==="sol"||lang==="solidity";
+                    return (
+                      <CodeBlock code={code} lang={lang} filename={filename}
+                        onCompile={isSol ? ()=>handleCompile(code,lang) : undefined}
+                        onCreateProject={isMultiFile ? handleCreateProject : undefined}
+                        isProject={isMultiFile}
+                      />
+                    );
+                  };
+                })(),
                 pre({ children }) { return <>{children}</>; },
                 table({ children }) {
                   return <div className="overflow-x-auto my-2 rounded-lg border border-glow-border/40"><table className="w-full text-xs border-collapse">{children}</table></div>;
