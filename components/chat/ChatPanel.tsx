@@ -7,6 +7,7 @@ import { useWalletStore } from "@/store/walletStore";
 import { useCircleStore } from "@/store/circleStore";
 import { useChatStore } from "@/store/chatStore";
 import { ChatMessage } from "./ChatMessage";
+import { GlowLogoThinking } from "@/components/ui/GlowLogo";
 import { Button } from "@/components/ui/Button";
 import { Send, Plus, Sparkles, Code2, Bug, RefreshCw, Zap, ChevronDown, ShieldCheck, ShieldOff, FilePlus2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -520,6 +521,11 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
                 isStreaming
                 editorMode={editorMode}
               />
+            )}
+            {isStreaming && !streamingContent && (
+              <div className="animate-fade-in">
+                <GlowLogoThinking/>
+              </div>
             )}
             <div ref={messagesEndRef} />
           </div>

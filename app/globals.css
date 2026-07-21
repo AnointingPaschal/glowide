@@ -189,3 +189,31 @@ a, button { -webkit-tap-highlight-color: transparent; }
 .light .border-glow-border\/40,
 .light .border-glow-border\/50,
 .light .border-glow-border\/30 { border-color: var(--glow-border) !important; }
+
+/* ── GlowIDE logo animations ─────────────────────────────────────── */
+@keyframes logo-orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes logo-orbit-rev {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+@keyframes logo-breathe {
+  0%, 100% { opacity: 0.5; transform: scale(0.96); }
+  50%       { opacity: 1;   transform: scale(1.04); }
+}
+@keyframes logo-star-twinkle {
+  0%, 100% { opacity: 0.6; transform: scale(0.9) rotate(-10deg); }
+  50%       { opacity: 1;   transform: scale(1.1) rotate(10deg); }
+}
+@keyframes logo-glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(124,58,237,0.4)); }
+  50%       { filter: drop-shadow(0 0 10px rgba(124,58,237,0.8)); }
+}
+
+.logo-anim-orbit     { animation: logo-orbit     12s linear infinite; transform-origin: center; }
+.logo-anim-orbit-rev { animation: logo-orbit-rev  8s linear infinite; transform-origin: center; }
+.logo-anim-breathe   { animation: logo-breathe    3s ease-in-out infinite; transform-origin: center; }
+.logo-anim-star      { animation: logo-star-twinkle 2s ease-in-out infinite; transform-origin: center; }
+.logo-anim-glow      { animation: logo-glow-pulse  3s ease-in-out infinite; }

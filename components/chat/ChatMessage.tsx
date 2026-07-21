@@ -215,14 +215,19 @@ function sendToEditor(files: Array<{filename:string;content:string;lang:string}>
 }
 
 // ── AI Avatar ─────────────────────────────────────────────────────────────────
+import { GlowLogo } from "@/components/ui/GlowLogo";
+
 function AIAvatar({ isStreaming }: { isStreaming?:boolean }) {
   return (
-    <div className="relative flex-shrink-0 mt-0.5">
-      {isStreaming && <div className="absolute inset-0 rounded-xl bg-glow-accent/40 blur-md animate-pulse"/>}
-      <div className={cn("relative w-6 h-6 rounded-xl flex items-center justify-center","bg-gradient-to-br from-glow-accent via-purple-600 to-glow-cyan shadow-md")}>
-        <Sparkles className="w-3 h-3 text-white"/>
-        {isStreaming && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border-2 border-[#0a0a12] animate-pulse"/>}
-      </div>
+    <div className="relative flex-shrink-0 mt-0.5 w-6 h-6">
+      {isStreaming && (
+        <div className="absolute inset-0 rounded-full bg-glow-accent/20 blur-sm animate-pulse"/>
+      )}
+      <GlowLogo
+        size={24}
+        animate={isStreaming}
+        className={`relative dark:text-white text-purple-800 ${isStreaming ? "" : "opacity-70"}`}
+      />
     </div>
   );
 }

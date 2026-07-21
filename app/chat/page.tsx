@@ -5,6 +5,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatMessage } from '@/components/chat/ChatMessage';
+import { GlowLogoThinking } from '@/components/ui/GlowLogo';
 import { useChatStore } from '@/store/chatStore';
 import { useWalletStore } from '@/store/walletStore';
 import {
@@ -197,6 +198,28 @@ export default function ChatPage() {
     el.addEventListener('scroll', handleScroll, { passive: true });
     return () => el.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // ── Unique URL per chat session ──────────────────────────────────────────
+  // Each session gets its own shareable URL (/chat/SESSION_ID).
+  // The URL updates whenever the active session changes, and on first load
+  // we restore the session that the URL was pointing at.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const newPath = activeSessionId ? `/chat/${activeSessionId}` : '/chat';
+    if (window.location.pathname !== newPath) {
+      window.history.replaceState({ sessionId: activeSessionId }, '', newPath);
+    }
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    // On mount: if the URL has a session ID, restore that session
+    const parts = window.location.pathname.split('/');
+    const urlSessionId = parts[2];
+    if (urlSessionId) {
+      const session = useChatStore.getState().sessions.find(s => s.id === urlSessionId);
+      if (session) setActiveSession(urlSessionId);
+    }
+  }, []); // eslint-disable-line
 
   const scrollToBottom = () => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -518,6 +541,11 @@ export default function ChatPage() {
                     isStreaming
                   />
                 )}
+                {isStreaming && !streamingContent && (
+                  <div className="animate-fade-in">
+                    <GlowLogoThinking/>
+                  </div>
+                )}
                 <div ref={endRef}/>
               </div>
             )}
@@ -538,12 +566,6 @@ export default function ChatPage() {
             {/* Model selector */}
             {models.length > 0 && (
               <div className="relative flex items-center gap-2">
-                {isStreaming && (
-                  <div className="flex items-center gap-1.5 text-xs text-glow-accent">
-                    <Loader2 className="w-3 h-3 animate-spin"/>
-                    <span className="animate-pulse">Generating…</span>
-                  </div>
-                )}
                 <div className="flex-1"/>
                 <button onClick={() => setModelDropOpen(!modelDropOpen)}
                   className="flex items-center gap-1.5 px-2.5 py-1 bg-glow-card border border-glow-border/60 rounded-lg text-[11px] text-glow-muted hover:border-glow-accent/40 transition-colors max-w-[180px]">
