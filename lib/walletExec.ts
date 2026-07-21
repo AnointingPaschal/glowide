@@ -32,10 +32,12 @@ export function resolveActiveWallet(): ResolvedWallet | null {
   const circle  = useCircleStore.getState();
   const mm      = useWalletStore.getState();
 
+  // Prefer wallets that can actually sign here (Circle, then MetaMask) —
+  // local wallets go last since they can't execute AI/DeFi transactions.
   const key = active ?? (
-    local.wallets.length > 0  ? { type: "local" as const,  id: local.activeWalletId  ?? local.wallets[0].id } :
     circle.wallets.length > 0 ? { type: "circle" as const, id: circle.activeWalletId ?? circle.wallets[0].id } :
     mm.address                 ? { type: "metamask" as const } :
+    local.wallets.length > 0  ? { type: "local" as const,  id: local.activeWalletId  ?? local.wallets[0].id } :
     null
   );
   if (!key) return null;
@@ -51,6 +53,28 @@ export function resolveActiveWallet(): ResolvedWallet | null {
   }
   if (!mm.address) return null;
   return { type: "metamask", address: mm.address };
+}
+
+/**
+ * Like resolveActiveWallet(), but never returns a local wallet — if your
+ * explicitly-selected active wallet happens to be a local one (which can't
+ * sign AI/DeFi transactions), this automatically falls back to your Circle
+ * Developer Wallet or MetaMask instead of blocking you. Only returns null
+ * if there's truly no signable wallet available at all.
+ */
+export function resolveSignableWallet(): ResolvedWallet | null {
+  const resolved = resolveActiveWallet();
+  if (resolved && resolved.type !== "local") return resolved;
+
+  const circle = useCircleStore.getState();
+  const mm     = useWalletStore.getState();
+  if (circle.wallets.length > 0) {
+    const id = circle.activeWalletId ?? circle.wallets[0].id;
+    const w  = circle.wallets.find(x => x.id === id);
+    return { type: "circle", id, address: w?.address };
+  }
+  if (mm.address) return { type: "metamask", address: mm.address };
+  return null;
 }
 
 type EthProvider = { request:(a:{method:string;params?:unknown[]})=>Promise<unknown> };
@@ -116,12 +140,8 @@ export interface ExecResult { txHash?: string; error?: string; }
 export async function executeContractCall(opts: {
   contractAddress: string; signature: string; params: Array<string | bigint | number>;
 }): Promise<ExecResult> {
-  const wallet = resolveActiveWallet();
-  if (!wallet) return { error: "No wallet connected — connect one in the Wallet tab first." };
-
-  if (wallet.type === "local") {
-    return { error: "Local wallets can't sign transactions triggered by AI/DeFi actions — switch to MetaMask or a Circle Developer Wallet in the Wallet tab." };
-  }
+  const wallet = resolveSignableWallet();
+  if (!wallet) return { error: "No signable wallet connected — connect a Circle Developer Wallet or MetaMask in the Wallet tab." };
 
   if (wallet.type === "circle") {
     const res = await fetch("/api/circle/dev-wallet", {
@@ -157,12 +177,8 @@ export async function executeContractCall(opts: {
 export async function executeTransfer(opts: {
   to: string; amount: string; tokenAddress?: string;
 }): Promise<ExecResult> {
-  const wallet = resolveActiveWallet();
-  if (!wallet) return { error: "No wallet connected — connect one in the Wallet tab first." };
-
-  if (wallet.type === "local") {
-    return { error: "Local wallets can't sign transactions triggered by AI/DeFi actions — switch to MetaMask or a Circle Developer Wallet in the Wallet tab." };
-  }
+  const wallet = resolveSignableWallet();
+  if (!wallet) return { error: "No signable wallet connected — connect a Circle Developer Wallet or MetaMask in the Wallet tab." };
 
   if (wallet.type === "circle") {
     const res = await fetch("/api/circle/dev-wallet", {
