@@ -119,6 +119,26 @@ async function getArcProvider() {
   );
 }
 
+/** Arc's public testnet RPC has a real, low rate limit (-32011 "request
+ *  limit reached") that can trigger even on a single legitimate broadcast,
+ *  not just from repeated polling. Retries with backoff instead of failing
+ *  the user's transaction on the first hit — the tx was validly signed,
+ *  it just needs another attempt to actually land. */
+async function withRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const isRateLimit = /request limit reached|-32011/i.test(String(e));
+      if (!isRateLimit || i === attempts - 1) throw e;
+      await new Promise(r => setTimeout(r, 800 * Math.pow(2, i))); // 0.8s, 1.6s, 3.2s
+    }
+  }
+  throw lastErr;
+}
+
 // ── Minimal ABI encoder ───────────────────────────────────────────────────
 function encodeAddress(addr: string): string { return addr.replace(/^0x/i, "").toLowerCase().padStart(64, "0"); }
 function encodeUint256(n: string | bigint | number): string { return BigInt(n).toString(16).padStart(64, "0"); }
@@ -173,10 +193,11 @@ export async function executeContractCall(opts: {
       const decrypted = await ethers.Wallet.fromEncryptedJson(w.encryptedJson, password);
       const provider  = await getArcProvider();
       const connected = decrypted.connect(provider);
-      const tx = await connected.sendTransaction({ to: opts.contractAddress, data });
+      const tx = await withRetry(() => connected.sendTransaction({ to: opts.contractAddress, data }));
       return { txHash: tx.hash };
     } catch (e) {
-      return { error: /password|invalid/i.test(String(e)) ? "Incorrect password" : (e as Error).message };
+      const isRateLimit = /request limit reached|-32011/i.test(String(e));
+      return { error: isRateLimit ? "Arc's testnet RPC is rate-limited right now — please try again in a moment." : /password|invalid/i.test(String(e)) ? "Incorrect password" : (e as Error).message };
     }
   }
 
@@ -238,13 +259,14 @@ export async function executeTransfer(opts: {
         const decimals = TOKEN_DECIMALS[opts.tokenAddress.toLowerCase()] ?? 6;
         const amountInt = BigInt(Math.round(parseFloat(opts.amount) * Math.pow(10, decimals)));
         const data = await encodeCall("transfer(address,uint256)", [opts.to, amountInt]);
-        const tx = await connected.sendTransaction({ to: opts.tokenAddress, data });
+        const tx = await withRetry(() => connected.sendTransaction({ to: opts.tokenAddress, data }));
         return { txHash: tx.hash };
       }
-      const tx = await connected.sendTransaction({ to: opts.to, value: ethers.parseEther(opts.amount) });
+      const tx = await withRetry(() => connected.sendTransaction({ to: opts.to, value: ethers.parseEther(opts.amount) }));
       return { txHash: tx.hash };
     } catch (e) {
-      return { error: /password|invalid/i.test(String(e)) ? "Incorrect password" : (e as Error).message };
+      const isRateLimit = /request limit reached|-32011/i.test(String(e));
+      return { error: isRateLimit ? "Arc's testnet RPC is rate-limited right now — please try again in a moment." : /password|invalid/i.test(String(e)) ? "Incorrect password" : (e as Error).message };
     }
   }
 
