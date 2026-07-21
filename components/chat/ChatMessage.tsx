@@ -275,7 +275,6 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
         const r = await executeTransfer({
           to: args.to as string, amount: args.amount as string,
           tokenAddress: TOKEN_ADDR[(args.token as string)?.toUpperCase()],
-          blockchain: "ARC-TESTNET",
         });
         if (r.error) throw new Error(r.error);
         const result = { success: true, message: r.txHash ? `✓ Sent — ${r.txHash.slice(0,16)}…` : "✓ Transfer sent", txId: r.txHash };
@@ -287,7 +286,6 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
           contractAddress: args.contractAddress as string,
           signature: args.abiFunctionSignature as string,
           params: (args.abiParameters as Array<string|number>) ?? [],
-          blockchain: "ARC-TESTNET",
         });
         if (r.error) throw new Error(r.error);
         const result = { success: true, message: r.txHash ? `✓ Executed on-chain — ${r.txHash.slice(0,16)}…` : "✓ Transaction submitted", txId: r.txHash };
@@ -299,7 +297,6 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
           contractAddress: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
           signature: "depositForBurn(uint256,uint32,bytes32,address)",
           params: [args.amount as string, 0, args.destinationAddress as string, args.destinationAddress as string],
-          blockchain: "ARC-TESTNET",
         });
         if (r.error) throw new Error(r.error);
         const result = { success: true, message: r.txHash ? `✓ Bridging via CCTP — ${r.txHash.slice(0,16)}…` : "✓ Bridge transaction submitted", txId: r.txHash };
