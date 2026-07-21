@@ -266,7 +266,7 @@ export default function DeFiPage() {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "transfer", walletId: resolvedActive.id,
-            to: address ?? USDC_ARC, amount, blockchain: "ETH-SEPOLIA",
+            to: address ?? USDC_ARC, amount, blockchain: "ARC-TESTNET",
             tokenAddress: ARC_TOKENS_MAP[selectedPool.asset] ?? USDC_ARC,
           }),
         });
@@ -302,7 +302,7 @@ export default function DeFiPage() {
       } else if (resolvedActive?.type === "circle") {
         const res = await fetch("/api/circle/dev-wallet", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action:"transfer", walletId:resolvedActive.id, to:payStream.recipient, amount:totalAmt, blockchain:"ETH-SEPOLIA", tokenAddress:USDC_ARC }),
+          body: JSON.stringify({ action:"transfer", walletId:resolvedActive.id, to:payStream.recipient, amount:totalAmt, blockchain:"ARC-TESTNET", tokenAddress:USDC_ARC }),
         });
         const d = await res.json() as { txHash?:string; error?:string };
         if (d.error) throw new Error(d.error);
@@ -756,7 +756,7 @@ export default function DeFiPage() {
                   } else if (resolvedActive?.type === "circle") {
                     const res = await fetch("/api/circle/dev-wallet", {
                       method:"POST", headers:{"Content-Type":"application/json"},
-                      body: JSON.stringify({ action:"transfer", walletId:resolvedActive.id, to:address ?? USDC_ARC, amount, blockchain:"ETH-SEPOLIA", tokenAddress:USDC_ARC }),
+                      body: JSON.stringify({ action:"transfer", walletId:resolvedActive.id, to:address ?? USDC_ARC, amount, blockchain:"ARC-TESTNET", tokenAddress:USDC_ARC }),
                     });
                     const d = await res.json() as { txHash?:string; error?:string };
                     if (d.error) throw new Error(d.error);

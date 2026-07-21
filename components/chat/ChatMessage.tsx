@@ -343,7 +343,7 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
         const res = await fetch("/api/circle/gateway", { method: "POST", headers: {"Content-Type":"application/json"},
           body: JSON.stringify({ action: "transfer", sourceAddress: wallet?.address,
             destinationAddress: args.destinationAddress, amount: args.amount,
-            sourceBlockchain: "ETH-SEPOLIA", destinationBlockchain: args.destinationChain }) });
+            sourceBlockchain: "ARC-TESTNET", destinationBlockchain: args.destinationChain }) });
         const d = await res.json() as { error?: string; id?: string };
         if (d.error) throw new Error(d.error);
         const r = { success: true, message: `Gateway transfer initiated${d.id ? `: ${d.id.slice(0,16)}…` : ""}`, txId: d.id };

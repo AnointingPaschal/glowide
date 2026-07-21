@@ -8,6 +8,7 @@ import type { CircleTx } from "@/store/circleStore";
 import { useLocalWalletStore } from "@/store/localWalletStore";
 import type { LocalWallet } from "@/store/localWalletStore";
 import { useActiveWalletStore } from "@/store/activeWalletStore";
+import { executeTransfer, resolveActiveWallet } from "@/lib/walletExec";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import {
@@ -420,6 +421,8 @@ export default function WalletPage() {
 
   const [sendTo,      setSendTo]      = useState("");
   const [sendAmt,     setSendAmt]     = useState("");
+  const [sendStep,    setSendStep]    = useState<"form"|"preview"|"signing"|"result">("form");
+  const [sendResult,  setSendResult]  = useState<{success:boolean; message:string; txHash?:string}|null>(null);
   const [cctpDest,    setCctpDest]    = useState("ETH-SEPOLIA");
   const [cctpAmt,     setCctpAmt]     = useState("");
   const [gwDest,      setGwDest]      = useState("");
@@ -703,18 +706,18 @@ export default function WalletPage() {
   // Send
   const handleSend = async () => {
     if (!sendTo||!sendAmt){toast.error("Fill all fields");return;}
+    setSendStep("signing");
     setLoading(true);
     try {
-      const walletId = resolvedActive?.type === "circle" ? resolvedActive.id : (circle.activeWalletId ?? circle.wallets[0]?.id);
-      if (!walletId) { toast("Create a Circle Developer Wallet first to send on-chain", {icon:"ℹ️"}); return; }
-      const r = await fetch("/api/circle/dev-wallet",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({action:"transfer",walletId,to:sendTo,amount:sendAmt,blockchain:"ETH-SEPOLIA"})});
-      const d = await r.json() as {id?:string;txHash?:string;error?:string};
-      if (d.error) throw new Error(d.error);
-      toast.success(d.txHash ? `✓ Sent! ${d.txHash.slice(0,16)}…` : "✓ Transaction submitted");
-      setModal(null); setSendTo(""); setSendAmt("");
+      const r = await executeTransfer({ to: sendTo, amount: sendAmt, tokenAddress: "0x3600000000000000000000000000000000000000" });
+      if (r.error) throw new Error(r.error);
+      setSendResult({ success:true, message: r.txHash ? `Sent ${sendAmt} USDC` : "Transaction submitted", txHash: r.txHash });
+      setSendStep("result");
       setBalRefreshTick(t=>t+1);
-    } catch(e){ toast.error(String(e)); }
+    } catch(e){
+      setSendResult({ success:false, message:String(e) });
+      setSendStep("result");
+    }
     finally { setLoading(false); }
   };
 
@@ -789,46 +792,107 @@ export default function WalletPage() {
 
   // ── Send Modal ───────────────────────────────────────────────────────────────
   const SendModal = (
-    <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget)setModal(null)}}>
+    <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={e=>{if(e.target===e.currentTarget){setModal(null); setSendStep("form"); setSendResult(null);}}}>
       <div className="w-full bg-glow-card border-t border-glow-border rounded-t-3xl" onClick={e=>e.stopPropagation()}>
         <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mt-3 mb-4"/>
         <div className="px-5 pb-10 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-glow-text">Send USDC</h3>
-            <button onClick={()=>setModal(null)} className="p-2 text-glow-muted rounded-xl hover:bg-glow-surface"><X className="w-5 h-5"/></button>
-          </div>
-          {/* Recipient */}
-          <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
-            <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Recipient</p>
-            <input value={sendTo} onChange={e=>setSendTo(e.target.value)} placeholder="0x wallet address…"
-              className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40"/>
-          </div>
-          {/* Amount */}
-          <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider">Amount</p>
-              <button className="text-xs text-glow-accent font-semibold bg-glow-accent/10 px-2.5 py-1 rounded-lg">Max</button>
+
+          {sendStep === "form" && (<>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-glow-text">Send USDC</h3>
+              <button onClick={()=>setModal(null)} className="p-2 text-glow-muted rounded-xl hover:bg-glow-surface"><X className="w-5 h-5"/></button>
             </div>
-            <div className="flex items-center gap-3">
-              <input value={sendAmt} onChange={e=>setSendAmt(e.target.value)} type="number" min="0" placeholder="0.00"
-                className="flex-1 min-w-0 text-3xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
-              <div className="flex-shrink-0 flex items-center gap-1.5 bg-glow-accent/10 border border-glow-accent/25 px-3 py-2 rounded-xl">
-                <div className="w-5 h-5 rounded-full bg-[#2775CA] flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0">$</div>
-                <span className="text-sm font-bold text-glow-accent">USDC</span>
+            <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+              <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider mb-2">Recipient</p>
+              <input value={sendTo} onChange={e=>setSendTo(e.target.value)} placeholder="0x wallet address…"
+                className="w-full bg-transparent text-sm font-mono text-glow-text focus:outline-none placeholder-glow-muted/40"/>
+            </div>
+            <div className="bg-glow-surface border-2 border-glow-border rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[10px] font-semibold text-glow-muted uppercase tracking-wider">Amount</p>
+                <button className="text-xs text-glow-accent font-semibold bg-glow-accent/10 px-2.5 py-1 rounded-lg">Max</button>
+              </div>
+              <div className="flex items-center gap-3">
+                <input value={sendAmt} onChange={e=>setSendAmt(e.target.value)} type="number" min="0" placeholder="0.00"
+                  className="flex-1 min-w-0 text-3xl font-bold bg-transparent text-glow-text focus:outline-none placeholder-glow-muted/30"/>
+                <div className="flex-shrink-0 flex items-center gap-1.5 bg-glow-accent/10 border border-glow-accent/25 px-3 py-2 rounded-xl">
+                  <div className="w-5 h-5 rounded-full bg-[#2775CA] flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0">$</div>
+                  <span className="text-sm font-bold text-glow-accent">USDC</span>
+                </div>
               </div>
             </div>
-          </div>
-          {!hasCircle && (
-            <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0"/>
-              <p className="text-xs text-amber-400/90">Set up Circle Dev Wallet for non-custodial sends</p>
+            <button onClick={()=>setSendStep("preview")} disabled={!sendTo||!sendAmt}
+              className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 text-base">
+              <Send className="w-5 h-5"/>Review Transfer
+            </button>
+          </>)}
+
+          {sendStep === "preview" && (() => {
+            const resolved = resolveActiveWallet();
+            return (<>
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-glow-text">Review Transfer</h3>
+                <button onClick={()=>setSendStep("form")} className="p-2 text-glow-muted rounded-xl hover:bg-glow-surface"><X className="w-5 h-5"/></button>
+              </div>
+              <div className="bg-glow-surface border border-glow-border rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">Amount</span><span className="text-lg font-bold text-glow-text">{sendAmt} USDC</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">To</span><span className="text-xs font-mono text-glow-text break-all text-right max-w-[65%]">{sendTo}</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">Network</span><span className="text-xs font-semibold text-glow-text">Arc Testnet</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">Signing via</span><span className="text-xs font-semibold text-glow-accent">{resolved?.type === "circle" ? "Circle Developer Wallet" : resolved?.type === "metamask" ? "MetaMask" : "No wallet connected"}</span></div>
+              </div>
+              <button onClick={handleSend} disabled={!resolved || resolved.type === "local"}
+                className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 text-base">
+                <CheckCircle className="w-5 h-5"/>Confirm &amp; Send
+              </button>
+              {(!resolved || resolved.type === "local") && (
+                <p className="text-xs text-amber-400 text-center">No signable wallet — connect MetaMask or wait for your Circle wallet to finish provisioning.</p>
+              )}
+            </>);
+          })()}
+
+          {sendStep === "signing" && (() => {
+            const resolved = resolveActiveWallet();
+            return (
+              <div className="py-10 flex flex-col items-center gap-4">
+                <Loader2 className="w-10 h-10 text-glow-accent animate-spin"/>
+                <p className="text-base font-semibold text-glow-text">
+                  {resolved?.type === "circle" ? "Signing via Circle…" : resolved?.type === "metamask" ? "Confirm in MetaMask…" : "Signing…"}
+                </p>
+                <p className="text-xs text-glow-muted text-center">Sending {sendAmt} USDC on Arc Testnet</p>
+              </div>
+            );
+          })()}
+
+          {sendStep === "result" && sendResult && (<>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-glow-text">{sendResult.success ? "Sent" : "Failed"}</h3>
+              <button onClick={()=>{setModal(null); setSendStep("form"); setSendResult(null); setSendTo(""); setSendAmt("");}}
+                className="p-2 text-glow-muted rounded-xl hover:bg-glow-surface"><X className="w-5 h-5"/></button>
             </div>
-          )}
-          <button onClick={handleSend} disabled={loading||!sendTo||!sendAmt}
-            className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 text-base">
-            {loading?<Loader2 className="w-5 h-5 animate-spin"/>:<Send className="w-5 h-5"/>}
-            Send {sendAmt||"0"} USDC
-          </button>
+            <div className={cn("rounded-2xl border p-4 space-y-2", sendResult.success ? "bg-emerald-500/8 border-emerald-500/20" : "bg-red-500/8 border-red-500/20")}>
+              <div className="flex items-center gap-2">
+                {sendResult.success ? <CheckCircle className="w-5 h-5 text-emerald-400"/> : <AlertTriangle className="w-5 h-5 text-red-400"/>}
+                <span className={cn("text-sm font-semibold", sendResult.success ? "text-emerald-400" : "text-red-400")}>{sendResult.message}</span>
+              </div>
+              {sendResult.success && (
+                <>
+                  <div className="flex items-center justify-between text-xs pt-2 border-t border-white/5"><span className="text-glow-muted">To</span><span className="font-mono text-glow-text break-all text-right max-w-[65%]">{sendTo}</span></div>
+                  <div className="flex items-center justify-between text-xs"><span className="text-glow-muted">Network</span><span className="text-glow-text">Arc Testnet</span></div>
+                  {sendResult.txHash && (
+                    <a href={`https://testnet.arcscan.app/tx/${sendResult.txHash}`} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-emerald-400 hover:underline pt-1">
+                      <ExternalLink className="w-3 h-3"/>View on ArcScan
+                    </a>
+                  )}
+                </>
+              )}
+            </div>
+            <button onClick={()=>{setModal(null); setSendStep("form"); setSendResult(null); setSendTo(""); setSendAmt("");}}
+              className="w-full py-3.5 bg-glow-card border border-glow-border text-glow-text font-semibold rounded-2xl">
+              Done
+            </button>
+          </>)}
+
         </div>
       </div>
     </div>
@@ -865,7 +929,7 @@ export default function WalletPage() {
             const walletId = resolvedActive?.type === "circle" ? resolvedActive.id : (circle.activeWalletId ?? circle.wallets[0]?.id);
             if(!walletId){toast("Create a Circle Developer Wallet first",{icon:"ℹ️"});return;}
             const r=await fetch("/api/circle/dev-wallet",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-              action:"contract",walletId,blockchain:"ETH-SEPOLIA",
+              action:"contract",walletId,blockchain:"ARC-TESTNET",
               contractAddress:"0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
               abiFunctionSignature:"depositForBurn(uint256,uint32,bytes32,address)",
               abiParameters:[cctpAmt,0,displayAddr,displayAddr]})});
@@ -913,7 +977,7 @@ export default function WalletPage() {
         <button disabled={loading||!gwDest||!gwAmt} onClick={async()=>{
           setLoading(true);
           try{
-            const r=await fetch("/api/circle/gateway",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"transfer",sourceAddress:displayAddr,destinationAddress:gwDest,amount:gwAmt,sourceBlockchain:"ETH-SEPOLIA",destinationBlockchain:gwChain})});
+            const r=await fetch("/api/circle/gateway",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"transfer",sourceAddress:displayAddr,destinationAddress:gwDest,amount:gwAmt,sourceBlockchain:"ARC-TESTNET",destinationBlockchain:gwChain})});
             const d=await r.json() as {transactionId?:string;error?:string};
             if(d.error) throw new Error(d.error);
             toast.success(`✓ Gateway transfer initiated!`); setModal(null); setGwDest(""); setGwAmt("");
@@ -1466,7 +1530,7 @@ export default function WalletPage() {
 
               {/* Action buttons */}
               <div className="flex items-center justify-around px-4 py-2">
-                <ActionBtn icon={Send}           label="Send"    onClick={()=>setModal("send")}/>
+                <ActionBtn icon={Send}           label="Send"    onClick={()=>{setSendStep("form"); setSendResult(null); setModal("send");}}/>
                 <ActionBtn icon={ArrowDownLeft}  label="Receive" onClick={()=>setModal("receive")}/>
                 <ActionBtn icon={ArrowLeftRight} label="CCTP"    onClick={()=>setModal("cctp")}/>
                 <ActionBtn icon={Globe}          label="Gateway" onClick={()=>setModal("gateway")}/>
@@ -1654,7 +1718,7 @@ export default function WalletPage() {
           logoUrl={tokenLogos[selectedAsset.symbol]}
           walletAddr={displayAddr}
           onClose={()=>setSelectedAsset(null)}
-          onSend={()=>{ setSelectedAsset(null); setModal("send"); }}
+          onSend={()=>{ setSelectedAsset(null); setSendStep("form"); setSendResult(null); setModal("send"); }}
           onReceive={()=>{ setSelectedAsset(null); setModal("receive"); }}
         />
       )}
