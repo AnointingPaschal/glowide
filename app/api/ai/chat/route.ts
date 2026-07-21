@@ -55,6 +55,14 @@ omit a path, the code applies to whatever file the user currently has open.
 When editing an existing file, always include its correct existing path so
 changes land in the right place rather than creating a duplicate.
 
+## Chain — always Arc Testnet
+Every transaction (transfer, contract call) executes on Arc Testnet only.
+Never ask the user which blockchain to use — there is only one, and it's
+already selected. The only time chain choice is relevant is the destination
+of a cross-chain bridge/gateway transfer (circle_cctp_bridge,
+circle_gateway_transfer), where the source is always Arc and only the
+destination needs asking.
+
 ## Running terminal commands
 To actually run something (install a package, run a script, use git, run
 tests), put the command(s) in a \`\`\`bash fenced block — this executes for
@@ -95,14 +103,13 @@ const TOOLS = [
     type: "function",
     function: {
       name: "circle_transfer",
-      description: "Send USDC or other Circle-supported tokens to an address using the user's Circle MPC wallet. Requires user PIN confirmation.",
+      description: "Send USDC or other supported tokens to an address on Arc Testnet using the user's connected wallet (website wallet, Circle Developer Wallet, or MetaMask — whichever is active). Always Arc Testnet, never any other chain.",
       parameters: {
         type: "object",
         properties: {
           to:       { type: "string", description: "Destination wallet address (0x...)" },
           amount:   { type: "string", description: "Amount to send (e.g. '10.5')" },
           token:    { type: "string", description: "Token symbol: USDC, EURC, cirBTC", enum: ["USDC","EURC","cirBTC","USYC"] },
-          blockchain: { type: "string", description: "Target blockchain (ETH-SEPOLIA, ETH, MATIC, AVAX, ARB, BASE, OP)" },
           reason: { type: "string", description: "Why this transfer is being made" },
         },
         required: ["to", "amount"],
@@ -113,14 +120,13 @@ const TOOLS = [
     type: "function",
     function: {
       name: "circle_contract_execute",
-      description: "Execute a smart contract function using the user's Circle MPC wallet. Requires user PIN confirmation.",
+      description: "Execute a smart contract function on Arc Testnet using the user's connected wallet. Always Arc Testnet, never any other chain.",
       parameters: {
         type: "object",
         properties: {
           contractAddress:       { type: "string", description: "Contract address to call" },
           abiFunctionSignature:  { type: "string", description: "Function signature e.g. 'transfer(address,uint256)'" },
           abiParameters:         { type: "array",  description: "Function arguments array", items: {} },
-          blockchain:            { type: "string", description: "Blockchain to execute on" },
           value:                 { type: "string", description: "Native token value to send (usually '0')" },
           reason: { type: "string", description: "Why this contract call is being made" },
         },
@@ -132,12 +138,12 @@ const TOOLS = [
     type: "function",
     function: {
       name: "circle_cctp_bridge",
-      description: "Bridge USDC cross-chain via Circle's CCTP protocol. Burns on source, natively mints on destination.",
+      description: "Bridge USDC FROM Arc Testnet to another chain via Circle's CCTP protocol. Burns on Arc, natively mints on the destination chain you specify.",
       parameters: {
         type: "object",
         properties: {
           amount:              { type: "string", description: "USDC amount to bridge" },
-          destinationChain:    { type: "string", description: "Destination blockchain" },
+          destinationChain:    { type: "string", description: "Destination blockchain to bridge TO (source is always Arc Testnet)" },
           destinationAddress:  { type: "string", description: "Recipient address on destination chain" },
         },
         required: ["amount", "destinationChain"],
@@ -148,12 +154,12 @@ const TOOLS = [
     type: "function",
     function: {
       name: "circle_gateway_transfer",
-      description: "Instant cross-chain USDC transfer via Circle Gateway (<500ms). Uses unified balance model.",
+      description: "Instant cross-chain USDC transfer FROM Arc Testnet via Circle Gateway (<500ms). Uses unified balance model.",
       parameters: {
         type: "object",
         properties: {
           amount:               { type: "string", description: "USDC amount" },
-          destinationChain:     { type: "string", description: "Target blockchain" },
+          destinationChain:     { type: "string", description: "Target blockchain to send TO (source is always Arc Testnet)" },
           destinationAddress:   { type: "string", description: "Recipient address" },
         },
         required: ["amount", "destinationChain", "destinationAddress"],

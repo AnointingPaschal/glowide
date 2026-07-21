@@ -79,6 +79,8 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
   const [models, setModels] = useState<PublicModel[]>([]);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true); // false once the user scrolls up manually
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // ── Per-session code-edit permission ─────────────────────────────────────
@@ -124,8 +126,20 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
     }).catch(() => {});
   }, []);
 
+  const handleScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 80; // "near enough" to bottom counts as sticking
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Only auto-scroll if the user hasn't deliberately scrolled away — this
+    // way, reading earlier messages while a response is still generating
+    // never gets yanked back down to the bottom.
+    if (stickToBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages, streamingContent]);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -239,6 +253,7 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
   const sendMessage = async (overrideInput?: string) => {
     const trimmed = (overrideInput ?? input).trim();
     if (!trimmed || isStreaming) return;
+    stickToBottomRef.current = true; // always scroll to your own new message
 
     let sessionId = activeSessionId;
     if (!sessionId) {
@@ -294,11 +309,15 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
       const fullContent = json.content ?? "";
 
       useChatStore.setState({ isStreaming: true, streamingContent: "" });
-      const chunkSize = 8;
+      // Reveal fast — scale the chunk size to content length so a short
+      // reply still feels like it's "typing" while a long one never drags
+      // (the whole animation settles in well under a second either way).
+      const totalSteps = 40;
+      const chunkSize = Math.max(3, Math.ceil(fullContent.length / totalSteps));
       for (let i = 0; i < fullContent.length; i += chunkSize) {
         if (abortRef.current?.signal.aborted) break;
         useChatStore.setState({ streamingContent: fullContent.slice(0, i + chunkSize) });
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise(r => setTimeout(r, 4));
       }
       useChatStore.setState({ streamingContent: fullContent });
       useChatStore.getState().finalizeStream(sessionId!);
@@ -350,6 +369,11 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
         session_id: sessionId!,
       });
     }
+  };
+
+  const handleRetry = () => {
+    const lastUser = [...messages].reverse().find(m => m.role === "user");
+    if (lastUser) sendMessage(lastUser.content);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -460,7 +484,7 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto min-h-0">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
             <div className="w-12 h-12 rounded-2xl bg-glow-gradient flex items-center justify-center mb-3 shadow-glow-sm overflow-hidden">
@@ -486,7 +510,10 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
           </div>
         ) : (
           <div className="py-2">
-            {messages.map(msg => <ChatMessage key={msg.id} message={msg} editorMode={editorMode}/>)}
+            {messages.map((msg, i) => (
+              <ChatMessage key={msg.id} message={msg} editorMode={editorMode}
+                onRetry={msg.role === "assistant" && i === messages.length - 1 ? handleRetry : undefined}/>
+            ))}
             {isStreaming && streamingContent && (
               <ChatMessage
                 message={{ id: "streaming", session_id: activeSessionId || "", role: "assistant", content: streamingContent, created_at: new Date().toISOString() }}

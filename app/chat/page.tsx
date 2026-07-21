@@ -177,13 +177,16 @@ export default function ChatPage() {
 
       const content = data.content ?? '';
 
-      // Animate content character by character so it feels like streaming
+      // Animate content character by character so it feels like streaming —
+      // scaled to length so short replies still "type" nicely while long
+      // ones never drag past well under a second.
       useChatStore.setState({ isStreaming: true, streamingContent: '' });
-      const chunkSize = 6;
+      const totalSteps = 40;
+      const chunkSize = Math.max(3, Math.ceil(content.length / totalSteps));
       for (let i = 0; i < content.length; i += chunkSize) {
         if (abortRef.current?.signal.aborted) break;
         useChatStore.setState({ streamingContent: content.slice(0, i + chunkSize) });
-        await new Promise(r => setTimeout(r, 12));
+        await new Promise(r => setTimeout(r, 4));
       }
       useChatStore.setState({ streamingContent: content });
       useChatStore.getState().finalizeStream(sessionId!);

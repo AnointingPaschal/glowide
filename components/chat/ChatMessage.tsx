@@ -15,6 +15,8 @@ import {
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/types";
 import { resolveActiveWallet, executeContractCall, executeTransfer } from "@/lib/walletExec";
+import { useChatStore } from "@/store/chatStore";
+import { useLocalWalletStore } from "@/store/localWalletStore";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -222,6 +224,104 @@ function AIAvatar({ isStreaming }: { isStreaming?:boolean }) {
   );
 }
 
+// ── Inline wallet creation — real BIP-39 generation, embedded directly in
+// chat so the user never has to leave the conversation to get started. ─────
+function InlineCreateWallet({ onDone }: { onDone: () => void }) {
+  const [step, setStep] = React.useState<"generating"|"backup"|"password"|"done">("generating");
+  const [mnemonic, setMnemonic] = React.useState("");
+  const [confirmed, setConfirmed] = React.useState(false);
+  const [password, setPassword] = React.useState("");
+  const [creating, setCreating] = React.useState(false);
+  const [error, setError] = React.useState<string|null>(null);
+
+  React.useEffect(() => {
+    (async () => {
+      const { ethers } = await import("ethers");
+      const wallet = ethers.Wallet.createRandom();
+      setMnemonic(wallet.mnemonic!.phrase);
+      setStep("backup");
+    })();
+  }, []);
+
+  const finish = async () => {
+    if (!password || password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    setCreating(true); setError(null);
+    try {
+      const { ethers } = await import("ethers");
+      const wallet = ethers.Wallet.fromPhrase(mnemonic);
+      const encryptedJson = await wallet.encrypt(password);
+      useLocalWalletStore.getState().addWallet({
+        id: crypto.randomUUID(), name: "Website Wallet", address: wallet.address,
+        encryptedJson, createdAt: Date.now(),
+      });
+      setStep("done");
+      setTimeout(onDone, 1200);
+    } catch (e) {
+      setError(String(e));
+    } finally { setCreating(false); }
+  };
+
+  return (
+    <div className="mt-3 bg-glow-card border border-glow-accent/25 rounded-2xl overflow-hidden shadow-lg animate-scale-in">
+      <div className="flex items-center gap-2 px-4 py-3 bg-glow-accent/10 border-b border-glow-accent/20">
+        <Zap className="w-4 h-4 text-glow-accent"/>
+        <span className="text-sm font-semibold text-glow-accent-light">Create Website Wallet</span>
+      </div>
+
+      {step === "generating" && (
+        <div className="px-4 py-6 flex flex-col items-center gap-2">
+          <Loader2 className="w-5 h-5 text-glow-accent animate-spin"/>
+          <p className="text-xs text-glow-muted">Generating your wallet…</p>
+        </div>
+      )}
+
+      {step === "backup" && (
+        <div className="px-4 py-3 space-y-3">
+          <p className="text-xs text-glow-muted">Save this recovery phrase somewhere safe. It's the only way to recover your wallet — nobody else can retrieve it for you.</p>
+          <div className="grid grid-cols-3 gap-1.5 p-3 bg-glow-bg border border-glow-border rounded-xl">
+            {mnemonic.split(" ").map((w, i) => (
+              <div key={i} className="flex items-center gap-1 text-[11px] font-mono text-glow-text">
+                <span className="text-glow-muted/40">{i+1}.</span>{w}
+              </div>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} className="w-3.5 h-3.5 rounded accent-glow-accent"/>
+            <span className="text-xs text-glow-text">I've saved my recovery phrase</span>
+          </label>
+          <button onClick={()=>setStep("password")} disabled={!confirmed}
+            className="w-full py-2.5 bg-glow-gradient text-white text-sm font-semibold rounded-xl disabled:opacity-50">
+            Continue
+          </button>
+        </div>
+      )}
+
+      {step === "password" && (
+        <div className="px-4 py-3 space-y-3">
+          <p className="text-xs text-glow-muted">Set a password to encrypt your wallet on this device.</p>
+          <input type="password" value={password} onChange={e=>{setPassword(e.target.value); setError(null);}}
+            placeholder="Password (min. 6 characters)" autoFocus
+            onKeyDown={e=>{if(e.key==="Enter") finish();}}
+            className="w-full bg-glow-bg border border-glow-border rounded-xl px-3 py-2.5 text-sm text-glow-text focus:outline-none focus:border-glow-accent/50"/>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <button onClick={finish} disabled={creating}
+            className="w-full py-2.5 bg-glow-gradient text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60">
+            {creating ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle className="w-4 h-4"/>}
+            {creating ? "Creating…" : "Create Wallet"}
+          </button>
+        </div>
+      )}
+
+      {step === "done" && (
+        <div className="px-4 py-6 flex flex-col items-center gap-2">
+          <CheckCircle className="w-8 h-8 text-emerald-400"/>
+          <p className="text-sm font-semibold text-emerald-400">Wallet created!</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 // ── Transaction Confirmation Card ────────────────────────────────────────────
@@ -268,16 +368,80 @@ interface TxResult {
 
 const ARC_EXPLORER = "https://testnet.arcscan.app";
 
-function TxConfirmCard({ toolCall, onExecute, onReject }:{
+// ── Final transaction result — shown live after execution AND persisted
+// permanently into the message once successful, so reloading the chat never
+// reverts back to a Confirm button (which would risk a duplicate send). ────
+function TxResultCard({ result }: { result: TxResult }) {
+  return (
+    <div className={cn(
+      "mt-2 rounded-2xl border overflow-hidden text-xs shadow-lg animate-scale-in",
+      result.success ? "bg-gradient-to-b from-emerald-500/10 to-emerald-500/5 border-emerald-500/25" : "bg-gradient-to-b from-red-500/10 to-red-500/5 border-red-500/25"
+    )}>
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-white/5">
+        <div className={cn("w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0",
+          result.success ? "bg-emerald-500/20" : "bg-red-500/20")}>
+          {result.success ? <CheckCircle className="w-4 h-4 text-emerald-400"/> : <AlertTriangle className="w-4 h-4 text-red-400"/>}
+        </div>
+        <p className={cn("font-semibold text-sm", result.success ? "text-emerald-400" : "text-red-400")}>{result.success ? "Transaction Confirmed" : "Transaction Failed"}</p>
+      </div>
+      {result.success ? (
+        <div className="px-4 py-3 space-y-2">
+          {result.amount && (
+            <div className="text-center py-2 mb-1">
+              <p className="text-2xl font-bold text-glow-text">{result.amount} <span className="text-glow-accent-light">{result.token ?? ""}</span></p>
+            </div>
+          )}
+          {result.from && <Row label="From" value={result.from} mono/>}
+          {result.to     && <Row label="To" value={result.to} mono/>}
+          {result.network && <Row label="Network" value={result.network}/>}
+          {result.txId && <Row label="Tx Hash" value={result.txId} mono/>}
+          {result.timestamp && <Row label="Time" value={new Date(result.timestamp).toLocaleString()}/>}
+          {result.txId && (
+            <a href={`${ARC_EXPLORER}/tx/${result.txId}`} target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 mt-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 transition-colors font-medium">
+              <ExternalLink className="w-3.5 h-3.5"/>View on ArcScan
+            </a>
+          )}
+        </div>
+      ) : (
+        <p className="px-4 py-3 text-red-400/90">{result.message}</p>
+      )}
+    </div>
+  );
+}
+
+function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
   toolCall: { id: string; name: string; args: Record<string, unknown> };
   onExecute(r: TxResult): void;
   onReject(): void;
+  messageId?: string;
+  sessionId?: string;
 }) {
   const [loading, setLoading] = React.useState(false);
   const [signingWith, setSigningWith] = React.useState<"local"|"circle"|"metamask"|null>(null);
   const [result,  setResult]  = React.useState<TxResult | null>(null);
+  const [creatingWallet, setCreatingWallet] = React.useState(false);
+  const localWallet = useLocalWalletStore();
+  const hasAnyWallet = !!resolveActiveWallet();
   const Icon   = TOOL_ICONS[toolCall.name] ?? Zap;
   const label  = TOOL_LABELS[toolCall.name] ?? toolCall.name;
+
+  // Persist the final result into the actual message (and sync to DB) so
+  // reloading the chat never reverts back to showing Confirm again — that
+  // would risk the user accidentally re-sending the same transaction.
+  const persistResult = (r: TxResult) => {
+    if (messageId && sessionId) {
+      useChatStore.getState().updateMessage(sessionId, messageId, JSON.stringify({ __txResult: r }));
+      const session = useChatStore.getState().sessions.find(s => s.id === sessionId);
+      const wallet = resolveActiveWallet();
+      if (session && wallet?.address) {
+        fetch("/api/chat/sessions", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session, wallet: wallet.address }),
+        }).catch(() => {});
+      }
+    }
+  };
 
   const execute = async () => {
     setLoading(true);
@@ -302,7 +466,7 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
           to: args.to as string, amount: args.amount as string, token: (args.token as string)?.toUpperCase() ?? "USDC",
           network: "Arc Testnet", timestamp: new Date().toISOString(),
         };
-        setResult(result); onExecute(result); setLoading(false); return;
+        setResult(result); onExecute(result); persistResult(result); setLoading(false); return;
       }
 
       if (name === "circle_contract_execute") {
@@ -317,7 +481,7 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
           walletType: wallet?.type, from: wallet?.address,
           to: args.contractAddress as string, network: "Arc Testnet", timestamp: new Date().toISOString(),
         };
-        setResult(result); onExecute(result); setLoading(false); return;
+        setResult(result); onExecute(result); persistResult(result); setLoading(false); return;
       }
 
       if (name === "circle_cctp_bridge") {
@@ -333,7 +497,7 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
           to: args.destinationAddress as string, amount: args.amount as string, token: "USDC",
           network: "Arc Testnet → " + ((args.destinationChain as string) ?? "destination chain"), timestamp: new Date().toISOString(),
         };
-        setResult(result); onExecute(result); setLoading(false); return;
+        setResult(result); onExecute(result); persistResult(result); setLoading(false); return;
       }
 
       // Circle-only products — Gateway (instant cross-chain USDC) and
@@ -347,7 +511,7 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
         const d = await res.json() as { error?: string; id?: string };
         if (d.error) throw new Error(d.error);
         const r = { success: true, message: `Gateway transfer initiated${d.id ? `: ${d.id.slice(0,16)}…` : ""}`, txId: d.id };
-        setResult(r); onExecute(r); setLoading(false); return;
+        setResult(r); onExecute(r); persistResult(r); setLoading(false); return;
       }
       if (name === "circle_nanopayment") {
         const now = Math.floor(Date.now()/1000);
@@ -358,7 +522,7 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
         const d = await res.json() as { error?: string; settlementId?: string };
         if (d.error) throw new Error(d.error);
         const r = { success: true, message: `Nanopayment sent gas-free${d.settlementId ? `: ${d.settlementId.slice(0,16)}…` : ""}`, txId: d.settlementId };
-        setResult(r); onExecute(r); setLoading(false); return;
+        setResult(r); onExecute(r); persistResult(r); setLoading(false); return;
       }
 
       if (name === "get_wallet_balance") {
@@ -381,63 +545,56 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
     } finally { setLoading(false); }
   };
 
-  if (result) return (
-    <div className={cn("mt-2 rounded-xl border overflow-hidden text-xs",
-      result.success ? "bg-emerald-500/8 border-emerald-500/20" : "bg-red-500/8 border-red-500/20")}>
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
-        {result.success ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/> : <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0"/>}
-        <p className={cn("font-semibold", result.success ? "text-emerald-400" : "text-red-400")}>{result.success ? "Confirmed" : "Failed"}</p>
-      </div>
-      {result.success ? (
-        <div className="px-3 py-2.5 space-y-1.5">
-          {result.walletType && <Row label="Signed via" value={result.walletType === "local" ? "Website Wallet" : result.walletType === "circle" ? "Circle Developer Wallet" : "MetaMask"}/>}
-          {result.from   && <Row label="From" value={result.from} mono/>}
-          {result.to     && <Row label="To" value={result.to} mono/>}
-          {result.amount && <Row label="Amount" value={`${result.amount} ${result.token ?? ""}`.trim()}/>}
-          {result.network && <Row label="Network" value={result.network}/>}
-          {result.txId && <Row label="Transaction" value={result.txId} mono/>}
-          {result.timestamp && <Row label="Time" value={new Date(result.timestamp).toLocaleString()}/>}
-          {result.txId && (
-            <a href={`${ARC_EXPLORER}/tx/${result.txId}`} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 text-emerald-400 hover:underline pt-1">
-              <ExternalLink className="w-3 h-3"/>View on ArcScan
-            </a>
-          )}
-        </div>
-      ) : (
-        <p className="px-3 py-2.5 text-red-400/90">{result.message}</p>
-      )}
-    </div>
-  );
+  if (result) return <TxResultCard result={result}/>;
+
+  if (creatingWallet) {
+    return <InlineCreateWallet onDone={() => setCreatingWallet(false)}/>;
+  }
 
   return (
-    <div className="mt-3 bg-glow-card border border-glow-accent/30 rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 bg-glow-accent/10 border-b border-glow-accent/20">
-        <Icon className="w-4 h-4 text-glow-accent"/>
-        <span className="text-sm font-semibold text-glow-accent-light">{label}</span>
-        <span className="text-xs text-glow-muted/60 ml-auto">Requires confirmation</span>
+    <div className="mt-3 bg-glow-card border border-glow-accent/25 rounded-2xl overflow-hidden shadow-lg animate-scale-in">
+      <div className="flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-glow-accent/15 to-glow-cyan/10 border-b border-glow-accent/20">
+        <div className="w-7 h-7 rounded-full bg-glow-accent/20 flex items-center justify-center flex-shrink-0">
+          <Icon className="w-3.5 h-3.5 text-glow-accent"/>
+        </div>
+        <span className="text-sm font-semibold text-glow-accent-light flex-1">{label}</span>
+        <span className="text-[10px] text-glow-muted/60 bg-glow-surface px-2 py-1 rounded-full">Review</span>
       </div>
       <div className="px-4 py-3 space-y-2">
-        {Object.entries(toolCall.args).map(([k, v]) => (
+        {Object.entries(toolCall.args).filter(([k]) => k !== "reason").map(([k, v]) => (
           <div key={k} className="flex items-center gap-2 text-xs">
-            <span className="text-glow-muted/60 w-28 flex-shrink-0 capitalize">{k.replace(/_/g," ")}</span>
+            <span className="text-glow-muted/60 w-24 flex-shrink-0 capitalize">{k.replace(/_/g," ")}</span>
             <span className="text-glow-text font-mono break-all">{String(v)}</span>
           </div>
         ))}
       </div>
-      <div className="flex gap-2 px-4 pb-4">
-        <button onClick={execute} disabled={loading}
-          className="flex-1 py-2 bg-glow-gradient text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle className="w-4 h-4"/>}
-          {loading
-            ? signingWith === "local" ? "Enter password to sign…" : signingWith === "circle" ? "Signing via Circle…" : signingWith === "metamask" ? "Confirm in MetaMask…" : "Signing…"
-            : "Confirm"}
-        </button>
-        <button onClick={onReject} disabled={loading}
-          className="px-4 py-2 bg-glow-card border border-glow-border text-glow-muted text-sm rounded-xl hover:border-red-500/30 hover:text-red-400">
-          Cancel
-        </button>
-      </div>
+
+      {!hasAnyWallet ? (
+        <div className="px-4 pb-4 space-y-2.5">
+          <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"/>
+            <p className="text-xs text-amber-300/90">You don't have a wallet yet. Create one now to continue — takes a few seconds.</p>
+          </div>
+          <button onClick={() => setCreatingWallet(true)}
+            className="w-full py-2.5 bg-glow-gradient text-white text-sm font-semibold rounded-xl">
+            Create Wallet
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-2 px-4 pb-4">
+          <button onClick={execute} disabled={loading}
+            className="flex-1 py-2.5 bg-glow-gradient text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60 transition-transform active:scale-[0.98]">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle className="w-4 h-4"/>}
+            {loading
+              ? signingWith === "local" ? "Enter password to sign…" : signingWith === "circle" ? "Signing via Circle…" : signingWith === "metamask" ? "Confirm in MetaMask…" : "Signing…"
+              : "Confirm"}
+          </button>
+          <button onClick={onReject} disabled={loading}
+            className="px-4 py-2.5 bg-glow-card border border-glow-border text-glow-muted text-sm rounded-xl hover:border-red-500/30 hover:text-red-400 transition-colors">
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -458,6 +615,19 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
     try {
       const parsed = JSON.parse(trimmed) as { __toolCall?: { id: string; name: string; args: Record<string, unknown> } };
       return parsed.__toolCall ?? null;
+    } catch { return null; }
+  }, [isUser, isStreaming, message.content]);
+
+  // Detect a PERSISTED transaction result (set once TxConfirmCard finishes
+  // executing successfully) — takes priority over toolCallData so a
+  // completed transaction never reverts back to showing Confirm on reload.
+  const txResultData = useMemo(() => {
+    if (isUser || isStreaming) return null;
+    const trimmed = message.content.trim();
+    if (!trimmed.startsWith("{") || !trimmed.includes("__txResult")) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as { __txResult?: TxResult };
+      return parsed.__txResult ?? null;
     } catch { return null; }
   }, [isUser, isStreaming, message.content]);
 
@@ -522,6 +692,20 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
     );
   }
 
+  // ── Persisted transaction result (already executed — never shows Confirm again) ──
+  if (!isUser && txResultData) {
+    return (
+      <div className="px-3 py-1.5 group animate-slide-in-left">
+        <div className="flex items-start gap-2.5">
+          <AIAvatar isStreaming={false}/>
+          <div className="flex-1 min-w-0">
+            <TxResultCard result={txResultData}/>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Tool-call message (AI requested a real transaction) ─────────────────────
   if (!isUser && toolCallData) {
     return (
@@ -529,7 +713,7 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
         <div className="flex items-start gap-2.5">
           <AIAvatar isStreaming={false}/>
           <div className="flex-1 min-w-0">
-            <TxConfirmCard toolCall={toolCallData} onExecute={()=>{}} onReject={()=>{}}/>
+            <TxConfirmCard toolCall={toolCallData} onExecute={()=>{}} onReject={()=>{}} messageId={message.id} sessionId={message.session_id}/>
           </div>
         </div>
       </div>
@@ -620,7 +804,7 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
           {!isStreaming && (
             <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
               <TinyBtn icon={copied?Check:Copy} label={copied?"Copied":"Copy"} onClick={copy} green={copied}/>
-              {onRetry && <TinyBtn icon={RotateCcw} label="Retry" onClick={onRetry}/>}
+              {onRetry && <TinyBtn icon={RotateCcw} label="Regenerate" onClick={onRetry}/>}
             </div>
           )}
         </div>
@@ -631,10 +815,10 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
 
 function TinyBtn({ icon:Icon, label, onClick, green }:{icon:React.ElementType;label:string;onClick:()=>void;green?:boolean}) {
   return (
-    <button onClick={onClick}
-      className={cn("flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border transition-all",
-        green?"text-emerald-400 border-emerald-500/20 bg-emerald-500/8":"text-glow-muted/60 border-glow-border/30 bg-glow-card/30 hover:text-glow-text hover:border-glow-accent/20")}>
-      <Icon className="w-2.5 h-2.5"/>{label}
+    <button onClick={onClick} title={label} aria-label={label}
+      className={cn("flex items-center justify-center w-6 h-6 rounded-full border transition-all active:scale-90",
+        green?"text-emerald-400 border-emerald-500/25 bg-emerald-500/10":"text-glow-muted/50 border-glow-border/30 bg-glow-card/40 hover:text-glow-text hover:border-glow-accent/30 hover:bg-glow-card")}>
+      <Icon className="w-3 h-3"/>
     </button>
   );
 }
