@@ -137,6 +137,7 @@ export default function EditorPage() {
   const activeTab     = tabs.find(t => t.id === activeTabId);
   const hasSolidity   = activeTab?.language === "solidity" || activeTab?.name?.endsWith(".sol");
   const combinedResult= compileResult ?? lastCompileResult;
+  const deployReady = !!(lastCompileResult?.success && lastCompileResult?.bytecode && lastCompileResult?.contractName);
 
   // Load compiler versions
   useEffect(() => {
@@ -454,7 +455,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<__Preview__ />);
           {/* ── Plugin sidebar (icon strip) ─────────────────────────── */}
           <div className="w-10 flex-shrink-0 bg-[#080812] border-r border-glow-border flex flex-col items-center py-2 gap-1">
             {PLUGINS.filter(p=>p.group==="top").map(p=>(
-              <PluginBtn key={p.id} plugin={p} active={activePlugin===p.id} onClick={()=>setActivePlugin(p.id)}/>
+              <PluginBtn key={p.id} plugin={p} active={activePlugin===p.id} onClick={()=>setActivePlugin(p.id)} badge={p.id === "deploy" && deployReady}/>
             ))}
             <div className="flex-1"/>
             {PLUGINS.filter(p=>p.group==="bottom").map(p=>(
@@ -536,12 +537,17 @@ function ToolBtn({ icon:Icon, label, onClick, disabled, active }: {
 }
 
 // ── Plugin sidebar button ───────────────────────────────────────────────────
-function PluginBtn({ plugin, active, onClick }: { plugin:{icon:React.ElementType;label:string}; active:boolean; onClick:()=>void }) {
+function PluginBtn({ plugin, active, onClick, badge }: { plugin:{icon:React.ElementType;label:string;id?:string}; active:boolean; onClick:()=>void; badge?:boolean }) {
   return (
     <button onClick={onClick} title={plugin.label}
-      className={cn("w-8 h-8 flex items-center justify-center rounded-lg transition-all",
+      className={cn("relative w-8 h-8 flex items-center justify-center rounded-lg transition-all",
         active?"bg-glow-accent/20 text-glow-accent-light border border-glow-accent/30":"text-glow-muted/50 hover:text-glow-muted hover:bg-glow-card/50")}>
       <plugin.icon className="w-4 h-4"/>
+      {badge && (
+        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-emerald-500 text-white text-[8px] font-bold shadow-sm animate-pulse">
+          1
+        </span>
+      )}
     </button>
   );
 }
