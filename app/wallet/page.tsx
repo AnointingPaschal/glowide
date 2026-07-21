@@ -926,13 +926,20 @@ export default function WalletPage() {
         <button disabled={loading||!cctpAmt} onClick={async()=>{
           setLoading(true);
           try{
+            const ARC_USDC = "0x3600000000000000000000000000000000000000";
+            const DOMAIN_MAP: Record<string,number> = {"ETH-SEPOLIA":0,"ETH":0,"sepolia":0,"AVAX-FUJI":1,"avalanche":1,"ARB-SEPOLIA":3,"arbitrum":3,"BASE-SEPOLIA":6,"base":6,"OP-SEPOLIA":2,"optimism":2,"MATIC-AMOY":7,"polygon":7};
+            const destDomain = DOMAIN_MAP[cctpDest] ?? 0;
+            // USDC = 6 decimals — scale the human-readable amount
+            const amountInt = Math.round(parseFloat(cctpAmt) * 1_000_000).toString();
+            // mintRecipient as bytes32: user's own address padded to 32 bytes
+            const recipient = "0x" + displayAddr.replace(/^0x/i,"").toLowerCase().padStart(64,"0");
             const walletId = resolvedActive?.type === "circle" ? resolvedActive.id : (circle.activeWalletId ?? circle.wallets[0]?.id);
             if(!walletId){toast("Create a Circle Developer Wallet first",{icon:"ℹ️"});return;}
             const r=await fetch("/api/circle/dev-wallet",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
               action:"contract",walletId,blockchain:"ARC-TESTNET",
               contractAddress:"0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
               abiFunctionSignature:"depositForBurn(uint256,uint32,bytes32,address)",
-              abiParameters:[cctpAmt,0,displayAddr,displayAddr]})});
+              abiParameters:[amountInt, destDomain, recipient, ARC_USDC]})});
             const d=await r.json() as {id?:string;txHash?:string;error?:string};
             if(d.error) throw new Error(d.error);
             toast.success(d.txHash ? `✓ Bridging ${cctpAmt} USDC: ${d.txHash.slice(0,16)}…` : `✓ Bridging ${cctpAmt} USDC via CCTP!`);
@@ -943,6 +950,7 @@ export default function WalletPage() {
           {loading?<Loader2 className="w-5 h-5 animate-spin"/>:<ArrowLeftRight className="w-5 h-5"/>}Bridge {cctpAmt||"0"} USDC
         </button>
       </div>
+    </div>
     </div>
   );
 

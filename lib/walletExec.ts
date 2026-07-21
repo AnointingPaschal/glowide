@@ -153,7 +153,19 @@ async function getSelector(sig: string): Promise<string> {
 async function encodeCall(signature: string, params: Array<string | bigint | number>): Promise<string> {
   const selector = await getSelector(signature);
   const types = signature.slice(signature.indexOf("(") + 1, signature.lastIndexOf(")")).split(",").filter(Boolean);
-  const encoded = types.map((t, i) => t.trim() === "address" ? encodeAddress(String(params[i])) : encodeUint256(params[i])).join("");
+  const encoded = types.map((t, i) => {
+    const type = t.trim();
+    if (type === "address")
+      return encodeAddress(String(params[i]));
+    if (type === "bytes32") {
+      // Treat as an address left-padded to 32 bytes — the standard ABI
+      // encoding for bytes32 that holds an Ethereum address (like mintRecipient
+      // in CCTP's depositForBurn).
+      const raw = String(params[i]).replace(/^0x/i, "").toLowerCase();
+      return raw.padStart(64, "0");
+    }
+    return encodeUint256(params[i]);
+  }).join("");
   return "0x" + selector + encoded;
 }
 

@@ -508,10 +508,31 @@ function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
       }
 
       if (name === "circle_cctp_bridge") {
+        const ARC_USDC = "0x3600000000000000000000000000000000000000";
+        // CCTP domain IDs (Circle testnet) — map common chain names
+        const DOMAIN: Record<string, number> = {
+          "sepolia":         0, "ethereum sepolia": 0, "eth-sepolia": 0, "eth":  0,
+          "avax-fuji":       1, "avalanche":        1, "avax":         1,
+          "op-sepolia":      2, "optimism":         2, "op":           2,
+          "arb-sepolia":     3, "arbitrum":         3, "arb":          3,
+          "base-sepolia":    6, "base":             6,
+          "polygon-amoy":    7, "polygon":          7, "matic":        7,
+        };
+        const chainKey = ((args.destinationChain as string) ?? "sepolia").toLowerCase().trim();
+        const destDomain = DOMAIN[chainKey] ?? 0;
+
+        // Recipient: args.destinationAddress if provided, else user's own address on dest chain
+        const recipient = ((args.destinationAddress as string) || wallet?.address || "").replace(/^0x/i, "").toLowerCase();
+        if (!recipient || recipient === "0".repeat(40)) throw new Error("No recipient address — please tell me which address to send to on the destination chain.");
+
+        // USDC has 6 decimals — scale the human-readable amount
+        const amountInt = BigInt(Math.round(parseFloat(args.amount as string) * 1_000_000));
+
         const r = await executeContractCall({
           contractAddress: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
           signature: "depositForBurn(uint256,uint32,bytes32,address)",
-          params: [args.amount as string, 0, args.destinationAddress as string, args.destinationAddress as string],
+          // bytes32 mintRecipient = address left-padded with 12 zero bytes
+          params: [amountInt, destDomain, recipient, ARC_USDC],
         });
         if (r.error) throw new Error(r.error);
         const result: TxResult = {
