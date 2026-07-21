@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useEditorStore } from "@/store/editorStore";
 import { useFileSystemStore } from "@/store/fileSystemStore";
 import { useGitHubStore } from "@/store/githubStore";
@@ -55,22 +55,48 @@ export function GitPanel() {
   const { nodes, activeProjectId } = fsStore;
   const binding = activeProjectId ? gh.bindings[activeProjectId] : undefined;
 
+  // ── Verify a token against GitHub's API and store it (shared by both PAT and OAuth flows) ──
+  const verifyAndStoreToken = async (token: string) => {
+    const res = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+    });
+    if (!res.ok) throw new Error(res.status === 401 ? "Invalid token" : `GitHub error ${res.status}`);
+    const user = await res.json() as { login: string };
+    gh.setToken(token, user.login);
+    return user.login;
+  };
+
   const connectGitHub = async () => {
     if (!tokenInput.trim()) return;
     setConnecting(true);
     try {
-      const res = await fetch("https://api.github.com/user", {
-        headers: { Authorization: `Bearer ${tokenInput.trim()}`, Accept: "application/vnd.github+json" },
-      });
-      if (!res.ok) throw new Error(res.status === 401 ? "Invalid token" : `GitHub error ${res.status}`);
-      const user = await res.json() as { login: string };
-      gh.setToken(tokenInput.trim(), user.login);
+      const login = await verifyAndStoreToken(tokenInput.trim());
       setTokenInput("");
-      setStatus({type:"success", msg:`✓ Connected as ${user.login}`});
+      setStatus({type:"success", msg:`✓ Connected as ${login}`});
     } catch (e) {
       setStatus({type:"error", msg:String((e as Error).message ?? e)});
     } finally { setConnecting(false); }
   };
+
+  // ── Handle the redirect back from /api/github/oauth/callback ────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthToken = params.get("gh_token");
+    const oauthError = params.get("gh_error");
+
+    if (oauthToken) {
+      setConnecting(true);
+      verifyAndStoreToken(oauthToken)
+        .then(login => setStatus({type:"success", msg:`✓ Connected via GitHub OAuth as ${login}`}))
+        .catch(e => setStatus({type:"error", msg:String((e as Error).message ?? e)}))
+        .finally(() => setConnecting(false));
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (oauthError) {
+      setStatus({type:"error", msg: oauthError});
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const disconnectGitHub = () => {
     gh.setToken(null, null);
@@ -343,6 +369,19 @@ export function GitPanel() {
           ) : (
             <>
               <p className="text-[10px] text-glow-muted/70">Connect GitHub to push commits and access private repos.</p>
+
+              {/* Real OAuth flow — one click, no token to copy/paste */}
+              <a href="/api/github/oauth/start"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#24292e] hover:bg-[#2f363d] text-white text-xs font-semibold rounded-lg transition-colors">
+                <Github className="w-4 h-4"/>Connect with GitHub
+              </a>
+
+              <div className="flex items-center gap-2 py-1">
+                <div className="flex-1 h-px bg-glow-border"/>
+                <span className="text-[10px] text-glow-muted/50">or use a token</span>
+                <div className="flex-1 h-px bg-glow-border"/>
+              </div>
+
               <div className="flex gap-2">
                 <input value={tokenInput} onChange={e=>setTokenInput(e.target.value)} type="password"
                   placeholder="Personal Access Token (ghp_...)"
