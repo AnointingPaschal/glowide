@@ -494,11 +494,15 @@ export default function WalletPage() {
     // Instantly show cached balances for this address (if we've seen it before)
     // so switching wallets never shows a blank/zero flash while the network call is in flight.
     const cached = balCacheRef.current[addr];
+    const cacheAge = cached ? Date.now() - cached.ts : Infinity;
     if (cached) {
       setOnChainBals(cached.bals);
       setNativeGasBal(cached.nativeGas);
       setBalTokenErrors({});
       setBalError(null);
+      // Cache is fresh (< 15 s) — the HTTP edge cache will return instantly anyway,
+      // and a new network call would just return the same data. Skip it.
+      if (cacheAge < 15_000) return;
     } else {
       // No cache yet for this address — clear stale numbers from the previous wallet
       setOnChainBals({});

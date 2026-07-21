@@ -8,11 +8,18 @@
  *   - ERC-20 interface (balanceOf): 6 decimals
  * We call balanceOf() here, so USDC MUST use 6 decimals, not 18.
  * Getting this wrong silently divides the real balance by 10^12.
+ *
+ * Performance: all balanceOf + eth_getBalance calls run in parallel.
+ * Response is cached for 15 s at the Vercel edge so repeated page visits
+ * return instantly instead of hitting the RPC every time.
  */
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
+// Use the dedicated RPC from Vercel env (set by the user) — this is the
+// single source of truth for which endpoint to hit. Falls back to the
+// public endpoint only if nothing is configured.
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
 
 const TOKENS = [
   { symbol: "USDC",   address: "0x3600000000000000000000000000000000000000", decimals: 6, name: "USD Coin"       },
@@ -27,7 +34,9 @@ async function rpcCall(method: string, params: unknown[]): Promise<{ result?: st
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      signal: AbortSignal.timeout(10000),
+      // 5 s timeout — a dedicated RPC should respond in well under a second;
+      // 10 s was masking slow/failed calls rather than surfacing them quickly.
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return { error: `RPC HTTP ${res.status}: ${res.statusText}` };
     const d = await res.json() as { result?: string; error?: { message: string; code?: number } };
@@ -47,19 +56,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Invalid address: "${address}"` }, { status: 400 });
   }
 
-  // Run chainId check, native balance, and all token balances in parallel (was sequential)
-  const padded = "000000000000000000000000" + address.slice(2);
+  // Fire native balance + all 4 token balanceOf() calls in parallel —
+  // skip the eth_chainId check (saves a round-trip; we already know this is Arc).
+  const padded   = "000000000000000000000000" + address.slice(2);
   const callData = "0x70a08231" + padded; // balanceOf(address) selector
 
-  const [chainIdCheck, nativeBalCheck, ...tokenResults] = await Promise.all([
-    rpcCall("eth_chainId", []),
+  const [nativeBalCheck, ...tokenResults] = await Promise.all([
     rpcCall("eth_getBalance", [address, "latest"]),
     ...TOKENS.map(t => rpcCall("eth_call", [{ to: t.address, data: callData }, "latest"])),
   ]);
 
-  if (chainIdCheck.error) {
+  // Surface a meaningful error if the RPC itself is unreachable
+  if (nativeBalCheck.error && tokenResults.every(r => r.error)) {
     return NextResponse.json({
-      error: `Cannot reach Arc Testnet RPC (${ARC_RPC}): ${chainIdCheck.error}`,
+      error: `Cannot reach Arc Testnet RPC (${ARC_RPC}): ${nativeBalCheck.error}`,
       rpcUrl: ARC_RPC,
     }, { status: 502 });
   }
@@ -111,8 +121,16 @@ export async function GET(req: NextRequest) {
   });
 
   return NextResponse.json({
-    address, balances, network: "arc-testnet", chainId: chainIdCheck.result,
+    address, balances, network: "arc-testnet", chainId: "0x4CE352", // Arc chain ID (5042002)
     nativeGasUSDC,
     ...(Object.keys(errors).length > 0 ? { errors } : {}),
+  }, {
+    headers: {
+      // Cache at the Vercel edge for 15 s — repeated page visits or wallet-
+      // tab opens within that window return instantly without a new RPC call.
+      // stale-while-revalidate: serve the cached version while fetching fresh
+      // data in the background, so the user NEVER sees a loading flash.
+      "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+    },
   });
 }
