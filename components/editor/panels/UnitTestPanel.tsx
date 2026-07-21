@@ -1,81 +1,127 @@
 "use client";
 import { useState, useCallback } from "react";
 import { useEditorStore } from "@/store/editorStore";
-import { FlaskConical, Play, CheckCircle, XCircle, Loader2, Plus } from "lucide-react";
+import { useWalletStore } from "@/store/walletStore";
+import { FlaskConical, Play, CheckCircle, XCircle, Loader2, Plus, AlertTriangle, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TEST_TEMPLATE = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "remix_tests.sol"; // injected by Remix/GlowIDE test runner
-import "../YourContract.sol";
-
+// Write plain Solidity — functions starting with "test" are deployed and
+// called on Arc Testnet for real. A test PASSES if the transaction succeeds
+// and FAILS if it reverts (e.g. via require()), exactly like Foundry.
 contract YourContractTest {
-    YourContract c;
-
-    function beforeAll() public {
-        c = new YourContract();
-    }
+    uint256 public value;
 
     function testInitialValue() public {
-        uint val = c.getValue();
-        Assert.equal(val, 0, "Initial value should be 0");
+        require(value == 0, "Initial value should be 0");
     }
 
     function testSetValue() public {
-        c.setValue(42);
-        Assert.equal(c.getValue(), 42, "Value should be 42 after set");
+        value = 42;
+        require(value == 42, "Value should be 42 after set");
     }
 }`;
 
-interface TestResult { name: string; passed: boolean; message?: string; gas?: number; }
+interface TestResult { name: string; passed: boolean; message?: string; gas?: number; txHash?: string; }
+
+interface EthProvider { request:(a:{method:string;params?:unknown[]})=>Promise<unknown>; }
+
+const ARC_RPC = "https://rpc.testnet.arc.network";
 
 export function UnitTestPanel() {
   const { tabs, activeTabId } = useEditorStore();
+  const { address } = useWalletStore();
   const [results,  setResults]  = useState<TestResult[]|null>(null);
   const [loading,  setLoading]  = useState(false);
+  const [progress, setProgress] = useState("");
   const [testCode, setTestCode] = useState(TEST_TEMPLATE);
   const [tab,      setTab]      = useState<"run"|"write">("run");
+  const [deployedAddr, setDeployedAddr] = useState<string|null>(null);
 
   const activeFile = tabs.find(t => t.id === activeTabId);
 
-  const runTests = useCallback(async () => {
-    setLoading(true); setResults(null);
-    try {
-      // Parse test function names from test code
-      const fns = [...testCode.matchAll(/function\s+(test\w+)\s*\(\)/g)].map(m => m[1]);
-      // Simulate test run — compile + call each test function
-      const res = await fetch("/api/contracts/compile", {
+  async function waitForReceipt(txHash: string): Promise<{ status:string; contractAddress?:string; gasUsed:string }> {
+    for (let i = 0; i < 30; i++) {
+      const res = await fetch(ARC_RPC, {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          sourceCode: testCode
-            .replace('import "remix_tests.sol";', "")
-            .replace(/import\s+"[^"]+";/g, ""),
-          contractName: "Test",
-        }),
+        body: JSON.stringify({ jsonrpc:"2.0", id:1, method:"eth_getTransactionReceipt", params:[txHash] }),
       });
-      const compiled = await res.json() as { success:boolean; errors?:Array<{message:string}> };
+      const d = await res.json() as { result?: { status:string; contractAddress?:string; gasUsed:string } };
+      if (d.result) return d.result;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    throw new Error("Timed out waiting for confirmation");
+  }
 
-      if (!compiled.success) {
-        setResults(fns.map(fn => ({
-          name: fn, passed: false,
-          message: compiled.errors?.[0]?.message ?? "Compile failed",
-        })));
+  const runTests = useCallback(async () => {
+    const provider = (window as Window & { ethereum?: EthProvider }).ethereum;
+    if (!provider || !address) { setResults([{ name:"Setup", passed:false, message:"Connect a wallet first — tests deploy and execute for real on Arc Testnet" }]); return; }
+
+    setLoading(true); setResults(null); setDeployedAddr(null);
+    try {
+      const fns = [...testCode.matchAll(/function\s+(test\w+)\s*\(\)/g)].map(m => m[1]);
+      if (fns.length === 0) { setResults([]); return; }
+
+      // 1. Compile the real test contract
+      setProgress("Compiling test contract…");
+      const compileRes = await fetch("/api/contracts/compile", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ sourceCode: testCode, contractName: "YourContractTest" }),
+      });
+      const compiled = await compileRes.json() as { success:boolean; bytecode?:string; errors?:Array<{message:string}> };
+      if (!compiled.success || !compiled.bytecode) {
+        setResults(fns.map(fn => ({ name: fn, passed: false, message: compiled.errors?.[0]?.message ?? "Compile failed" })));
         return;
       }
 
-      // All functions compile — mark passed (real execution needs EVM)
-      setResults(fns.map(fn => ({
-        name: fn, passed: true, gas: Math.floor(Math.random()*30000+20000),
-      })));
+      // 2. Deploy the test contract for real
+      setProgress("Deploying test contract to Arc Testnet…");
+      const deployHash = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from: address, data: compiled.bytecode.startsWith("0x") ? compiled.bytecode : "0x"+compiled.bytecode }],
+      }) as string;
+      const deployReceipt = await waitForReceipt(deployHash);
+      if (deployReceipt.status !== "0x1" || !deployReceipt.contractAddress) {
+        setResults(fns.map(fn => ({ name: fn, passed: false, message: "Test contract deployment failed" })));
+        return;
+      }
+      setDeployedAddr(deployReceipt.contractAddress);
+
+      // 3. Call each test* function for real — pass = tx succeeds, fail = it reverts
+      const testResults: TestResult[] = [];
+      for (const fn of fns) {
+        setProgress(`Running ${fn}()…`);
+        try {
+          const selRes = await fetch(`/api/contracts/selector?sig=${encodeURIComponent(fn+"()")}`);
+          const { selector } = await selRes.json() as { selector?: string };
+          if (!selector) { testResults.push({ name: fn, passed: false, message: "Couldn't compute selector" }); continue; }
+
+          const txHash = await provider.request({
+            method: "eth_sendTransaction",
+            params: [{ from: address, to: deployReceipt.contractAddress, data: "0x"+selector }],
+          }) as string;
+          const receipt = await waitForReceipt(txHash);
+          const passed = receipt.status === "0x1";
+          testResults.push({
+            name: fn, passed, txHash,
+            gas: parseInt(receipt.gasUsed, 16),
+            message: passed ? undefined : "Transaction reverted — a require()/assert failed",
+          });
+        } catch (e) {
+          testResults.push({ name: fn, passed: false, message: (e as Error).message ?? String(e) });
+        }
+      }
+      setResults(testResults);
     } catch (e) {
-      setResults([{ name:"Error", passed:false, message:String(e) }]);
-    } finally { setLoading(false); }
-  }, [testCode]);
+      setResults([{ name:"Error", passed:false, message:String((e as Error).message ?? e) }]);
+    } finally { setLoading(false); setProgress(""); }
+  }, [testCode, address]);
 
   const insertTemplate = () => {
     const name = activeFile?.name?.replace(".sol","") ?? "Contract";
-    const code = `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport "remix_tests.sol";\nimport "./${name}.sol";\n\ncontract ${name}Test {\n    ${name} c;\n\n    function beforeAll() public {\n        c = new ${name}();\n    }\n\n    function testExample() public {\n        Assert.ok(true, "Example test should pass");\n    }\n}`;
+    const code = `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\ncontract ${name}Test {\n    function testExample() public {\n        require(true, "Example test should pass");\n    }\n}`;
     setTestCode(code);
     setTab("write");
   };
@@ -90,7 +136,11 @@ export function UnitTestPanel() {
           <FlaskConical className="w-4 h-4 text-glow-accent"/>
           <span className="text-sm font-semibold text-glow-text">Unit Testing</span>
         </div>
-        <div className="flex gap-1 mb-3">
+        <div className="flex items-start gap-1.5 mb-2 p-2 bg-glow-surface border border-glow-border/40 rounded-lg">
+          <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5"/>
+          <p className="text-[9px] text-glow-muted/60 leading-relaxed">Tests deploy and execute for real on Arc Testnet — each test costs a small amount of testnet gas and needs your wallet to sign.</p>
+        </div>
+        <div className="flex gap-1 mb-1">
           {(["run","write"] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={cn("px-3 py-1 rounded-lg text-xs font-medium capitalize transition-colors",
@@ -124,12 +174,18 @@ export function UnitTestPanel() {
                 {passed}/{total} passed
               </p>
               <p className="text-[10px] text-glow-muted/60">{total-passed} failing</p>
+              {deployedAddr && (
+                <a href={`https://testnet.arcscan.app/address/${deployedAddr}`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[10px] text-glow-accent hover:underline mt-1.5">
+                  <ExternalLink className="w-2.5 h-2.5"/>View test contract on ArcScan
+                </a>
+              )}
             </div>
           )}
 
           <button onClick={runTests} disabled={loading}
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-glow-gradient text-white text-xs font-semibold rounded-xl disabled:opacity-50">
-            {loading ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Running…</> : <><Play className="w-3.5 h-3.5"/>Run Tests</>}
+            {loading ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>{progress || "Running…"}</> : <><Play className="w-3.5 h-3.5"/>Run Tests</>}
           </button>
 
           {results?.length === 0 && (
@@ -145,7 +201,11 @@ export function UnitTestPanel() {
               <div className="flex-1 min-w-0">
                 <p className="font-mono font-semibold text-glow-text truncate">{r.name}()</p>
                 {r.message && <p className="text-red-400/80 mt-0.5 text-[10px] leading-relaxed">{r.message}</p>}
-                {r.gas && <p className="text-glow-muted/40 mt-0.5 text-[10px]">Gas: {r.gas.toLocaleString()}</p>}
+                {r.gas !== undefined && <p className="text-glow-muted/40 mt-0.5 text-[10px]">Gas used: {r.gas.toLocaleString()}</p>}
+                {r.txHash && (
+                  <a href={`https://testnet.arcscan.app/tx/${r.txHash}`} target="_blank" rel="noopener noreferrer"
+                    className="text-[10px] text-glow-accent hover:underline mt-0.5 inline-block">View tx →</a>
+                )}
               </div>
             </div>
           ))}
