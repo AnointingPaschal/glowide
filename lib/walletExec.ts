@@ -1,14 +1,17 @@
 /**
  * Shared wallet-signing dispatch — used anywhere in the app that needs to
- * send a real transaction (AI chat tool calls, DeFi actions, etc). Resolves
- * whichever wallet is currently active and signs through the right path.
+ * send a real transaction (AI chat tool calls, DeFi actions, wallet page
+ * sends, etc). Resolves whichever wallet is active and signs through the
+ * right path.
  *
- * Only MetaMask and Circle Developer Wallets can sign here. Local
- * self-custody signing was removed — decrypting via ethers.JsonRpcProvider
- * triggered Arc RPC's rate limit on network-detection polling (eth_chainId
- * spam), and it added a password-prompt step that wasn't worth the
- * friction. If you're on a local wallet, switch to MetaMask or a Circle
- * Developer Wallet to execute transactions.
+ * Local self-custody wallets ("the website wallet" — generated and held
+ * entirely in-browser, no external app needed) are fully supported and are
+ * the preferred default, so nothing requires MetaMask or Circle just to
+ * work. The earlier removal of local signing was because
+ * ethers.JsonRpcProvider's automatic network-detection polling (repeated
+ * eth_chainId calls) was hitting Arc RPC's rate limit — the real fix is to
+ * give ethers a static network config so it trusts what we tell it instead
+ * of re-verifying on every call, not to drop local wallet support entirely.
  *
  * Everything targets Arc Testnet only — no chain fallback, no guessing.
  */
@@ -16,9 +19,11 @@ import { useCircleStore } from "@/store/circleStore";
 import { useLocalWalletStore } from "@/store/localWalletStore";
 import { useActiveWalletStore } from "@/store/activeWalletStore";
 import { useWalletStore } from "@/store/walletStore";
+import { requestPassword } from "@/store/passwordPromptStore";
 
 const ARC_CHAIN_ID = 5042002;
 const ARC_CHAIN_ID_HEX = "0x" + ARC_CHAIN_ID.toString(16);
+const ARC_RPC_URL = "https://rpc.testnet.arc.network";
 const ARC_BLOCKCHAIN_LABEL = "ARC-TESTNET"; // Circle's naming convention for their API
 
 export type ResolvedWallet =
@@ -32,12 +37,12 @@ export function resolveActiveWallet(): ResolvedWallet | null {
   const circle  = useCircleStore.getState();
   const mm      = useWalletStore.getState();
 
-  // Prefer wallets that can actually sign here (Circle, then MetaMask) —
-  // local wallets go last since they can't execute AI/DeFi transactions.
+  // Local ("the website wallet") first — it needs no external app or
+  // service, then Circle (server-signed, no popup), then MetaMask.
   const key = active ?? (
+    local.wallets.length > 0  ? { type: "local" as const,  id: local.activeWalletId  ?? local.wallets[0].id } :
     circle.wallets.length > 0 ? { type: "circle" as const, id: circle.activeWalletId ?? circle.wallets[0].id } :
     mm.address                 ? { type: "metamask" as const } :
-    local.wallets.length > 0  ? { type: "local" as const,  id: local.activeWalletId  ?? local.wallets[0].id } :
     null
   );
   if (!key) return null;
@@ -55,26 +60,9 @@ export function resolveActiveWallet(): ResolvedWallet | null {
   return { type: "metamask", address: mm.address };
 }
 
-/**
- * Like resolveActiveWallet(), but never returns a local wallet — if your
- * explicitly-selected active wallet happens to be a local one (which can't
- * sign AI/DeFi transactions), this automatically falls back to your Circle
- * Developer Wallet or MetaMask instead of blocking you. Only returns null
- * if there's truly no signable wallet available at all.
- */
+/** Alias kept for existing call sites — every wallet type can sign now. */
 export function resolveSignableWallet(): ResolvedWallet | null {
-  const resolved = resolveActiveWallet();
-  if (resolved && resolved.type !== "local") return resolved;
-
-  const circle = useCircleStore.getState();
-  const mm     = useWalletStore.getState();
-  if (circle.wallets.length > 0) {
-    const id = circle.activeWalletId ?? circle.wallets[0].id;
-    const w  = circle.wallets.find(x => x.id === id);
-    return { type: "circle", id, address: w?.address };
-  }
-  if (mm.address) return { type: "metamask", address: mm.address };
-  return null;
+  return resolveActiveWallet();
 }
 
 type EthProvider = { request:(a:{method:string;params?:unknown[]})=>Promise<unknown> };
@@ -103,7 +91,7 @@ async function ensureArcNetwork(provider: EthProvider): Promise<string | null> {
             chainId: ARC_CHAIN_ID_HEX,
             chainName: "Arc Testnet",
             nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-            rpcUrls: ["https://rpc.testnet.arc.network"],
+            rpcUrls: [ARC_RPC_URL],
             blockExplorerUrls: ["https://testnet.arcscan.app"],
           }],
         });
@@ -114,6 +102,21 @@ async function ensureArcNetwork(provider: EthProvider): Promise<string | null> {
   } catch (e) {
     return `Couldn't switch to Arc Testnet: ${(e as Error).message ?? e}`;
   }
+}
+
+/** A JsonRpcProvider configured with a STATIC network — this is the actual
+ *  fix for the earlier "request limit reached" error. Without a static
+ *  network, ethers polls eth_chainId repeatedly to verify/detect the chain
+ *  on every call, which is what hit Arc RPC's rate limit. Telling ethers the
+ *  network up front (and that it's static, i.e. won't change mid-session)
+ *  skips that polling entirely. */
+async function getArcProvider() {
+  const { ethers } = await import("ethers");
+  return new ethers.JsonRpcProvider(
+    ARC_RPC_URL,
+    { chainId: ARC_CHAIN_ID, name: "arc-testnet" },
+    { staticNetwork: true }
+  );
 }
 
 // ── Minimal ABI encoder ───────────────────────────────────────────────────
@@ -140,8 +143,8 @@ export interface ExecResult { txHash?: string; error?: string; }
 export async function executeContractCall(opts: {
   contractAddress: string; signature: string; params: Array<string | bigint | number>;
 }): Promise<ExecResult> {
-  const wallet = resolveSignableWallet();
-  if (!wallet) return { error: "No signable wallet connected — connect a Circle Developer Wallet or MetaMask in the Wallet tab." };
+  const wallet = resolveActiveWallet();
+  if (!wallet) return { error: "No wallet connected — connect or create one in the Wallet tab first." };
 
   if (wallet.type === "circle") {
     const res = await fetch("/api/circle/dev-wallet", {
@@ -157,6 +160,26 @@ export async function executeContractCall(opts: {
     return { txHash: d.txHash ?? d.id };
   }
 
+  const data = await encodeCall(opts.signature, opts.params);
+
+  if (wallet.type === "local") {
+    const password = await requestPassword();
+    if (!password) return { error: "Signing cancelled" };
+    try {
+      const { ethers } = await import("ethers");
+      const local = useLocalWalletStore.getState();
+      const w = local.wallets.find(x => x.id === wallet.id);
+      if (!w) return { error: "Wallet not found" };
+      const decrypted = await ethers.Wallet.fromEncryptedJson(w.encryptedJson, password);
+      const provider  = await getArcProvider();
+      const connected = decrypted.connect(provider);
+      const tx = await connected.sendTransaction({ to: opts.contractAddress, data });
+      return { txHash: tx.hash };
+    } catch (e) {
+      return { error: /password|invalid/i.test(String(e)) ? "Incorrect password" : (e as Error).message };
+    }
+  }
+
   // MetaMask
   const provider = getMetaMaskProvider();
   if (!provider) return { error: "No wallet provider found in this browser" };
@@ -164,7 +187,6 @@ export async function executeContractCall(opts: {
   if (switchError) return { error: switchError };
 
   try {
-    const data = await encodeCall(opts.signature, opts.params);
     const txHash = await provider.request({
       method: "eth_sendTransaction",
       params: [{ from: wallet.address, to: opts.contractAddress, data }],
@@ -173,7 +195,6 @@ export async function executeContractCall(opts: {
   } catch (e) { return { error: (e as Error).message }; }
 }
 
-/** Simple transfer on Arc Testnet — same wallet dispatch as executeContractCall. */
 // Real Arc Testnet token decimals — needed to scale amounts correctly when
 // encoding an ERC-20 transfer() call (get this wrong and you send 1,000,000x
 // too much or too little).
@@ -184,11 +205,12 @@ const TOKEN_DECIMALS: Record<string, number> = {
   "0xe9185f0c5f296ed1797aae4238d26ccabeadb86c": 6,   // USYC
 };
 
+/** Simple transfer on Arc Testnet — same wallet dispatch as executeContractCall. */
 export async function executeTransfer(opts: {
   to: string; amount: string; tokenAddress?: string;
 }): Promise<ExecResult> {
-  const wallet = resolveSignableWallet();
-  if (!wallet) return { error: "No signable wallet connected — connect a Circle Developer Wallet or MetaMask in the Wallet tab." };
+  const wallet = resolveActiveWallet();
+  if (!wallet) return { error: "No wallet connected — connect or create one in the Wallet tab first." };
 
   if (wallet.type === "circle") {
     const res = await fetch("/api/circle/dev-wallet", {
@@ -198,6 +220,32 @@ export async function executeTransfer(opts: {
     const d = await res.json() as { id?: string; txHash?: string; error?: string };
     if (d.error) return { error: d.error };
     return { txHash: d.txHash ?? d.id };
+  }
+
+  if (wallet.type === "local") {
+    const password = await requestPassword();
+    if (!password) return { error: "Signing cancelled" };
+    try {
+      const { ethers } = await import("ethers");
+      const local = useLocalWalletStore.getState();
+      const w = local.wallets.find(x => x.id === wallet.id);
+      if (!w) return { error: "Wallet not found" };
+      const decrypted = await ethers.Wallet.fromEncryptedJson(w.encryptedJson, password);
+      const provider  = await getArcProvider();
+      const connected = decrypted.connect(provider);
+
+      if (opts.tokenAddress) {
+        const decimals = TOKEN_DECIMALS[opts.tokenAddress.toLowerCase()] ?? 6;
+        const amountInt = BigInt(Math.round(parseFloat(opts.amount) * Math.pow(10, decimals)));
+        const data = await encodeCall("transfer(address,uint256)", [opts.to, amountInt]);
+        const tx = await connected.sendTransaction({ to: opts.tokenAddress, data });
+        return { txHash: tx.hash };
+      }
+      const tx = await connected.sendTransaction({ to: opts.to, value: ethers.parseEther(opts.amount) });
+      return { txHash: tx.hash };
+    } catch (e) {
+      return { error: /password|invalid/i.test(String(e)) ? "Incorrect password" : (e as Error).message };
+    }
   }
 
   // MetaMask

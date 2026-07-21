@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { useThemeStore } from "@/store/themeStore";
 import { AutoProvisionCircleWallet } from "@/components/wallet/AutoProvisionCircleWallet";
+import { GlobalPasswordPrompt } from "@/components/wallet/GlobalPasswordPrompt";
 
 function ToasterWrapper() {
   const { theme } = useThemeStore();
@@ -26,6 +27,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {children}
         <ToasterWrapper />
         <AutoProvisionCircleWallet />
+        <GlobalPasswordPrompt />
       </QueryClientProvider>
     </ThemeProvider>
   );

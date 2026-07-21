@@ -838,14 +838,14 @@ export default function WalletPage() {
                 <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">Amount</span><span className="text-lg font-bold text-glow-text">{sendAmt} USDC</span></div>
                 <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">To</span><span className="text-xs font-mono text-glow-text break-all text-right max-w-[65%]">{sendTo}</span></div>
                 <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">Network</span><span className="text-xs font-semibold text-glow-text">Arc Testnet</span></div>
-                <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">Signing via</span><span className="text-xs font-semibold text-glow-accent">{resolved?.type === "circle" ? "Circle Developer Wallet" : resolved?.type === "metamask" ? "MetaMask" : "No wallet connected"}</span></div>
+                <div className="flex items-center justify-between"><span className="text-xs text-glow-muted">Signing via</span><span className="text-xs font-semibold text-glow-accent">{resolved?.type === "local" ? "Website Wallet" : resolved?.type === "circle" ? "Circle Developer Wallet" : resolved?.type === "metamask" ? "MetaMask" : "No wallet connected"}</span></div>
               </div>
-              <button onClick={handleSend} disabled={!resolved || resolved.type === "local"}
+              <button onClick={handleSend} disabled={!resolved}
                 className="w-full py-4 bg-glow-gradient text-white font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 text-base">
                 <CheckCircle className="w-5 h-5"/>Confirm &amp; Send
               </button>
-              {(!resolved || resolved.type === "local") && (
-                <p className="text-xs text-amber-400 text-center">No signable wallet — connect MetaMask or wait for your Circle wallet to finish provisioning.</p>
+              {!resolved && (
+                <p className="text-xs text-amber-400 text-center">No wallet connected — create a website wallet or connect MetaMask in Settings.</p>
               )}
             </>);
           })()}
@@ -856,7 +856,7 @@ export default function WalletPage() {
               <div className="py-10 flex flex-col items-center gap-4">
                 <Loader2 className="w-10 h-10 text-glow-accent animate-spin"/>
                 <p className="text-base font-semibold text-glow-text">
-                  {resolved?.type === "circle" ? "Signing via Circle…" : resolved?.type === "metamask" ? "Confirm in MetaMask…" : "Signing…"}
+                  {resolved?.type === "local" ? "Enter password to sign…" : resolved?.type === "circle" ? "Signing via Circle…" : resolved?.type === "metamask" ? "Confirm in MetaMask…" : "Signing…"}
                 </p>
                 <p className="text-xs text-glow-muted text-center">Sending {sendAmt} USDC on Arc Testnet</p>
               </div>
