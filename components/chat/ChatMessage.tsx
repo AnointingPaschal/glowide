@@ -1,6 +1,5 @@
 "use client";
 import React from "react";
-import { useCircleStore } from "@/store/circleStore";
 import { useState, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/types";
+import { resolveActiveWallet, executeContractCall, executeTransfer } from "@/lib/walletExec";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -225,9 +225,12 @@ function AIAvatar({ isStreaming }: { isStreaming?:boolean }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 // ── Transaction Confirmation Card ────────────────────────────────────────────
-// Sepolia testnet token addresses used by Developer-Controlled wallet transfers
+// Real Arc Testnet token addresses — used for transfers via the shared wallet dispatch
 const TOKEN_ADDR: Record<string, string> = {
-  USDC: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+  USDC:   "0x3600000000000000000000000000000000000000",
+  EURC:   "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+  CIRBTC: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
+  USYC:   "0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C",
 };
 
 const TOOL_ICONS: Record<string, React.ElementType> = {
@@ -255,7 +258,6 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
 }) {
   const [loading, setLoading] = React.useState(false);
   const [result,  setResult]  = React.useState<{ success: boolean; message: string; txId?: string } | null>(null);
-  const circle = useCircleStore();
   const Icon   = TOOL_ICONS[toolCall.name] ?? Zap;
   const label  = TOOL_LABELS[toolCall.name] ?? toolCall.name;
 
@@ -263,70 +265,86 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
     setLoading(true);
     try {
       const { name, args } = toolCall;
-      const walletId = circle.activeWalletId ?? circle.wallets[0]?.id;
+      const wallet = resolveActiveWallet();
 
-      if (!walletId && name !== "get_wallet_balance") {
-        throw new Error("No Circle Developer Wallet found — create one in the Wallet tab first.");
+      if (!wallet && name !== "circle_gateway_transfer" && name !== "circle_nanopayment") {
+        throw new Error("No wallet connected — connect one in the Wallet tab, then approve this transaction.");
       }
 
-      let body: Record<string, unknown> = { walletId, blockchain: "ETH-SEPOLIA" };
-
       if (name === "circle_transfer") {
-        body = { ...body, action: "transfer", to: args.to, amount: args.amount,
-          tokenAddress: TOKEN_ADDR[(args.token as string)?.toUpperCase()] ?? undefined };
-      } else if (name === "circle_contract_execute") {
-        body = { ...body, action: "contract",
-          contractAddress: args.contractAddress, abiFunctionSignature: args.abiFunctionSignature,
-          abiParameters: args.abiParameters ?? [], value: args.value ?? "0" };
-      } else if (name === "circle_cctp_bridge") {
-        body = { ...body, action: "contract",
+        const r = await executeTransfer({
+          to: args.to as string, amount: args.amount as string,
+          tokenAddress: TOKEN_ADDR[(args.token as string)?.toUpperCase()],
+          blockchain: "ARC-TESTNET",
+        });
+        if (r.error) throw new Error(r.error);
+        const result = { success: true, message: r.txHash ? `✓ Sent — ${r.txHash.slice(0,16)}…` : "✓ Transfer sent", txId: r.txHash };
+        setResult(result); onExecute(result); setLoading(false); return;
+      }
+
+      if (name === "circle_contract_execute") {
+        const r = await executeContractCall({
+          contractAddress: args.contractAddress as string,
+          signature: args.abiFunctionSignature as string,
+          params: (args.abiParameters as Array<string|number>) ?? [],
+          blockchain: "ARC-TESTNET",
+        });
+        if (r.error) throw new Error(r.error);
+        const result = { success: true, message: r.txHash ? `✓ Executed on-chain — ${r.txHash.slice(0,16)}…` : "✓ Transaction submitted", txId: r.txHash };
+        setResult(result); onExecute(result); setLoading(false); return;
+      }
+
+      if (name === "circle_cctp_bridge") {
+        const r = await executeContractCall({
           contractAddress: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
-          abiFunctionSignature: "depositForBurn(uint256,uint32,bytes32,address)",
-          abiParameters: [args.amount, 0, args.destinationAddress, args.destinationAddress] };
-      } else if (name === "circle_gateway_transfer") {
+          signature: "depositForBurn(uint256,uint32,bytes32,address)",
+          params: [args.amount as string, 0, args.destinationAddress as string, args.destinationAddress as string],
+          blockchain: "ARC-TESTNET",
+        });
+        if (r.error) throw new Error(r.error);
+        const result = { success: true, message: r.txHash ? `✓ Bridging via CCTP — ${r.txHash.slice(0,16)}…` : "✓ Bridge transaction submitted", txId: r.txHash };
+        setResult(result); onExecute(result); setLoading(false); return;
+      }
+
+      // Circle-only products — Gateway (instant cross-chain USDC) and
+      // Nanopay (x402 gasless micropayments) are Circle infrastructure with
+      // no MetaMask/local-wallet equivalent, so these still require a Circle wallet.
+      if (name === "circle_gateway_transfer") {
         const res = await fetch("/api/circle/gateway", { method: "POST", headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ action: "transfer", sourceAddress: circle.wallets[0]?.address,
+          body: JSON.stringify({ action: "transfer", sourceAddress: wallet?.address,
             destinationAddress: args.destinationAddress, amount: args.amount,
             sourceBlockchain: "ETH-SEPOLIA", destinationBlockchain: args.destinationChain }) });
         const d = await res.json() as { error?: string; id?: string };
         if (d.error) throw new Error(d.error);
         const r = { success: true, message: `Gateway transfer initiated${d.id ? `: ${d.id.slice(0,16)}…` : ""}`, txId: d.id };
         setResult(r); onExecute(r); setLoading(false); return;
-      } else if (name === "circle_nanopayment") {
+      }
+      if (name === "circle_nanopayment") {
         const now = Math.floor(Date.now()/1000);
         const res = await fetch("/api/circle/nanopay", { method: "POST", headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ action: "settle", payerAddress: circle.wallets[0]?.address, payeeAddress: args.to,
+          body: JSON.stringify({ action: "settle", payerAddress: wallet?.address, payeeAddress: args.to,
             amount: args.amount, validAfter: now-60, validBefore: now+3600,
             nonce: "0x" + Math.random().toString(16).slice(2).padEnd(64,"0") }) });
         const d = await res.json() as { error?: string; settlementId?: string };
         if (d.error) throw new Error(d.error);
         const r = { success: true, message: `Nanopayment sent gas-free${d.settlementId ? `: ${d.settlementId.slice(0,16)}…` : ""}`, txId: d.settlementId };
         setResult(r); onExecute(r); setLoading(false); return;
-      } else if (name === "get_wallet_balance") {
-        const res = await fetch("/api/circle/dev-wallet", { method: "POST", headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ action: "balances", walletId }) });
-        const d = await res.json() as { tokenBalances?: unknown[] };
-        const r = { success: true, message: `Found ${d.tokenBalances?.length ?? 0} token balance(s)` };
+      }
+
+      if (name === "get_wallet_balance") {
+        if (wallet?.type === "circle") {
+          const res = await fetch("/api/circle/dev-wallet", { method: "POST", headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({ action: "balances", walletId: wallet.id }) });
+          const d = await res.json() as { tokenBalances?: unknown[] };
+          const r = { success: true, message: `Found ${d.tokenBalances?.length ?? 0} token balance(s)` };
+          setResult(r); onExecute(r); setLoading(false); return;
+        }
+        const addr = wallet?.address;
+        const r = { success: true, message: addr ? `Wallet: ${addr.slice(0,10)}… — check the Wallet tab for full balances` : "No wallet connected" };
         setResult(r); onExecute(r); setLoading(false); return;
       }
 
-      // Real on-chain execution via Circle Developer-Controlled Wallets — server-signed,
-      // no PIN/userToken needed, executes immediately.
-      const res  = await fetch("/api/circle/dev-wallet", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
-      const data = await res.json() as { id?: string; state?: string; txHash?: string; error?: string };
-
-      if (data.error) throw new Error(data.error);
-
-      const r = {
-        success: true,
-        message: data.txHash
-          ? `✓ Executed on-chain: ${data.txHash.slice(0,16)}…`
-          : data.id
-            ? `✓ Transaction submitted (${data.state ?? "pending"}): ${data.id.slice(0,16)}…`
-            : "Action completed",
-        txId: data.id ?? data.txHash,
-      };
-      setResult(r); onExecute(r);
+      throw new Error(`Unknown action: ${name}`);
     } catch (e) {
       const r = { success: false, message: String(e) };
       setResult(r); onExecute(r);
