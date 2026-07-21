@@ -330,22 +330,41 @@ const TOKEN_ADDR: Record<string, string> = {
   USYC:   "0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C",
 };
 
+// Human-readable names for display
+const TOKEN_NAME: Record<string, string> = {
+  USDC: "USD Coin", EURC: "Euro Coin", CIRBTC: "Circle Bitcoin", USYC: "US Yield Coin",
+};
+
+// Decimals per token (needed for proper amount scaling)
+const TOKEN_DEC: Record<string, number> = {
+  USDC: 6, EURC: 6, CIRBTC: 8, USYC: 6,
+};
+
+// Auto-execute these tools without showing a Confirm button (read-only, no funds at risk)
+const AUTO_EXECUTE_TOOLS = new Set(["get_wallet_balance", "get_transaction_history"]);
+
+const ARC_SCAN = "https://testnet.arcscan.app";
+
 const TOOL_ICONS: Record<string, React.ElementType> = {
   circle_transfer:         Send,
   circle_contract_execute: Zap,
   circle_cctp_bridge:      ArrowLeftRight,
   circle_gateway_transfer: Globe,
   circle_nanopayment:      Zap,
+  circle_swap:             ArrowLeftRight,
   get_wallet_balance:      CheckCircle,
+  get_transaction_history: CheckCircle,
 };
 
 const TOOL_LABELS: Record<string, string> = {
-  circle_transfer:         "Send USDC",
+  circle_transfer:         "Send Token",
   circle_contract_execute: "Execute Contract",
   circle_cctp_bridge:      "CCTP Bridge",
   circle_gateway_transfer: "Gateway Transfer",
   circle_nanopayment:      "Nanopayment",
+  circle_swap:             "Swap Tokens",
   get_wallet_balance:      "Check Balance",
+  get_transaction_history: "Transaction History",
 };
 
 function Row({ label, value, mono }: { label:string; value:string; mono?:boolean }) {
@@ -357,18 +376,33 @@ function Row({ label, value, mono }: { label:string; value:string; mono?:boolean
   );
 }
 
+interface TxHistoryItem {
+  hash: string; from: string; to: string;
+  amount: string; symbol: string; direction: "sent"|"received";
+  timestamp: string; status: string;
+}
+
 interface TxResult {
   success: boolean; message: string; txId?: string;
   walletType?: "local" | "circle" | "metamask"; from?: string; to?: string;
   amount?: string; token?: string; network?: string; timestamp?: string;
+  // for history display
+  resultType?: "history" | "balance";
+  transactions?: TxHistoryItem[];
 }
 
-const ARC_EXPLORER = "https://testnet.arcscan.app";
+const ARC_EXPLORER = ARC_SCAN; // legacy alias
 
 // ── Final transaction result — shown live after execution AND persisted
 // permanently into the message once successful, so reloading the chat never
 // reverts back to a Confirm button (which would risk a duplicate send). ────
 function TxResultCard({ result, onRetry, onCancel }: { result: TxResult; onRetry?: () => void; onCancel?: () => void }) {
+  const title = !result.success ? "Transaction Failed"
+    : result.resultType === "history" ? "Transaction History"
+    : result.resultType === "balance" ? "Wallet Balance"
+    : result.txId ? "Transaction Confirmed"
+    : "Done";
+
   return (
     <div className={cn(
       "mt-2 rounded-2xl border overflow-hidden text-xs shadow-lg animate-scale-in",
@@ -379,33 +413,72 @@ function TxResultCard({ result, onRetry, onCancel }: { result: TxResult; onRetry
           result.success ? "bg-emerald-500/20" : "bg-red-500/20")}>
           {result.success ? <CheckCircle className="w-4 h-4 text-emerald-400"/> : <AlertTriangle className="w-4 h-4 text-red-400"/>}
         </div>
-        <p className={cn("font-semibold text-sm", result.success ? "text-emerald-400" : "text-red-400")}>
-          {result.success ? (result.txId ? "Transaction Confirmed" : "Wallet Balance") : "Transaction Failed"}
-        </p>
+        <p className={cn("font-semibold text-sm", result.success ? "text-emerald-400" : "text-red-400")}>{title}</p>
       </div>
       {result.success ? (
         <div className="px-4 py-3 space-y-2">
-          {result.amount && !result.message.includes('\n') && (
-            <div className="text-center py-2 mb-1">
-              <p className="text-2xl font-bold text-glow-text">{result.amount} <span className="text-glow-accent-light">{result.token ?? ""}</span></p>
-            </div>
-          )}
-          {result.message.includes('\n') ? (
-            <pre className="text-xs text-glow-text font-mono whitespace-pre-wrap leading-relaxed bg-glow-surface/60 rounded-xl p-3">{result.message}</pre>
-          ) : (
+          {/* Transaction history list */}
+          {result.resultType === "history" && result.transactions && (
             <>
-              {result.from && <Row label="From" value={result.from} mono/>}
-              {result.to     && <Row label="To" value={result.to} mono/>}
-              {result.network && <Row label="Network" value={result.network}/>}
-              {result.txId && <Row label="Tx Hash" value={result.txId} mono/>}
-              {result.timestamp && <Row label="Time" value={new Date(result.timestamp).toLocaleString()}/>}
+              <p className="text-[10px] text-glow-muted/60 mb-1.5">{result.message}</p>
+              <div className="space-y-1.5">
+                {result.transactions.map((tx, i) => (
+                  <a key={i} href={`${ARC_SCAN}/tx/${tx.hash}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2.5 p-2.5 bg-glow-surface rounded-xl hover:bg-glow-card transition-colors group">
+                    <div className={cn("w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold",
+                      tx.direction === "sent" ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-400")}>
+                      {tx.direction === "sent" ? "↗" : "↙"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-semibold text-glow-text">
+                        {tx.direction === "sent" ? "Sent" : "Received"} {tx.amount} {tx.symbol}
+                      </p>
+                      <p className="text-[10px] text-glow-muted/70 font-mono truncate">
+                        {tx.direction === "sent" ? `→ ${tx.to.slice(0,8)}…${tx.to.slice(-4)}` : `← ${tx.from.slice(0,8)}…${tx.from.slice(-4)}`}
+                      </p>
+                    </div>
+                    <div className="flex-shrink-0 text-right">
+                      <p className="text-[10px] text-glow-muted/60">{new Date(tx.timestamp).toLocaleDateString()}</p>
+                      <p className={cn("text-[9px] font-medium", tx.status === "ok" ? "text-emerald-400" : "text-red-400")}>
+                        {tx.status === "ok" ? "✓" : "✗"}
+                      </p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+              <a href={`${ARC_SCAN}/address/${result.from}`} target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 mt-2 py-2 rounded-xl bg-glow-surface/60 text-glow-muted/70 hover:text-glow-text transition-colors text-[11px]">
+                <ExternalLink className="w-3 h-3"/>View all on ArcScan
+              </a>
             </>
           )}
-          {result.txId && (
-            <a href={`${ARC_EXPLORER}/tx/${result.txId}`} target="_blank" rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 mt-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 transition-colors font-medium">
-              <ExternalLink className="w-3.5 h-3.5"/>View on ArcScan
-            </a>
+
+          {/* Normal result / balance / tx confirmation */}
+          {result.resultType !== "history" && (
+            <>
+              {result.amount && !result.message.includes('\n') && (
+                <div className="text-center py-2 mb-1">
+                  <p className="text-2xl font-bold text-glow-text">{result.amount} <span className="text-glow-accent-light">{result.token ?? ""}</span></p>
+                </div>
+              )}
+              {result.message.includes('\n') ? (
+                <pre className="text-xs text-glow-text font-mono whitespace-pre-wrap leading-relaxed bg-glow-surface/60 rounded-xl p-3">{result.message}</pre>
+              ) : (
+                <>
+                  {result.from && <Row label="From" value={result.from} mono/>}
+                  {result.to     && <Row label="To" value={result.to} mono/>}
+                  {result.network && <Row label="Network" value={result.network}/>}
+                  {result.txId && <Row label="Tx Hash" value={result.txId} mono/>}
+                  {result.timestamp && <Row label="Time" value={new Date(result.timestamp).toLocaleString()}/>}
+                </>
+              )}
+              {result.txId && (
+                <a href={`${ARC_SCAN}/tx/${result.txId}`} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 mt-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 transition-colors font-medium">
+                  <ExternalLink className="w-3.5 h-3.5"/>View on ArcScan
+                </a>
+              )}
+            </>
           )}
         </div>
       ) : (
@@ -478,15 +551,19 @@ function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
       }
 
       if (name === "circle_transfer") {
+        // Support custom tokenAddress if AI provides one (for non-standard tokens)
+        const tokenSym  = (args.token as string)?.toUpperCase() ?? "USDC";
+        const tokenAddr = (args.tokenAddress as string) || TOKEN_ADDR[tokenSym];
         const r = await executeTransfer({
           to: args.to as string, amount: args.amount as string,
-          tokenAddress: TOKEN_ADDR[(args.token as string)?.toUpperCase()],
+          tokenAddress: tokenAddr,
         });
         if (r.error) throw new Error(r.error);
+        const tokenLabel = TOKEN_NAME[tokenSym] ? `${tokenSym}` : tokenSym;
         const result: TxResult = {
-          success: true, message: r.txHash ? `✓ Sent — ${r.txHash.slice(0,16)}…` : "✓ Transfer sent", txId: r.txHash,
+          success: true, message: r.txHash ? `✓ Sent ${args.amount} ${tokenLabel}` : "✓ Transfer sent", txId: r.txHash,
           walletType: wallet?.type, from: wallet?.address,
-          to: args.to as string, amount: args.amount as string, token: (args.token as string)?.toUpperCase() ?? "USDC",
+          to: args.to as string, amount: args.amount as string, token: tokenLabel,
           network: "Arc Testnet", timestamp: new Date().toISOString(),
         };
         setResult(result); onExecute(result); persistResult(result); setLoading(false); return;
@@ -601,12 +678,91 @@ function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
         }
       }
 
+      if (name === "get_transaction_history") {
+        const addr = wallet?.address;
+        if (!addr) {
+          const r = { success: true, message: "No wallet connected.", resultType: "history" as const, transactions: [] };
+          setResult(r); onExecute(r); setLoading(false); return;
+        }
+        const limit = Math.min((args.limit as number) ?? 5, 20);
+        try {
+          // Blockscout v1 API — ERC-20 token transfers
+          const res = await fetch(
+            `https://testnet.arcscan.app/api?module=account&action=tokentx&address=${addr}&sort=desc&page=1&offset=${limit}`
+          );
+          const d = await res.json() as {
+            status: string; message: string;
+            result?: Array<{ hash: string; from: string; to: string; value: string; tokenSymbol: string; tokenDecimal: string; timeStamp: string; isError: string }>;
+          };
+          const items = d.result ?? [];
+          const transactions: TxHistoryItem[] = items.map(tx => {
+            const dec = parseInt(tx.tokenDecimal) || 6;
+            const amt = (parseInt(tx.value) / Math.pow(10, dec)).toFixed(dec === 8 ? 6 : 2);
+            return {
+              hash: tx.hash, from: tx.from, to: tx.to,
+              amount: amt, symbol: tx.tokenSymbol || "?",
+              direction: tx.from.toLowerCase() === addr.toLowerCase() ? "sent" : "received",
+              timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
+              status: tx.isError === "0" ? "ok" : "error",
+            };
+          });
+          const msg = transactions.length === 0
+            ? `No token transfers found for ${addr.slice(0,8)}…${addr.slice(-6)}`
+            : `Last ${transactions.length} transfers · ${addr.slice(0,8)}…${addr.slice(-6)}`;
+          const r: TxResult = { success: true, message: msg, resultType: "history", transactions, from: addr };
+          setResult(r); onExecute(r); persistResult(r); setLoading(false); return;
+        } catch (e) {
+          const r: TxResult = { success: true, message: `Couldn't fetch history: ${(e as Error).message}. View on ArcScan directly.`, resultType: "history", transactions: [], from: addr };
+          setResult(r); onExecute(r); setLoading(false); return;
+        }
+      }
+
+      if (name === "circle_swap") {
+        // Check if a swap/AMM contract is deployed (stored in public settings)
+        const settings = await fetch("/api/admin/public-settings").then(r => r.json()).catch(() => ({}));
+        const ammAddr = settings?.swap_amm_address || settings?.amm_address;
+
+        if (!ammAddr) {
+          const r: TxResult = {
+            success: false,
+            message: `No swap contract deployed yet.\n\nTo enable swaps:\n1. Go to Admin → Deploy Contracts\n2. Deploy the SimpleAMM contract\n3. Then ask to swap again.\n\nOr visit the DeFi page to use the current swap interface.`,
+          };
+          setResult(r); onExecute(r); setLoading(false); return;
+        }
+
+        // AMM deployed — execute the swap
+        const tokenInAddr  = TOKEN_ADDR[(args.tokenIn as string)?.toUpperCase()];
+        const tokenInDec   = TOKEN_DEC[(args.tokenIn as string)?.toUpperCase()] ?? 6;
+        const amountInInt  = BigInt(Math.round(parseFloat(args.amountIn as string) * Math.pow(10, tokenInDec)));
+        const r = await executeContractCall({
+          contractAddress: ammAddr,
+          signature: "swap(address,uint256)",
+          params: [tokenInAddr, amountInInt],
+        });
+        if (r.error) throw new Error(r.error);
+        const result: TxResult = {
+          success: true, message: `✓ Swapped ${args.amountIn} ${args.tokenIn} for ${args.tokenOut}`,
+          txId: r.txHash, walletType: wallet?.type, from: wallet?.address,
+          amount: args.amountIn as string, token: args.tokenIn as string,
+          network: "Arc Testnet", timestamp: new Date().toISOString(),
+        };
+        setResult(result); onExecute(result); persistResult(result); setLoading(false); return;
+      }
+
       throw new Error(`Unknown action: ${name}`);
     } catch (e) {
       const r = { success: false, message: String(e) };
       setResult(r); onExecute(r);
     } finally { setLoading(false); }
   };
+
+  // Auto-execute read-only tools immediately — no Confirm button needed
+  // since they just fetch data without moving funds.
+  React.useEffect(() => {
+    if (AUTO_EXECUTE_TOOLS.has(toolCall.name) && !result) {
+      execute();
+    }
+  }, []); // eslint-disable-line
 
   if (result) return (
     <TxResultCard result={result}

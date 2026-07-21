@@ -27,19 +27,26 @@ Use circle_gateway_transfer for instant USDC moves across chains.
 ## CCTP Domains
 ETH=0, AVAX=1, OP=2, ARB=3, Base=6, Polygon=7, Arc=26
 
-## Supported tokens ONLY
-USDC, EURC, cirBTC, USYC. There is no USDT, no ETH, no other token on this
-platform. If the user asks to send/transfer a token that isn't one of these
-four, do NOT call any tool — instead tell them plainly that token isn't
-supported here and ask if they meant USDC (the closest equivalent for most
-stablecoin requests). Never silently substitute a different tool (like
-get_wallet_balance) when the requested token is unsupported — that is
-confusing and wrong.
+## All supported tokens on Arc Testnet
+- USDC:   0x3600000000000000000000000000000000000000 · 6 decimals · native gas
+- EURC:   0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a · 6 decimals
+- cirBTC: 0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF · 8 decimals
+- USYC:   0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C · 6 decimals
+- Custom ERC-20 tokens are also supported — if the user provides a contract address, use circle_transfer with the address as tokenAddress
+
+**circle_transfer sends ALL four tokens.** Always pass the token field ("USDC", "EURC", "cirBTC", "USYC") so the system uses the right decimals. For custom tokens, the user supplies the contract address.
+
+**CCTP bridge** works for USDC (and potentially EURC). Not available for cirBTC or USYC.
 
 ## Capabilities
 - Write, audit, deploy Solidity contracts on any EVM chain
-- Execute on-chain transactions with user PIN approval
-- Send USDC anywhere, bridge cross-chain, nanopay sub-cent
+- Execute on-chain transactions with user wallet approval
+- Send USDC, EURC, cirBTC, USYC or any custom ERC-20 anywhere on Arc
+- Bridge USDC cross-chain via CCTP, instant transfers via Gateway
+- Nanopay sub-cent, gas-free
+- Check token balances for all tokens at once
+- View transaction history — last N token transfers on Arc Testnet
+- Swap tokens between USDC, EURC, cirBTC, USYC (when swap contract is deployed)
 - Analyze token data, explain DeFi protocols
 - Create, write, and edit files and folders directly in the user's project
 
@@ -103,14 +110,15 @@ const TOOLS = [
     type: "function",
     function: {
       name: "circle_transfer",
-      description: "Send USDC or other supported tokens to an address on Arc Testnet using the user's connected wallet (website wallet, Circle Developer Wallet, or MetaMask — whichever is active). Always Arc Testnet, never any other chain.",
+      description: "Send USDC, EURC, cirBTC, or USYC to any address on Arc Testnet using the user's active wallet (website wallet, Circle Developer Wallet, or MetaMask). Always Arc Testnet. For custom ERC-20 tokens, use the contract address in tokenAddress.",
       parameters: {
         type: "object",
         properties: {
-          to:       { type: "string", description: "Destination wallet address (0x...)" },
-          amount:   { type: "string", description: "Amount to send (e.g. '10.5')" },
-          token:    { type: "string", description: "Token symbol: USDC, EURC, cirBTC", enum: ["USDC","EURC","cirBTC","USYC"] },
-          reason: { type: "string", description: "Why this transfer is being made" },
+          to:           { type: "string", description: "Destination wallet address (0x...)" },
+          amount:       { type: "string", description: "Human-readable amount to send (e.g. '10.5')" },
+          token:        { type: "string", description: "Token symbol", enum: ["USDC","EURC","cirBTC","USYC"] },
+          tokenAddress: { type: "string", description: "Custom ERC-20 contract address — only needed for non-standard tokens. Leave empty for USDC/EURC/cirBTC/USYC." },
+          reason:       { type: "string", description: "Why this transfer is being made" },
         },
         required: ["to", "amount"],
       },
@@ -186,12 +194,43 @@ const TOOLS = [
     type: "function",
     function: {
       name: "get_wallet_balance",
-      description: "Check the user's current wallet balances across all tokens and chains.",
+      description: "Check the user's current wallet balances for USDC, EURC, cirBTC, USYC and any other ERC-20 tokens on Arc Testnet.",
       parameters: {
         type: "object",
         properties: {
-          chain: { type: "string", description: "Optional: specific chain to check" },
+          token: { type: "string", description: "Optional: specific token symbol to check (USDC, EURC, cirBTC, USYC)" },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_transaction_history",
+      description: "View the user's recent token transfer history on Arc Testnet. Shows incoming and outgoing transfers for USDC, EURC, cirBTC, USYC and any ERC-20 tokens.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "How many transactions to show (default 5, max 20)" },
+          token: { type: "string", description: "Optional: filter to a specific token symbol" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "circle_swap",
+      description: "Swap between tokens on Arc Testnet (USDC, EURC, cirBTC, USYC). Requires a swap/AMM contract to be deployed — if none exists the user will be directed to the DeFi page.",
+      parameters: {
+        type: "object",
+        properties: {
+          tokenIn:   { type: "string", description: "Token to sell", enum: ["USDC","EURC","cirBTC","USYC"] },
+          tokenOut:  { type: "string", description: "Token to buy",  enum: ["USDC","EURC","cirBTC","USYC"] },
+          amountIn:  { type: "string", description: "Amount of tokenIn to swap" },
+          slippage:  { type: "number", description: "Max slippage % (default 0.5)" },
+        },
+        required: ["tokenIn", "tokenOut", "amountIn"],
       },
     },
   },
