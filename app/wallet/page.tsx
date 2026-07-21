@@ -951,7 +951,6 @@ export default function WalletPage() {
         </button>
       </div>
     </div>
-    </div>
   );
 
   // ── Gateway Modal ─────────────────────────────────────────────────────────────
