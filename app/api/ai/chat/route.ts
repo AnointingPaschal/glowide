@@ -263,7 +263,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const useModel = model ?? "openai/gpt-4o";
+    // Whitelist of model IDs known to work on OpenRouter — if the admin-
+    // configured model name doesn't match any of these (e.g. it's a custom
+    // display name like "Glow OS 1" rather than an actual model ID), fall
+    // back to Claude 3.5 Sonnet instead of sending a bad request.
+    const KNOWN_MODELS = [
+      "anthropic/", "openai/", "google/", "meta-llama/",
+      "mistralai/", "deepseek/", "cohere/", "perplexity/",
+      "qwen/", "nousresearch/", "microsoft/", "01-ai/",
+    ];
+    const isValidModelId = model ? KNOWN_MODELS.some(prefix => model.startsWith(prefix)) : false;
+    const useModel = isValidModelId ? model! : "anthropic/claude-3.5-sonnet";
 
     // Detect clear transaction intent in the latest user message so we can force
     // tool_choice="required" — some OpenRouter models are conservative under "auto"
@@ -289,7 +299,7 @@ export async function POST(req: NextRequest) {
         tools: TOOLS,
         tool_choice: forceToolCall ? "required" : "auto",
         stream: false,
-        max_tokens: 2000,
+        max_tokens: 8000, // high enough for full Solidity contracts (~200 lines ≈ 4-6k tokens)
       }),
     });
 
@@ -306,7 +316,12 @@ export async function POST(req: NextRequest) {
     };
 
     if (!response.ok || data.error) {
-      return NextResponse.json({ error: data.error?.message ?? "AI error" }, { status: 500 });
+      const errMsg = data.error?.message ?? `OpenRouter ${response.status}`;
+      const isModelErr = errMsg.toLowerCase().includes("model") || response.status === 404 || response.status === 400;
+      const hint = isModelErr
+        ? `\n\nTip: The model "${useModel}" may not be available on OpenRouter — switch to Claude 3.5 Sonnet, GPT-4o, or another standard model in the picker.`
+        : "";
+      return NextResponse.json({ error: errMsg + hint }, { status: 500 });
     }
 
     const choice  = data.choices?.[0];
