@@ -8,6 +8,16 @@ import { useCircleStore } from "@/store/circleStore";
 import { useChatStore } from "@/store/chatStore";
 import { ChatMessage } from "./ChatMessage";
 import { GlowLogoThinking } from "@/components/ui/GlowLogo";
+import type { ThinkingContext } from "@/components/ui/GlowLogo";
+
+function detectThinkingContext(lastMsg: string): ThinkingContext {
+  const t = lastMsg.toLowerCase();
+  if (/\b(send|transfer|pay|bridge|cctp|swap|execute|sign|deploy|mint|burn)\b.{0,60}\b(usdc|eurc|wallet|0x[a-f0-9]{4,}|arc|sepolia)\b/i.test(t))
+    return "transaction";
+  if (/\b(write|code|contract|function|solidity|erc|nft|token|implement|build|create|generate)\b/i.test(t))
+    return "code";
+  return "general";
+}
 import { Button } from "@/components/ui/Button";
 import { Send, Plus, Sparkles, Code2, Bug, RefreshCw, Zap, ChevronDown, ShieldCheck, ShieldOff, FilePlus2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -524,7 +534,7 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
             )}
             {isStreaming && !streamingContent && (
               <div className="animate-fade-in">
-                <GlowLogoThinking/>
+                <GlowLogoThinking context={detectThinkingContext(messages.slice().reverse().find(m => m.role === 'user')?.content ?? '')}/>
               </div>
             )}
             <div ref={messagesEndRef} />

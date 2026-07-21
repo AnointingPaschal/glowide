@@ -17,6 +17,17 @@ import {
 import { cn } from '@/lib/utils';
 import type { PublicModel } from '@/app/api/models/route';
 
+import type { ThinkingContext } from '@/components/ui/GlowLogo';
+
+function detectThinkingContext(lastMsg: string): ThinkingContext {
+  const t = lastMsg.toLowerCase();
+  if (/\b(send|transfer|pay|bridge|cctp|swap|execute|sign|deploy|mint|burn)\b.{0,60}\b(usdc|eurc|wallet|0x[a-f0-9]{4,}|arc|sepolia)\b/i.test(t))
+    return "transaction";
+  if (/\b(write|code|contract|function|solidity|erc|nft|token|implement|build|create|generate)\b/i.test(t))
+    return "code";
+  return "general";
+}
+
 const QUICK_PROMPTS = [
   { icon: Code2,     label: 'ERC-20 Token',     prompt: 'Write a production ERC-20 token for Arc Testnet with minting, burning, and access control.' },
   { icon: Bug,       label: 'Code Review',       prompt: 'Review my Solidity code for security vulnerabilities, gas inefficiencies, and best practices.' },
@@ -213,6 +224,15 @@ export default function ChatPage() {
 
   useEffect(() => {
     // On mount: if the URL has a session ID, restore that session
+    // Restore session from direct URL (e.g. /chat/SESSION_ID → replaced to /chat by dynamic route)
+    const pending = sessionStorage.getItem('pendingChatSessionId');
+    if (pending) {
+      sessionStorage.removeItem('pendingChatSessionId');
+      const session = useChatStore.getState().sessions.find(s => s.id === pending);
+      if (session) setActiveSession(pending);
+      return;
+    }
+    // Legacy fallback: if somehow navigated here with /chat/ID still in path
     const parts = window.location.pathname.split('/');
     const urlSessionId = parts[2];
     if (urlSessionId) {
@@ -543,7 +563,7 @@ export default function ChatPage() {
                 )}
                 {isStreaming && !streamingContent && (
                   <div className="animate-fade-in">
-                    <GlowLogoThinking/>
+                    <GlowLogoThinking context={detectThinkingContext(messages.slice().reverse().find(m => m.role === 'user')?.content ?? '')}/>
                   </div>
                 )}
                 <div ref={endRef}/>
