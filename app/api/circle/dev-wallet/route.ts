@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       value?: string; blockchain?: string; id?: string;
     };
     const ciphertext = await getEntitySecretCiphertext();
-    const chain = body.blockchain ?? "ETH-SEPOLIA";
+    const chain = body.blockchain ?? "ARC-TESTNET";
 
     if (body.action === "create") {
       const walletSetId = await ensureWalletSet();
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
           idempotencyKey: idempotencyKey(),
           entitySecretCiphertext: ciphertext,
           walletSetId,
-          blockchains: ["ETH-SEPOLIA"],
+          blockchains: ["ARC-TESTNET"],
           count: 1,
           metadata: [{ name: "GlowIDE Wallet", refId: `glowaide-${Date.now()}` }],
         }
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
           destinationAddress: body.to,
           amounts: [body.amount],
           blockchain: chain,
-          tokenAddress: body.tokenAddress ?? "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", // USDC on Sepolia
+          tokenAddress: body.tokenAddress ?? "0x3600000000000000000000000000000000000000", // USDC on Arc Testnet
           feeLevel: "MEDIUM",
         }
       );
