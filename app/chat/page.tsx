@@ -602,8 +602,10 @@ export default function ChatPage() {
 
             {/* Text input */}
             <div className={cn(
-              "flex gap-2 bg-glow-card border rounded-xl p-2.5 transition-all duration-200",
-              isStreaming ? "border-glow-accent/30 shadow-sm shadow-glow-accent/10" : "border-glow-border/60 focus-within:border-glow-accent/50 focus-within:shadow-sm focus-within:shadow-glow-accent/10"
+              "flex gap-2 bg-glow-card rounded-xl p-2.5 transition-all duration-200",
+              isStreaming
+                ? "shadow-[0_0_0_1px_rgba(124,58,237,0.25),0_1px_3px_rgba(0,0,0,0.4)]"
+                : "shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_1px_3px_rgba(0,0,0,0.4)] focus-within:shadow-[0_0_0_1px_rgba(124,58,237,0.35),0_1px_4px_rgba(0,0,0,0.5)]"
             )}>
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
                 placeholder="Ask anything about Web3, Solidity, or your code… (Shift+Enter for new line)"

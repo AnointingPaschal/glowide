@@ -217,3 +217,9 @@ a, button { -webkit-tap-highlight-color: transparent; }
 .logo-anim-breathe   { animation: logo-breathe    3s ease-in-out infinite; transform-origin: center; }
 .logo-anim-star      { animation: logo-star-twinkle 2s ease-in-out infinite; transform-origin: center; }
 .logo-anim-glow      { animation: logo-glow-pulse  3s ease-in-out infinite; }
+
+/* ── Uploaded logo theming ──────────────────────────────────────── */
+/* Admin logo uploaded as white PNG — invert to dark-purple on light theme */
+.light .glow-logo-img {
+  filter: invert(1) sepia(1) saturate(3) hue-rotate(230deg) brightness(0.4);
+}

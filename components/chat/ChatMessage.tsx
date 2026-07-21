@@ -215,21 +215,10 @@ function sendToEditor(files: Array<{filename:string;content:string;lang:string}>
 }
 
 // ── AI Avatar ─────────────────────────────────────────────────────────────────
-import { GlowLogo } from "@/components/ui/GlowLogo";
+import { GlowLogo, AIMessageAvatar } from "@/components/ui/GlowLogo";
 
 function AIAvatar({ isStreaming }: { isStreaming?:boolean }) {
-  return (
-    <div className="relative flex-shrink-0 mt-0.5 w-6 h-6">
-      {isStreaming && (
-        <div className="absolute inset-0 rounded-full bg-glow-accent/20 blur-sm animate-pulse"/>
-      )}
-      <GlowLogo
-        size={24}
-        animate={isStreaming}
-        className={`relative dark:text-white text-purple-800 ${isStreaming ? "" : "opacity-70"}`}
-      />
-    </div>
-  );
+  return <AIMessageAvatar isStreaming={isStreaming}/>;
 }
 
 // ── Inline wallet creation — real BIP-39 generation, embedded directly in
@@ -725,7 +714,7 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
           {editing ? (
             <div className="space-y-1.5 min-w-[260px]">
               <textarea autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)}
-                className="w-full bg-glow-accent/80 text-white text-xs rounded-xl rounded-tr-sm p-2.5 resize-none focus:outline-none border border-glow-accent/60 min-h-[50px]" rows={3}/>
+                className="w-full bg-glow-accent/80 text-white text-xs rounded-xl rounded-tr-sm p-2.5 resize-none focus:outline-none min-h-[50px] shadow-[0_0_0_1px_rgba(124,58,237,0.3)]" rows={3}/>
               <div className="flex gap-1.5 justify-end">
                 <button onClick={()=>{setEditing(false);setEditVal(message.content);}}
                   className="text-[10px] text-glow-muted px-2.5 py-1 rounded-lg border border-glow-border">Cancel</button>
@@ -734,7 +723,7 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
               </div>
             </div>
           ) : (
-            <div className="bg-gradient-to-br from-glow-accent to-purple-700 rounded-xl rounded-tr-sm px-3 py-2 text-[11px] text-white shadow-sm shadow-glow-accent/15 whitespace-pre-wrap break-words">
+            <div className="bg-glow-accent/80 rounded-xl rounded-tr-sm px-3 py-2 text-[11px] text-white whitespace-pre-wrap break-words">
               {message.content}
             </div>
           )}
@@ -795,7 +784,7 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
     <div className={cn("px-3 py-2 group",isStreaming?"animate-fade-in":"animate-slide-in-left")}>
       <div className="flex items-start gap-2.5">
         <AIAvatar isStreaming={isStreaming}/>
-        <div className="flex-1 min-w-0 bg-glow-card/60 border border-glow-border/40 rounded-2xl rounded-tl-sm px-3.5 py-3 shadow-sm">
+        <div className="flex-1 min-w-0 bg-glow-card rounded-2xl rounded-tl-sm px-3.5 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.04)]">
           <div className={cn(
             "text-[11px] leading-relaxed text-glow-text prose prose-invert max-w-none",
             "prose-p:my-1.5 prose-p:text-[11px] prose-p:text-glow-text prose-p:leading-relaxed",
