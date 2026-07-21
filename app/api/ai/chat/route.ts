@@ -70,6 +70,21 @@ of a cross-chain bridge/gateway transfer (circle_cctp_bridge,
 circle_gateway_transfer), where the source is always Arc and only the
 destination needs asking.
 
+## CRITICAL — When to call transaction tools
+**NEVER call any of the following tools unless the user EXPLICITLY requests a transaction action:**
+- circle_transfer, circle_contract_execute, circle_cctp_bridge, circle_gateway_transfer, circle_nanopayment, circle_swap
+
+Tasks that must NEVER trigger a transaction tool (respond with text only):
+- Fixing a compile error or code error
+- Writing, reviewing, or explaining Solidity or any other code
+- Answering a question about contracts, protocols, or Web3 concepts
+- Describing what a function does
+- Suggesting code changes or improvements
+- Anything that isn't a direct request like: "send", "transfer", "deploy", "execute", "bridge", "swap", "call this function on-chain"
+
+If the user says "fix the error" or "help me with this contract" — write the fix as code, NEVER call a contract execution tool.
+Only call a transaction tool when the user's intent is unambiguously to move funds, execute on-chain, or deploy right now.
+
 ## Running terminal commands
 To actually run something (install a package, run a script, use git, run
 tests), put the command(s) in a \`\`\`bash fenced block — this executes for
@@ -306,12 +321,15 @@ export async function POST(req: NextRequest) {
     // Don't second-guess it; surface the real OpenRouter error if it fails.
     const useModel = model ?? "anthropic/claude-3.5-sonnet";
 
-    // Detect clear transaction intent in the latest user message so we can force
-    // tool_choice="required" — some OpenRouter models are conservative under "auto"
-    // and will describe an action in prose instead of actually calling the tool.
+    // Only force tool_choice="required" for unambiguous on-chain action requests.
+    // Requires BOTH: (a) a direct action verb AND (b) a clear on-chain target
+    // (token name, contract address, or amount pattern).
+    // Importantly, code-help phrases ("fix", "write", "explain", "review", "how") are
+    // explicitly excluded so that asking to fix a Solidity error never triggers a tx.
     const lastUserMsg = [...messages].reverse().find(m => m.role === "user")?.content ?? "";
-    const TX_INTENT = /\b(send|transfer|pay|bridge|swap|execute|deploy|call the contract|mint|burn)\b.{0,60}\b(usdc|eurc|cirbtc|usyc|to |address|0x[a-f0-9]{6,})/i;
-    const forceToolCall = TX_INTENT.test(lastUserMsg);
+    const isCodeHelp = /\b(fix|write|explain|review|what|how|why|show|help|error|compile|check|analyze|audit|refactor|debug)\b/i.test(lastUserMsg);
+    const TX_INTENT  = /\b(send|transfer|pay|bridge|swap|deploy|call the contract|execute on.?chain)\b.{0,80}\b(usdc|eurc|cirbtc|usyc|0x[a-f0-9]{10,}|\d+\.?\d*\s*(?:usdc|eurc))\b/i;
+    const forceToolCall = !isCodeHelp && TX_INTENT.test(lastUserMsg);
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
