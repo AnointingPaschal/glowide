@@ -118,6 +118,8 @@ export default function EditorPage() {
   useEffect(() => {
     const handler = (e: Event) => {
       const plugin = (e as CustomEvent<Plugin>).detail;
+      if (plugin === "chat") { setShowChatPanel(true); return; }
+      if (plugin === "terminal") { setTerminalOpen(true); return; }
       if (plugin) setActivePlugin(plugin);
     };
     window.addEventListener("glowide:switch-plugin", handler);

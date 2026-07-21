@@ -44,6 +44,17 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
   const fsStore = useFileSystemStore();
   const { nodes, activeProjectId, updateContent: updateFileContent, createFile, createDirectory } = fsStore;
   const [input, setInput] = useState("");
+
+  // Other panels (e.g. Static Analysis "Ask AI to fix") can prefill the chat
+  // input via: window.dispatchEvent(new CustomEvent("glowide:ai-prefill", { detail: { text } }))
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { text } = (e as CustomEvent<{ text: string }>).detail ?? {};
+      if (text) { setInput(text); inputRef.current?.focus(); }
+    };
+    window.addEventListener("glowide:ai-prefill", handler);
+    return () => window.removeEventListener("glowide:ai-prefill", handler);
+  }, []);
   const [models, setModels] = useState<PublicModel[]>([]);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);

@@ -68,6 +68,23 @@ export function MonacoEditor() {
     });
   }, [handleSave]);
 
+  // Let other panels (e.g. Static Analysis "Jump to line") navigate the
+  // editor without needing a direct ref — dispatch: window.dispatchEvent(new
+  // CustomEvent("glowide:jump-to-line", { detail: { line: 42 } }))
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { line } = (e as CustomEvent<{ line: number }>).detail ?? {};
+      const editor = editorRef.current as { revealLineInCenter:(l:number)=>void; setPosition:(p:{lineNumber:number;column:number})=>void; focus:()=>void } | null;
+      if (editor && line) {
+        editor.revealLineInCenter(line);
+        editor.setPosition({ lineNumber: line, column: 1 });
+        editor.focus();
+      }
+    };
+    window.addEventListener("glowide:jump-to-line", handler);
+    return () => window.removeEventListener("glowide:jump-to-line", handler);
+  }, []);
+
   if (!activeTab) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-[#0e0e1a] text-center p-8">
