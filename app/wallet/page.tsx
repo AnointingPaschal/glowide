@@ -1473,19 +1473,6 @@ export default function WalletPage() {
                 <ActionBtn icon={Zap}            label="Nanopay" onClick={()=>setModal("nanopay")}/>
               </div>
 
-              {/* Setup Circle CTA if not yet set up */}
-              {!hasCircle && (
-                <button onClick={()=>setModal("setup")}
-                  className="mx-4 flex items-center gap-3 p-3.5 bg-glow-accent/10 border border-glow-accent/20 rounded-2xl hover:bg-glow-accent/15 transition-colors">
-                  <Shield className="w-5 h-5 text-glow-accent flex-shrink-0"/>
-                  <div className="text-left min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-glow-text">Set up Circle Dev Wallet</p>
-                    <p className="text-xs text-glow-muted">Server-signed · No PIN · Testnet ready</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-glow-muted"/>
-                </button>
-              )}
-
               {/* My Assets */}
               <div className="mx-3">
                 <div className="flex items-center justify-between mb-2 px-1">
