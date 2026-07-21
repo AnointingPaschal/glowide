@@ -10,7 +10,7 @@ import {
   ChevronDown, Terminal, Code2, X, ExternalLink,
   Hammer, FileCode, FolderOpen, FileEdit,
   CheckCircle, AlertTriangle, Loader2,
-  Zap, Send, Globe, ArrowLeftRight, FolderPlus,
+  Zap, Send, Globe, ArrowLeftRight, FolderPlus, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/types";
@@ -217,9 +217,12 @@ function sendToEditor(files: Array<{filename:string;content:string;lang:string}>
 // ── AI Avatar ─────────────────────────────────────────────────────────────────
 function AIAvatar({ isStreaming }: { isStreaming?:boolean }) {
   return (
-    <div className={cn("w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 relative","bg-gradient-to-br from-glow-accent to-purple-700",isStreaming&&"animate-pulse")}>
-      <Code2 className="w-3 h-3 text-white"/>
-      {isStreaming && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border border-[#070710] animate-pulse"/>}
+    <div className="relative flex-shrink-0 mt-0.5">
+      {isStreaming && <div className="absolute inset-0 rounded-xl bg-glow-accent/40 blur-md animate-pulse"/>}
+      <div className={cn("relative w-6 h-6 rounded-xl flex items-center justify-center","bg-gradient-to-br from-glow-accent via-purple-600 to-glow-cyan shadow-md")}>
+        <Sparkles className="w-3 h-3 text-white"/>
+        {isStreaming && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border-2 border-[#0a0a12] animate-pulse"/>}
+      </div>
     </div>
   );
 }
@@ -371,7 +374,7 @@ const ARC_EXPLORER = "https://testnet.arcscan.app";
 // ── Final transaction result — shown live after execution AND persisted
 // permanently into the message once successful, so reloading the chat never
 // reverts back to a Confirm button (which would risk a duplicate send). ────
-function TxResultCard({ result }: { result: TxResult }) {
+function TxResultCard({ result, onRetry, onCancel }: { result: TxResult; onRetry?: () => void; onCancel?: () => void }) {
   return (
     <div className={cn(
       "mt-2 rounded-2xl border overflow-hidden text-xs shadow-lg animate-scale-in",
@@ -404,7 +407,25 @@ function TxResultCard({ result }: { result: TxResult }) {
           )}
         </div>
       ) : (
-        <p className="px-4 py-3 text-red-400/90">{result.message}</p>
+        <div className="px-4 py-3 space-y-3">
+          <p className="text-red-400/90">{result.message}</p>
+          {(onRetry || onCancel) && (
+            <div className="flex gap-2">
+              {onRetry && (
+                <button onClick={onRetry}
+                  className="flex-1 py-2 bg-glow-gradient text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5">
+                  <RotateCcw className="w-3.5 h-3.5"/>Retry
+                </button>
+              )}
+              {onCancel && (
+                <button onClick={onCancel}
+                  className="px-4 py-2 bg-glow-card border border-glow-border text-glow-muted text-xs font-semibold rounded-xl hover:text-glow-text transition-colors">
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -545,7 +566,11 @@ function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
     } finally { setLoading(false); }
   };
 
-  if (result) return <TxResultCard result={result}/>;
+  if (result) return (
+    <TxResultCard result={result}
+      onRetry={!result.success ? () => { setResult(null); execute(); } : undefined}
+      onCancel={!result.success ? onReject : undefined}/>
+  );
 
   if (creatingWallet) {
     return <InlineCreateWallet onDone={() => setCreatingWallet(false)}/>;
@@ -682,9 +707,22 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
             </div>
           )}
           {!editing && (
-            <div className="absolute -bottom-6 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <TinyBtn icon={copied?Check:Copy} label="Copy" onClick={copy} green={copied}/>
-              {onEdit && <TinyBtn icon={Edit3} label="Edit" onClick={()=>{setEditing(true);setEditVal(message.content);}}/>}
+            <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+              <div className="flex items-center bg-glow-card border border-glow-border rounded-full shadow-sm overflow-hidden">
+                <button onClick={copy} title="Copy" aria-label="Copy"
+                  className={cn("flex items-center justify-center w-7 h-7 transition-colors", copied ? "text-emerald-400" : "text-glow-muted/60 hover:text-glow-text hover:bg-glow-surface")}>
+                  {copied ? <Check className="w-3 h-3"/> : <Copy className="w-3 h-3"/>}
+                </button>
+                {onEdit && (
+                  <>
+                    <div className="w-px h-4 bg-glow-border"/>
+                    <button onClick={()=>{setEditing(true);setEditVal(message.content);}} title="Edit" aria-label="Edit"
+                      className="flex items-center justify-center w-7 h-7 text-glow-muted/60 hover:text-glow-text hover:bg-glow-surface transition-colors">
+                      <Edit3 className="w-3 h-3"/>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -722,10 +760,10 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
 
   // ── AI message ────────────────────────────────────────────────────────────
   return (
-    <div className={cn("px-3 py-1.5 group",isStreaming?"animate-fade-in":"animate-slide-in-left")}>
+    <div className={cn("px-3 py-2 group",isStreaming?"animate-fade-in":"animate-slide-in-left")}>
       <div className="flex items-start gap-2.5">
         <AIAvatar isStreaming={isStreaming}/>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 bg-glow-card/60 border border-glow-border/40 rounded-2xl rounded-tl-sm px-3.5 py-3 shadow-sm">
           <div className={cn(
             "text-[11px] leading-relaxed text-glow-text prose prose-invert max-w-none",
             "prose-p:my-1.5 prose-p:text-[11px] prose-p:text-glow-text prose-p:leading-relaxed",
@@ -802,9 +840,22 @@ export function ChatMessage({ message, isStreaming, onEdit, onRetry, editorMode 
 
           {/* Action row */}
           {!isStreaming && (
-            <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <TinyBtn icon={copied?Check:Copy} label={copied?"Copied":"Copy"} onClick={copy} green={copied}/>
-              {onRetry && <TinyBtn icon={RotateCcw} label="Regenerate" onClick={onRetry}/>}
+            <div className="flex mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+              <div className="flex items-center bg-glow-card border border-glow-border rounded-full shadow-sm overflow-hidden">
+                <button onClick={copy} title={copied ? "Copied" : "Copy"} aria-label="Copy"
+                  className={cn("flex items-center justify-center w-7 h-7 transition-colors", copied ? "text-emerald-400" : "text-glow-muted/60 hover:text-glow-text hover:bg-glow-surface")}>
+                  {copied ? <Check className="w-3 h-3"/> : <Copy className="w-3 h-3"/>}
+                </button>
+                {onRetry && (
+                  <>
+                    <div className="w-px h-4 bg-glow-border"/>
+                    <button onClick={onRetry} title="Regenerate" aria-label="Regenerate"
+                      className="flex items-center justify-center w-7 h-7 text-glow-muted/60 hover:text-glow-text hover:bg-glow-surface transition-colors">
+                      <RotateCcw className="w-3 h-3"/>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
