@@ -125,51 +125,22 @@ function AssetDetailSheet({ symbol, name, amount, price, change, logoUrl, onClos
     });
   }, [price, change]);
 
-  // Load on-chain transfer history
+  // Load on-chain transfer history via server-side API — uses the dedicated
+  // RPC URL from Vercel env at runtime, not the value embedded at build time.
   useEffect(() => {
     if (!walletAddr) return;
     setLoadingTxns(true);
-    const TOKEN_ADDRS: Record<string,string> = {
-      USDC:"0x3600000000000000000000000000000000000000",
-      EURC:"0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
-      cirBTC:"0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
-      USYC:"0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C",
-    };
-    const tokenAddr = TOKEN_ADDRS[symbol];
-    if (!tokenAddr) { setLoadingTxns(false); return; }
-    const paddedAddr = "000000000000000000000000" + walletAddr.replace("0x","").toLowerCase();
-    Promise.all([
-      // Incoming transfers
-      fetch(ARC_RPC, {method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_getLogs",params:[{
-          address:tokenAddr, fromBlock:"earliest", toBlock:"latest",
-          topics:["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",null,"0x"+paddedAddr]
-        }]})}).then(r=>r.json()).catch(()=>({result:[]})),
-      // Outgoing transfers
-      fetch(ARC_RPC, {method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({jsonrpc:"2.0",id:2,method:"eth_getLogs",params:[{
-          address:tokenAddr, fromBlock:"earliest", toBlock:"latest",
-          topics:["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef","0x"+paddedAddr,null]
-        }]})}).then(r=>r.json()).catch(()=>({result:[]})),
-    ]).then(([inbound,outbound]) => {
-      const DECIMALS: Record<string,number> = {USDC:18,EURC:6,cirBTC:8,USYC:6};
-      const dec = DECIMALS[symbol]||6;
-      const fmt = (hex:string) => {
-        try { return (Number(BigInt(hex))/Math.pow(10,dec)).toFixed(4); } catch { return "0"; }
-      };
-      type LogEntry = { transactionHash: string; topics: string[]; data: string };
-      const ins = ((inbound as {result?:LogEntry[]}).result||[]).slice(-5).map((l:LogEntry) => ({
-        hash:l.transactionHash, isIn:true,
-        from:"0x"+l.topics[1]?.slice(26), to:walletAddr,
-        value:fmt(l.data)
-      }));
-      const outs = ((outbound as {result?:LogEntry[]}).result||[]).slice(-5).map((l:LogEntry) => ({
-        hash:l.transactionHash, isIn:false,
-        from:walletAddr, to:"0x"+l.topics[2]?.slice(26),
-        value:fmt(l.data)
-      }));
-      setTxns([...ins,...outs].slice(0,8));
-    }).finally(()=>setLoadingTxns(false));
+    fetch(`/api/wallet/transactions?address=${encodeURIComponent(walletAddr)}&token=${encodeURIComponent(symbol)}&limit=8`)
+      .then(r => r.json())
+      .then((d: { txns?: Array<{ hash: string; direction: "in"|"out"; from: string; to: string; value: string }> }) => {
+        const mapped = (d.txns ?? []).map(t => ({
+          hash: t.hash, isIn: t.direction === "in",
+          from: t.from, to: t.to, value: t.value,
+        }));
+        setTxns(mapped);
+      })
+      .catch(() => setTxns([]))
+      .finally(() => setLoadingTxns(false));
   }, [symbol, walletAddr]);
 
   return (
