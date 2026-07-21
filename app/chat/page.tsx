@@ -17,10 +17,69 @@ import { cn } from '@/lib/utils';
 import type { PublicModel } from '@/app/api/models/route';
 
 const QUICK_PROMPTS = [
-  { icon: Code2,    label: 'ERC-20 Contract',  prompt: 'Write a production ERC-20 token for Arc Testnet with minting, burning, and access control.' },
-  { icon: Bug,      label: 'Code Review',       prompt: 'Review my Solidity code for security vulnerabilities, gas inefficiencies, and best practices.' },
-  { icon: RefreshCw,label: 'Explain Code',      prompt: 'Explain how this code works, line by line, with clear examples.' },
-  { icon: Zap,      label: 'Optimize Gas',      prompt: 'How can I optimize this Solidity contract to reduce gas costs on Arc Testnet?' },
+  { icon: Code2,     label: 'ERC-20 Token',     prompt: 'Write a production ERC-20 token for Arc Testnet with minting, burning, and access control.' },
+  { icon: Bug,       label: 'Code Review',       prompt: 'Review my Solidity code for security vulnerabilities, gas inefficiencies, and best practices.' },
+  { icon: RefreshCw, label: 'Explain Code',      prompt: 'Explain how this code works, line by line, with clear examples.' },
+  { icon: Zap,       label: 'Optimize Gas',      prompt: 'How can I optimize this Solidity contract to reduce gas costs on Arc Testnet?' },
+];
+
+const SUGGESTION_CARDS = [
+  {
+    id: 'send-usdc',
+    icon: Coins,
+    iconColor: 'text-emerald-400',
+    iconBg: 'bg-emerald-500/15',
+    label: 'Send USDC',
+    desc: 'Transfer USDC to any address on Arc Testnet instantly',
+    prompt: 'Send 1 USDC to ',
+    prefill: true,
+  },
+  {
+    id: 'deploy-nft',
+    icon: Sparkles,
+    iconColor: 'text-violet-400',
+    iconBg: 'bg-violet-500/15',
+    label: 'Deploy NFT Collection',
+    desc: 'Create an ERC-721 NFT contract with metadata and minting',
+    prompt: 'Create a production ERC-721 NFT collection contract for Arc Testnet with metadata, minting, and a 500-item supply cap.',
+  },
+  {
+    id: 'cctp-bridge',
+    icon: ArrowRight,
+    iconColor: 'text-blue-400',
+    iconBg: 'bg-blue-500/15',
+    label: 'Bridge with CCTP',
+    desc: 'Bridge USDC cross-chain using Circle\'s CCTP protocol',
+    prompt: 'Bridge 5 USDC from Arc Testnet to Ethereum Sepolia using CCTP.',
+  },
+  {
+    id: 'defi-lend',
+    icon: Wand2,
+    iconColor: 'text-amber-400',
+    iconBg: 'bg-amber-500/15',
+    label: 'DeFi — Lend USDC',
+    desc: 'Supply USDC to the lending pool to earn yield',
+    prompt: 'Supply 10 USDC to the GlowIDE lending pool on Arc Testnet to earn yield.',
+  },
+  {
+    id: 'write-contract',
+    icon: Code2,
+    iconColor: 'text-cyan-400',
+    iconBg: 'bg-cyan-500/15',
+    label: 'Write Smart Contract',
+    desc: 'Build a custom Solidity contract for Arc Testnet',
+    prompt: 'Write a Solidity smart contract that ',
+    prefill: true,
+  },
+  {
+    id: 'check-balance',
+    icon: Wallet,
+    iconColor: 'text-glow-accent-light',
+    iconBg: 'bg-glow-accent/15',
+    label: 'Check Wallet Balance',
+    desc: 'View your USDC, EURC, cirBTC and USYC balances',
+    prompt: 'Check my wallet balance',
+  },
 ];
 
 function generateTitle(msg: string): string {
@@ -402,89 +461,40 @@ export default function ChatPage() {
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 scroll-smooth">
             {messages.length === 0 ? (
-              <div className="h-full overflow-y-auto px-4 py-8">
-                <div className="max-w-2xl mx-auto">
-                  <p className="text-2xl font-bold text-glow-text mb-1">
-                    Welcome{address ? `, ${address.slice(0,6)}…${address.slice(-4)}` : ''}! 👋
-                  </p>
-                  <p className="text-lg text-glow-muted mb-6">How can I help you today?</p>
+              <div className="h-full overflow-y-auto">
+                <div className="max-w-2xl mx-auto px-5 py-8 md:py-12">
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                    {/* Recent chats */}
-                    <div className="p-4 bg-glow-card border border-glow-border rounded-2xl">
-                      <div className="flex items-center gap-1.5 mb-2.5 text-glow-muted">
-                        <MessageSquare className="w-3.5 h-3.5"/>
-                        <p className="text-xs font-semibold uppercase tracking-wider">Recent chats</p>
-                      </div>
-                      {sessions.length === 0 ? (
-                        <p className="text-xs text-glow-muted/50 italic">No chats yet — start one below</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {sessions.slice(0,3).map(s => (
-                            <button key={s.id} onClick={() => setActiveSession(s.id)}
-                              className="w-full flex items-center gap-2 text-left group">
-                              <span className="w-1.5 h-1.5 rounded-full bg-glow-accent flex-shrink-0"/>
-                              <span className="text-xs text-glow-text truncate group-hover:text-glow-accent-light transition-colors">
-                                {s.title || 'New chat'}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Arc Lab */}
-                    <Link href="/build" className="p-4 bg-glow-card border border-glow-border rounded-2xl hover:border-glow-accent/40 transition-colors block">
-                      <div className="flex items-center gap-1.5 mb-2.5 text-glow-muted">
-                        <FolderKanban className="w-3.5 h-3.5"/>
-                        <p className="text-xs font-semibold uppercase tracking-wider">Arc Lab</p>
-                      </div>
-                      <p className="text-xs text-glow-text font-medium mb-1">Browse real starter projects</p>
-                      <p className="text-[11px] text-glow-muted leading-snug">DeFi, CCTP, prediction markets, AI agents & more</p>
-                      <div className="flex items-center gap-1 text-[11px] text-glow-accent mt-2 font-medium">
-                        Explore <ArrowRight className="w-3 h-3"/>
-                      </div>
-                    </Link>
-
-                    {/* Quick transaction */}
-                    <div className="p-4 bg-glow-card border border-glow-border rounded-2xl">
-                      <div className="flex items-center gap-1.5 mb-2.5 text-glow-muted">
-                        <Coins className="w-3.5 h-3.5"/>
-                        <p className="text-xs font-semibold uppercase tracking-wider">Quick transaction</p>
-                      </div>
-                      <div className="space-y-1.5">
-                        <button onClick={() => sendMessage('Check my wallet balance')}
-                          className="w-full flex items-center gap-2 text-left group">
-                          <Wallet className="w-3 h-3 text-glow-accent flex-shrink-0"/>
-                          <span className="text-xs text-glow-text group-hover:text-glow-accent-light transition-colors">Check my balance</span>
-                        </button>
-                        <button onClick={() => setInput('Send ')}
-                          className="w-full flex items-center gap-2 text-left group">
-                          <Send className="w-3 h-3 text-glow-accent flex-shrink-0"/>
-                          <span className="text-xs text-glow-text group-hover:text-glow-accent-light transition-colors">Send USDC to an address</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Suggested prompt */}
-                    <div className="p-4 bg-glow-card border border-glow-border rounded-2xl">
-                      <div className="flex items-center gap-1.5 mb-2.5 text-glow-muted">
-                        <Sparkles className="w-3.5 h-3.5"/>
-                        <p className="text-xs font-semibold uppercase tracking-wider">Suggested</p>
-                      </div>
-                      <button onClick={() => sendMessage(QUICK_PROMPTS[0].prompt)} className="text-left group block w-full">
-                        <p className="text-xs text-glow-text font-medium group-hover:text-glow-accent-light transition-colors">{QUICK_PROMPTS[0].label}</p>
-                      </button>
-                    </div>
+                  {/* Hero greeting */}
+                  <div className="mb-8">
+                    <p className="text-[28px] font-bold text-glow-text leading-tight mb-1">
+                      Welcome{address ? `, ${address.slice(0,6)}…${address.slice(-4)}` : ''}! 👋
+                    </p>
+                    <p className="text-lg text-glow-muted/70 font-normal">How can I help you today?</p>
                   </div>
 
+                  {/* 6 suggestion cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    {SUGGESTION_CARDS.map(card => (
+                      <button key={card.id}
+                        onClick={() => card.prefill ? setInput(card.prompt) : sendMessage(card.prompt)}
+                        className="group flex items-start gap-3 p-4 bg-glow-card rounded-2xl text-left hover:bg-glow-accent/8 transition-all duration-200 hover:shadow-[0_0_0_1px_rgba(124,58,237,0.3)]">
+                        <div className={`w-9 h-9 rounded-xl ${card.iconBg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                          <card.icon className={`w-4 h-4 ${card.iconColor}`}/>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-glow-text mb-0.5 group-hover:text-white transition-colors">{card.label}</p>
+                          <p className="text-[11px] text-glow-muted/70 leading-snug">{card.desc}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Compact quick-start row */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {QUICK_PROMPTS.map(qp => (
                       <button key={qp.label} onClick={() => sendMessage(qp.prompt)}
-                        className="flex items-center gap-2 p-2.5 bg-glow-surface border border-glow-border/60 rounded-xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-all text-left group">
-                        <div className="w-6 h-6 rounded-lg bg-glow-accent/10 flex items-center justify-center flex-shrink-0">
-                          <qp.icon className="w-3 h-3 text-glow-accent"/>
-                        </div>
+                        className="flex items-center gap-2 px-3 py-2 bg-glow-surface rounded-xl hover:bg-glow-card transition-colors text-left group">
+                        <qp.icon className="w-3.5 h-3.5 text-glow-accent flex-shrink-0"/>
                         <span className="text-[11px] text-glow-muted group-hover:text-glow-text transition-colors font-medium leading-tight">{qp.label}</span>
                       </button>
                     ))}

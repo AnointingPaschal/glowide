@@ -6,23 +6,26 @@
 
 /* ── Dark theme (default) ─────────────────────────────────────── */
 :root, .dark {
-  --glow-bg:       #1a1a1f;
-  --glow-surface:  #212127;
-  --glow-card:     #26262e;
-  --glow-border:   #34343f;
-  --glow-text:     #e8e8ee;
-  --glow-muted:    #8b8b98;
-  --glow-subtle:   #4a4a56;
-  --hero-top:      #2a2140;
+  --glow-bg:       #07070f;
+  --glow-surface:  #0c0c18;
+  --glow-card:     #10101e;
+  --glow-border:   #1a1a2e;
+  --glow-text:     #e8e8f6;
+  --glow-muted:    #5c5c80;
+  --glow-subtle:   #28284a;
+  --hero-top:      #16083a;
 
-  --input-bg:      #1e1e24;
-  --input-border:  #34343f;
-  --input-text:    #e8e8ee;
-  --input-placeholder: #6b6b78;
+  --input-bg:      #0c0c18;
+  --input-border:  #1e1e32;
+  --input-text:    #e8e8f6;
+  --input-placeholder: #3e3e60;
 
-  --scrollbar-track: #212127;
-  --scrollbar-thumb: #34343f;
-  --scrollbar-hover: #55555f;
+  --scrollbar-track: #0c0c18;
+  --scrollbar-thumb: #1e1e32;
+  --scrollbar-hover: #2e2e4e;
+
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
+  --card-shadow-lg: 0 4px 24px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
 }
 
 /* ── Light theme ──────────────────────────────────────────────── */
@@ -113,6 +116,19 @@ a, button { -webkit-tap-highlight-color: transparent; }
 .light .bg-glow-surface { background-color: var(--glow-surface) !important; }
 .light .bg-glow-card    { background-color: var(--glow-card) !important; }
 
+/* Dark mode card shadow utility */
+.dark .shadow-card    { box-shadow: var(--card-shadow); }
+.dark .shadow-card-lg { box-shadow: var(--card-shadow-lg); }
+
+/* Override any remaining hardcoded hex backgrounds in dark mode */
+.dark .bg-\[#080812\], .dark .bg-\[#070710\], .dark .bg-\[#0a0a12\],
+.dark .bg-\[#0d0d18\], .dark .bg-\[#08080f\], .dark .bg-\[#080810\] {
+  background-color: var(--glow-bg) !important;
+}
+.dark .bg-\[#0e0e1a\], .dark .bg-\[#111120\] {
+  background-color: var(--glow-card) !important;
+}
+
 :focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; }
 
 @media (max-width: 767px) {
@@ -133,9 +149,14 @@ a, button { -webkit-tap-highlight-color: transparent; }
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.97) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
 .animate-slide-in-right { animation: slide-in-right 0.2s ease-out forwards; }
 .animate-slide-in-left  { animation: slide-in-left  0.2s ease-out forwards; }
 .animate-fade-in        { animation: fade-in        0.15s ease-out forwards; }
+.animate-scale-in       { animation: scale-in       0.2s ease-out forwards; }
 
 /* ── Theme-aware overrides for hardcoded dark backgrounds ──────────────── */
 /* These map legacy hardcoded hex backgrounds to theme variables so light

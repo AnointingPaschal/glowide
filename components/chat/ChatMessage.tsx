@@ -385,20 +385,28 @@ function TxResultCard({ result, onRetry, onCancel }: { result: TxResult; onRetry
           result.success ? "bg-emerald-500/20" : "bg-red-500/20")}>
           {result.success ? <CheckCircle className="w-4 h-4 text-emerald-400"/> : <AlertTriangle className="w-4 h-4 text-red-400"/>}
         </div>
-        <p className={cn("font-semibold text-sm", result.success ? "text-emerald-400" : "text-red-400")}>{result.success ? "Transaction Confirmed" : "Transaction Failed"}</p>
+        <p className={cn("font-semibold text-sm", result.success ? "text-emerald-400" : "text-red-400")}>
+          {result.success ? (result.txId ? "Transaction Confirmed" : "Wallet Balance") : "Transaction Failed"}
+        </p>
       </div>
       {result.success ? (
         <div className="px-4 py-3 space-y-2">
-          {result.amount && (
+          {result.amount && !result.message.includes('\n') && (
             <div className="text-center py-2 mb-1">
               <p className="text-2xl font-bold text-glow-text">{result.amount} <span className="text-glow-accent-light">{result.token ?? ""}</span></p>
             </div>
           )}
-          {result.from && <Row label="From" value={result.from} mono/>}
-          {result.to     && <Row label="To" value={result.to} mono/>}
-          {result.network && <Row label="Network" value={result.network}/>}
-          {result.txId && <Row label="Tx Hash" value={result.txId} mono/>}
-          {result.timestamp && <Row label="Time" value={new Date(result.timestamp).toLocaleString()}/>}
+          {result.message.includes('\n') ? (
+            <pre className="text-xs text-glow-text font-mono whitespace-pre-wrap leading-relaxed bg-glow-surface/60 rounded-xl p-3">{result.message}</pre>
+          ) : (
+            <>
+              {result.from && <Row label="From" value={result.from} mono/>}
+              {result.to     && <Row label="To" value={result.to} mono/>}
+              {result.network && <Row label="Network" value={result.network}/>}
+              {result.txId && <Row label="Tx Hash" value={result.txId} mono/>}
+              {result.timestamp && <Row label="Time" value={new Date(result.timestamp).toLocaleString()}/>}
+            </>
+          )}
           {result.txId && (
             <a href={`${ARC_EXPLORER}/tx/${result.txId}`} target="_blank" rel="noopener noreferrer"
               className="flex items-center justify-center gap-1.5 mt-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 transition-colors font-medium">
@@ -547,16 +555,35 @@ function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
       }
 
       if (name === "get_wallet_balance") {
-        if (wallet?.type === "circle") {
-          const res = await fetch("/api/circle/dev-wallet", { method: "POST", headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({ action: "balances", walletId: wallet.id }) });
-          const d = await res.json() as { tokenBalances?: unknown[] };
-          const r = { success: true, message: `Found ${d.tokenBalances?.length ?? 0} token balance(s)` };
+        const addr = wallet?.address;
+        if (!addr) {
+          const r = { success: true, message: "No wallet connected — create or import one in the Wallet tab." };
           setResult(r); onExecute(r); setLoading(false); return;
         }
-        const addr = wallet?.address;
-        const r = { success: true, message: addr ? `Wallet: ${addr.slice(0,10)}… — check the Wallet tab for full balances` : "No wallet connected" };
-        setResult(r); onExecute(r); setLoading(false); return;
+        try {
+          const res = await fetch(`/api/wallet/arc-balances?address=${addr}`);
+          const d = await res.json() as {
+            balances?: Record<string, { name: string; amount: string; decimals: number }>;
+            nativeGasUSDC?: string;
+            error?: string;
+          };
+          if (d.error) throw new Error(d.error);
+          const bals = d.balances ?? {};
+          const lines: string[] = [];
+          if (d.nativeGasUSDC && parseFloat(d.nativeGasUSDC) > 0)
+            lines.push(`USDC (native gas): ${parseFloat(d.nativeGasUSDC).toFixed(4)}`);
+          for (const [sym, b] of Object.entries(bals))
+            if (parseFloat(b.amount) > 0)
+              lines.push(`${sym}: ${parseFloat(b.amount).toFixed(sym === 'cirBTC' ? 6 : 2)}`);
+          const message = lines.length === 0
+            ? `Wallet: ${addr.slice(0,8)}…${addr.slice(-6)}\n\nAll balances are 0 on Arc Testnet.`
+            : `Wallet: ${addr.slice(0,8)}…${addr.slice(-6)}\n\n${lines.join('\n')}`;
+          const r = { success: true, message };
+          setResult(r); onExecute(r); setLoading(false); return;
+        } catch {
+          const r = { success: true, message: `Wallet: ${addr.slice(0,8)}…${addr.slice(-6)}\n\nCouldn't fetch live balances — check the Wallet tab.` };
+          setResult(r); onExecute(r); setLoading(false); return;
+        }
       }
 
       throw new Error(`Unknown action: ${name}`);
