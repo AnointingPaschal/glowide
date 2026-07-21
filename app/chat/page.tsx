@@ -2,6 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { useChatStore } from '@/store/chatStore';
@@ -9,7 +10,8 @@ import { useWalletStore } from '@/store/walletStore';
 import {
   Send, Plus, Sparkles, Code2, Bug, RefreshCw, Zap,
   ChevronDown, Edit2, Trash2, PanelLeftOpen, Loader2,
-  MessageSquare, SquareX, Bot, Cpu,
+  MessageSquare, SquareX, Bot, Cpu, Home, Wallet, FolderKanban,
+  Rocket, Settings, ArrowRight, Wand2, Coins,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PublicModel } from '@/app/api/models/route';
@@ -27,6 +29,27 @@ function generateTitle(msg: string): string {
   const cut = clean.slice(0, 42);
   const lastSpace = cut.lastIndexOf(' ');
   return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + '…';
+}
+
+function groupSessionsByDate<T extends { updated_at?: string; created_at?: string }>(sessions: T[]) {
+  const groups: { label: string; items: T[] }[] = [];
+  const now = new Date();
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = startOf(now);
+  const yesterday = today - 86400000;
+  const buckets: Record<string, T[]> = { Today: [], Yesterday: [], Older: [] };
+
+  for (const s of sessions) {
+    const t = new Date(s.updated_at ?? s.created_at ?? Date.now());
+    const day = startOf(t);
+    if (day === today) buckets.Today.push(s);
+    else if (day === yesterday) buckets.Yesterday.push(s);
+    else buckets.Older.push(s);
+  }
+  for (const label of ['Today', 'Yesterday', 'Older']) {
+    if (buckets[label].length) groups.push({ label, items: buckets[label] });
+  }
+  return groups;
 }
 
 export default function ChatPage() {
@@ -251,69 +274,113 @@ export default function ChatPage() {
         {/* ── Sidebar ─────────────────────────────────────────────────── */}
         <aside className={cn(
           "flex-shrink-0 border-r border-glow-border flex flex-col transition-transform duration-300",
-          "fixed inset-y-0 left-0 z-30 w-60 md:static md:translate-x-0",
+          "fixed inset-y-0 left-0 z-30 w-64 md:static md:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-          "md:w-52 lg:w-60",
-          "bg-[#080812]"
+          "md:w-56 lg:w-64 bg-glow-surface"
         )}>
-          <div className="flex items-center justify-between px-3 pt-4 pb-2.5 border-b border-glow-border/50">
-            <div className="flex items-center gap-2">
-              <Bot className="w-4 h-4 text-glow-accent"/>
-              <span className="text-xs font-semibold text-glow-muted uppercase tracking-wider">Chats</span>
+          {/* Profile */}
+          <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+            <div className="w-8 h-8 rounded-full bg-glow-gradient flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Sparkles className="w-4 h-4 text-white"/>
             </div>
-            <button onClick={newChat}
-              className="p-1.5 rounded-lg text-glow-muted hover:text-glow-accent hover:bg-glow-accent/10 transition-colors">
-              <Plus className="w-4 h-4"/>
-            </button>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-glow-text truncate">
+                {address ? `${address.slice(0,6)}…${address.slice(-4)}` : 'Guest'}
+              </p>
+              <p className="text-[10px] text-glow-muted">Web3 Builder</p>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-1.5 px-1.5 space-y-0.5">
+          {/* Primary nav */}
+          <nav className="px-2.5 space-y-0.5 pb-2">
+            <Link href="/" className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card transition-colors text-sm">
+              <Home className="w-4 h-4"/>Home
+            </Link>
+            <button onClick={newChat} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-glow-accent/10 text-glow-accent-light font-medium hover:bg-glow-accent/15 transition-colors text-sm">
+              <Plus className="w-4 h-4"/>New Chat
+            </button>
+            <Link href="/wallet" className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card transition-colors text-sm">
+              <Wallet className="w-4 h-4"/>Wallet
+            </Link>
+            <Link href="/build" className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card transition-colors text-sm">
+              <FolderKanban className="w-4 h-4"/>Arc Lab
+            </Link>
+            <Link href="/deployments" className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card transition-colors text-sm">
+              <Rocket className="w-4 h-4"/>Deployments
+            </Link>
+          </nav>
+
+          <div className="h-px bg-glow-border/60 mx-3"/>
+
+          {/* History, grouped by date */}
+          <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-3 min-h-0">
             {sessions.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-center">
-                <MessageSquare className="w-8 h-8 text-glow-muted/20 mb-2"/>
+                <MessageSquare className="w-7 h-7 text-glow-muted/25 mb-2"/>
                 <p className="text-xs text-glow-muted/50">No chats yet</p>
               </div>
             ) : (
-              sessions.map(session => (
-                <div key={session.id}
-                  onClick={() => { setActiveSession(session.id); setSidebarOpen(false); }}
-                  className={cn(
-                    "group flex items-center gap-1.5 px-2 py-2 rounded-lg cursor-pointer transition-all",
-                    activeSessionId === session.id
-                      ? "bg-glow-accent/15 text-glow-accent-light"
-                      : "text-glow-muted hover:text-glow-text hover:bg-glow-card/50"
-                  )}>
-                  {editingId === session.id ? (
-                    <input autoFocus value={editingTitle}
-                      onChange={e => setEditingTitle(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') { updateSessionTitle(session.id, editingTitle); setEditingId(null); }
-                        if (e.key === 'Escape') setEditingId(null);
-                      }}
-                      onBlur={() => { updateSessionTitle(session.id, editingTitle); setEditingId(null); }}
-                      className="flex-1 bg-transparent text-xs focus:outline-none border-b border-glow-accent text-glow-text"
-                      onClick={e => e.stopPropagation()}
-                    />
-                  ) : (
-                    <span className="flex-1 text-xs truncate leading-relaxed">
-                      {session.title || <span className="italic opacity-50">New chat</span>}
-                    </span>
-                  )}
-
-                  <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => { setEditingId(session.id); setEditingTitle(session.title ?? ''); }}
-                      className="p-1 rounded text-glow-muted/60 hover:text-glow-text hover:bg-glow-surface transition-colors">
-                      <Edit2 className="w-3 h-3"/>
-                    </button>
-                    <button onClick={() => { deleteSession(session.id); if (activeSessionId === session.id) setActiveSession(null); }}
-                      className="p-1 rounded text-glow-muted/60 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                      <Trash2 className="w-3 h-3"/>
-                    </button>
+              groupSessionsByDate(sessions).map(group => (
+                <div key={group.label}>
+                  <p className="text-[10px] font-semibold text-glow-muted/60 uppercase tracking-wider px-2 mb-1">{group.label}</p>
+                  <div className="space-y-0.5">
+                    {group.items.map(session => (
+                      <div key={session.id}
+                        onClick={() => { setActiveSession(session.id); setSidebarOpen(false); }}
+                        className={cn(
+                          "group flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all",
+                          activeSessionId === session.id
+                            ? "bg-glow-accent/15 text-glow-accent-light"
+                            : "text-glow-muted hover:text-glow-text hover:bg-glow-card"
+                        )}>
+                        {editingId === session.id ? (
+                          <input autoFocus value={editingTitle}
+                            onChange={e => setEditingTitle(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { updateSessionTitle(session.id, editingTitle); setEditingId(null); }
+                              if (e.key === 'Escape') setEditingId(null);
+                            }}
+                            onBlur={() => { updateSessionTitle(session.id, editingTitle); setEditingId(null); }}
+                            className="flex-1 bg-transparent text-xs focus:outline-none border-b border-glow-accent text-glow-text"
+                            onClick={e => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span className="flex-1 text-xs truncate leading-relaxed">
+                            {session.title || <span className="italic opacity-50">New chat</span>}
+                          </span>
+                        )}
+                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => { setEditingId(session.id); setEditingTitle(session.title ?? ''); }}
+                            className="p-1 rounded text-glow-muted/60 hover:text-glow-text hover:bg-glow-surface transition-colors">
+                            <Edit2 className="w-3 h-3"/>
+                          </button>
+                          <button onClick={() => { deleteSession(session.id); if (activeSessionId === session.id) setActiveSession(null); }}
+                            className="p-1 rounded text-glow-muted/60 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                            <Trash2 className="w-3 h-3"/>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))
             )}
           </div>
+
+          {/* Arc Lab CTA */}
+          <div className="p-2.5">
+            <Link href="/build" className="block p-3 rounded-2xl bg-glow-gradient text-white shadow-sm hover:opacity-95 transition-opacity">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Wand2 className="w-3.5 h-3.5"/>
+                <p className="text-xs font-semibold">Explore Arc Lab</p>
+              </div>
+              <p className="text-[10px] text-white/80 leading-snug">Real starter projects — DeFi, CCTP, AI agents & more</p>
+            </Link>
+          </div>
+
+          <Link href="/settings" className="flex items-center gap-2.5 mx-2.5 mb-3 px-2.5 py-2 rounded-xl text-glow-muted hover:text-glow-text hover:bg-glow-card transition-colors text-sm">
+            <Settings className="w-4 h-4"/>Settings
+          </Link>
         </aside>
 
         {/* ── Main chat ───────────────────────────────────────────────── */}
@@ -335,27 +402,93 @@ export default function ChatPage() {
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 scroll-smooth">
             {messages.length === 0 ? (
-              <div className="flex flex-col h-full items-center justify-center px-4 text-center">
-                <div className="relative mb-5">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-glow-accent to-purple-600 flex items-center justify-center shadow-glow-lg">
-                    <Cpu className="w-8 h-8 text-white"/>
-                  </div>
-                  <div className="absolute inset-0 rounded-2xl bg-glow-accent/20 animate-ping"/>
-                </div>
-                <h2 className="text-lg font-bold text-glow-text mb-1">GlowIDE AI</h2>
-                <p className="text-sm text-glow-muted max-w-sm mb-6 leading-relaxed">
-                  Your intelligent Web3 development partner. Write contracts, debug code, optimize gas, and ship faster.
-                </p>
-                <div className="grid grid-cols-2 gap-2 max-w-sm w-full">
-                  {QUICK_PROMPTS.map(qp => (
-                    <button key={qp.label} onClick={() => sendMessage(qp.prompt)}
-                      className="flex items-center gap-2.5 p-3 bg-glow-card border border-glow-border rounded-xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-all text-left group">
-                      <div className="w-7 h-7 rounded-lg bg-glow-accent/10 flex items-center justify-center flex-shrink-0">
-                        <qp.icon className="w-3.5 h-3.5 text-glow-accent"/>
+              <div className="h-full overflow-y-auto px-4 py-8">
+                <div className="max-w-2xl mx-auto">
+                  <p className="text-2xl font-bold text-glow-text mb-1">
+                    Welcome{address ? `, ${address.slice(0,6)}…${address.slice(-4)}` : ''}! 👋
+                  </p>
+                  <p className="text-lg text-glow-muted mb-6">How can I help you today?</p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                    {/* Recent chats */}
+                    <div className="p-4 bg-glow-card border border-glow-border rounded-2xl">
+                      <div className="flex items-center gap-1.5 mb-2.5 text-glow-muted">
+                        <MessageSquare className="w-3.5 h-3.5"/>
+                        <p className="text-xs font-semibold uppercase tracking-wider">Recent chats</p>
                       </div>
-                      <span className="text-xs text-glow-muted group-hover:text-glow-text transition-colors font-medium leading-tight">{qp.label}</span>
-                    </button>
-                  ))}
+                      {sessions.length === 0 ? (
+                        <p className="text-xs text-glow-muted/50 italic">No chats yet — start one below</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {sessions.slice(0,3).map(s => (
+                            <button key={s.id} onClick={() => setActiveSession(s.id)}
+                              className="w-full flex items-center gap-2 text-left group">
+                              <span className="w-1.5 h-1.5 rounded-full bg-glow-accent flex-shrink-0"/>
+                              <span className="text-xs text-glow-text truncate group-hover:text-glow-accent-light transition-colors">
+                                {s.title || 'New chat'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Arc Lab */}
+                    <Link href="/build" className="p-4 bg-glow-card border border-glow-border rounded-2xl hover:border-glow-accent/40 transition-colors block">
+                      <div className="flex items-center gap-1.5 mb-2.5 text-glow-muted">
+                        <FolderKanban className="w-3.5 h-3.5"/>
+                        <p className="text-xs font-semibold uppercase tracking-wider">Arc Lab</p>
+                      </div>
+                      <p className="text-xs text-glow-text font-medium mb-1">Browse real starter projects</p>
+                      <p className="text-[11px] text-glow-muted leading-snug">DeFi, CCTP, prediction markets, AI agents & more</p>
+                      <div className="flex items-center gap-1 text-[11px] text-glow-accent mt-2 font-medium">
+                        Explore <ArrowRight className="w-3 h-3"/>
+                      </div>
+                    </Link>
+
+                    {/* Quick transaction */}
+                    <div className="p-4 bg-glow-card border border-glow-border rounded-2xl">
+                      <div className="flex items-center gap-1.5 mb-2.5 text-glow-muted">
+                        <Coins className="w-3.5 h-3.5"/>
+                        <p className="text-xs font-semibold uppercase tracking-wider">Quick transaction</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <button onClick={() => sendMessage('Check my wallet balance')}
+                          className="w-full flex items-center gap-2 text-left group">
+                          <Wallet className="w-3 h-3 text-glow-accent flex-shrink-0"/>
+                          <span className="text-xs text-glow-text group-hover:text-glow-accent-light transition-colors">Check my balance</span>
+                        </button>
+                        <button onClick={() => setInput('Send ')}
+                          className="w-full flex items-center gap-2 text-left group">
+                          <Send className="w-3 h-3 text-glow-accent flex-shrink-0"/>
+                          <span className="text-xs text-glow-text group-hover:text-glow-accent-light transition-colors">Send USDC to an address</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Suggested prompt */}
+                    <div className="p-4 bg-glow-card border border-glow-border rounded-2xl">
+                      <div className="flex items-center gap-1.5 mb-2.5 text-glow-muted">
+                        <Sparkles className="w-3.5 h-3.5"/>
+                        <p className="text-xs font-semibold uppercase tracking-wider">Suggested</p>
+                      </div>
+                      <button onClick={() => sendMessage(QUICK_PROMPTS[0].prompt)} className="text-left group block w-full">
+                        <p className="text-xs text-glow-text font-medium group-hover:text-glow-accent-light transition-colors">{QUICK_PROMPTS[0].label}</p>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {QUICK_PROMPTS.map(qp => (
+                      <button key={qp.label} onClick={() => sendMessage(qp.prompt)}
+                        className="flex items-center gap-2 p-2.5 bg-glow-surface border border-glow-border/60 rounded-xl hover:border-glow-accent/40 hover:bg-glow-accent/5 transition-all text-left group">
+                        <div className="w-6 h-6 rounded-lg bg-glow-accent/10 flex items-center justify-center flex-shrink-0">
+                          <qp.icon className="w-3 h-3 text-glow-accent"/>
+                        </div>
+                        <span className="text-[11px] text-glow-muted group-hover:text-glow-text transition-colors font-medium leading-tight">{qp.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : (
