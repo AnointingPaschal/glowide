@@ -174,6 +174,16 @@ export async function executeContractCall(opts: {
 }
 
 /** Simple transfer on Arc Testnet — same wallet dispatch as executeContractCall. */
+// Real Arc Testnet token decimals — needed to scale amounts correctly when
+// encoding an ERC-20 transfer() call (get this wrong and you send 1,000,000x
+// too much or too little).
+const TOKEN_DECIMALS: Record<string, number> = {
+  "0x3600000000000000000000000000000000000000": 6,  // USDC (ERC-20 interface)
+  "0x89b50855aa3be2f677cd6303cec089b5f319d72a": 6,   // EURC
+  "0xf0c4a4ce82a5746abaad9425360ab04fbba432bf": 8,   // cirBTC
+  "0xe9185f0c5f296ed1797aae4238d26ccabeadb86c": 6,   // USYC
+};
+
 export async function executeTransfer(opts: {
   to: string; amount: string; tokenAddress?: string;
 }): Promise<ExecResult> {
@@ -197,10 +207,26 @@ export async function executeTransfer(opts: {
   if (switchError) return { error: switchError };
 
   try {
+    if (opts.tokenAddress) {
+      // Real ERC-20 transfer: the transaction goes TO THE TOKEN CONTRACT,
+      // with the recipient and amount encoded in the calldata — not a plain
+      // value-transfer to the recipient (which would just move 0 native
+      // currency and never touch the token at all).
+      const decimals = TOKEN_DECIMALS[opts.tokenAddress.toLowerCase()] ?? 6;
+      const amountInt = BigInt(Math.round(parseFloat(opts.amount) * Math.pow(10, decimals)));
+      const data = await encodeCall("transfer(address,uint256)", [opts.to, amountInt]);
+      const txHash = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from: wallet.address, to: opts.tokenAddress, data }],
+      }) as string;
+      return { txHash };
+    }
+
+    // No token address — genuine native-currency transfer
     const valueHex = "0x" + BigInt(Math.floor(parseFloat(opts.amount) * 1e18)).toString(16);
     const txHash = await provider.request({
       method: "eth_sendTransaction",
-      params: [{ from: wallet.address, to: opts.to, value: opts.tokenAddress ? "0x0" : valueHex }],
+      params: [{ from: wallet.address, to: opts.to, value: valueHex }],
     }) as string;
     return { txHash };
   } catch (e) { return { error: (e as Error).message }; }

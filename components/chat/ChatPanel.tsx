@@ -55,6 +55,27 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
     window.addEventListener("glowide:ai-prefill", handler);
     return () => window.removeEventListener("glowide:ai-prefill", handler);
   }, []);
+
+  // Load chat history from DB when wallet connects — same sync the main
+  // /chat page uses, so history is consistent across devices for a given wallet.
+  useEffect(() => {
+    if (!address) return;
+    fetch(`/api/chat/sessions?wallet=${address}`)
+      .then(r => r.json())
+      .then(({ sessions: dbSessions }) => {
+        if (!dbSessions?.length) return;
+        const store = useChatStore.getState();
+        const existingIds = new Set(store.sessions.map((s: {id:string}) => s.id));
+        const newSessions = dbSessions.filter((s: {id:string}) => !existingIds.has(s.id));
+        if (newSessions.length) {
+          useChatStore.setState(state => ({
+            sessions: [...newSessions, ...state.sessions].sort((a,b) =>
+              new Date(b.updated_at||0).getTime() - new Date(a.updated_at||0).getTime()
+            ),
+          }));
+        }
+      }).catch(() => {});
+  }, [address]);
   const [models, setModels] = useState<PublicModel[]>([]);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -289,6 +310,18 @@ export function ChatPanel({ compact = false, editorMode = false }: { compact?: b
           content: JSON.stringify({ __toolCall: json.toolCall }),
           session_id: sessionId!,
         });
+      }
+
+      // Save session to DB after AI responds — keeps chat history consistent
+      // across devices for whichever wallet is connected.
+      if (address) {
+        const savedSession = useChatStore.getState().sessions.find(s => s.id === sessionId);
+        if (savedSession) {
+          fetch("/api/chat/sessions", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session: savedSession, wallet: address }),
+          }).catch(() => {});
+        }
       }
 
       // editorMode: detect code blocks and either apply immediately (if the

@@ -251,13 +251,31 @@ const TOOL_LABELS: Record<string, string> = {
   get_wallet_balance:      "Check Balance",
 };
 
+function Row({ label, value, mono }: { label:string; value:string; mono?:boolean }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-glow-muted/50 w-20 flex-shrink-0">{label}</span>
+      <span className={cn("text-glow-text break-all", mono && "font-mono")}>{value}</span>
+    </div>
+  );
+}
+
+interface TxResult {
+  success: boolean; message: string; txId?: string;
+  walletType?: "circle" | "metamask"; from?: string; to?: string;
+  amount?: string; token?: string; network?: string; timestamp?: string;
+}
+
+const ARC_EXPLORER = "https://testnet.arcscan.app";
+
 function TxConfirmCard({ toolCall, onExecute, onReject }:{
   toolCall: { id: string; name: string; args: Record<string, unknown> };
-  onExecute(r: { success: boolean; message: string; txId?: string }): void;
+  onExecute(r: TxResult): void;
   onReject(): void;
 }) {
   const [loading, setLoading] = React.useState(false);
-  const [result,  setResult]  = React.useState<{ success: boolean; message: string; txId?: string } | null>(null);
+  const [signingWith, setSigningWith] = React.useState<"circle"|"metamask"|null>(null);
+  const [result,  setResult]  = React.useState<TxResult | null>(null);
   const Icon   = TOOL_ICONS[toolCall.name] ?? Zap;
   const label  = TOOL_LABELS[toolCall.name] ?? toolCall.name;
 
@@ -266,6 +284,7 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
     try {
       const { name, args } = toolCall;
       const wallet = resolveActiveWallet();
+      setSigningWith(wallet?.type === "circle" ? "circle" : wallet?.type === "metamask" ? "metamask" : null);
 
       if (!wallet && name !== "circle_gateway_transfer" && name !== "circle_nanopayment") {
         throw new Error("No wallet connected — connect one in the Wallet tab, then approve this transaction.");
@@ -277,7 +296,12 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
           tokenAddress: TOKEN_ADDR[(args.token as string)?.toUpperCase()],
         });
         if (r.error) throw new Error(r.error);
-        const result = { success: true, message: r.txHash ? `✓ Sent — ${r.txHash.slice(0,16)}…` : "✓ Transfer sent", txId: r.txHash };
+        const result: TxResult = {
+          success: true, message: r.txHash ? `✓ Sent — ${r.txHash.slice(0,16)}…` : "✓ Transfer sent", txId: r.txHash,
+          walletType: wallet?.type as "circle"|"metamask"|undefined, from: wallet?.address,
+          to: args.to as string, amount: args.amount as string, token: (args.token as string)?.toUpperCase() ?? "USDC",
+          network: "Arc Testnet", timestamp: new Date().toISOString(),
+        };
         setResult(result); onExecute(result); setLoading(false); return;
       }
 
@@ -288,7 +312,11 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
           params: (args.abiParameters as Array<string|number>) ?? [],
         });
         if (r.error) throw new Error(r.error);
-        const result = { success: true, message: r.txHash ? `✓ Executed on-chain — ${r.txHash.slice(0,16)}…` : "✓ Transaction submitted", txId: r.txHash };
+        const result: TxResult = {
+          success: true, message: r.txHash ? `✓ Executed on-chain — ${r.txHash.slice(0,16)}…` : "✓ Transaction submitted", txId: r.txHash,
+          walletType: wallet?.type as "circle"|"metamask"|undefined, from: wallet?.address,
+          to: args.contractAddress as string, network: "Arc Testnet", timestamp: new Date().toISOString(),
+        };
         setResult(result); onExecute(result); setLoading(false); return;
       }
 
@@ -299,7 +327,12 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
           params: [args.amount as string, 0, args.destinationAddress as string, args.destinationAddress as string],
         });
         if (r.error) throw new Error(r.error);
-        const result = { success: true, message: r.txHash ? `✓ Bridging via CCTP — ${r.txHash.slice(0,16)}…` : "✓ Bridge transaction submitted", txId: r.txHash };
+        const result: TxResult = {
+          success: true, message: r.txHash ? `✓ Bridging via CCTP — ${r.txHash.slice(0,16)}…` : "✓ Bridge transaction submitted", txId: r.txHash,
+          walletType: wallet?.type as "circle"|"metamask"|undefined, from: wallet?.address,
+          to: args.destinationAddress as string, amount: args.amount as string, token: "USDC",
+          network: "Arc Testnet → " + ((args.destinationChain as string) ?? "destination chain"), timestamp: new Date().toISOString(),
+        };
         setResult(result); onExecute(result); setLoading(false); return;
       }
 
@@ -349,10 +382,31 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
   };
 
   if (result) return (
-    <div className={cn("flex items-start gap-2 p-3 rounded-xl border text-xs mt-2",
+    <div className={cn("mt-2 rounded-xl border overflow-hidden text-xs",
       result.success ? "bg-emerald-500/8 border-emerald-500/20" : "bg-red-500/8 border-red-500/20")}>
-      {result.success ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/> : <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0"/>}
-      <p className={result.success ? "text-emerald-400" : "text-red-400"}>{result.message}</p>
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
+        {result.success ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0"/> : <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0"/>}
+        <p className={cn("font-semibold", result.success ? "text-emerald-400" : "text-red-400")}>{result.success ? "Confirmed" : "Failed"}</p>
+      </div>
+      {result.success ? (
+        <div className="px-3 py-2.5 space-y-1.5">
+          {result.walletType && <Row label="Signed via" value={result.walletType === "circle" ? "Circle Developer Wallet" : "MetaMask"}/>}
+          {result.from   && <Row label="From" value={result.from} mono/>}
+          {result.to     && <Row label="To" value={result.to} mono/>}
+          {result.amount && <Row label="Amount" value={`${result.amount} ${result.token ?? ""}`.trim()}/>}
+          {result.network && <Row label="Network" value={result.network}/>}
+          {result.txId && <Row label="Transaction" value={result.txId} mono/>}
+          {result.timestamp && <Row label="Time" value={new Date(result.timestamp).toLocaleString()}/>}
+          {result.txId && (
+            <a href={`${ARC_EXPLORER}/tx/${result.txId}`} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 text-emerald-400 hover:underline pt-1">
+              <ExternalLink className="w-3 h-3"/>View on ArcScan
+            </a>
+          )}
+        </div>
+      ) : (
+        <p className="px-3 py-2.5 text-red-400/90">{result.message}</p>
+      )}
     </div>
   );
 
@@ -375,7 +429,9 @@ function TxConfirmCard({ toolCall, onExecute, onReject }:{
         <button onClick={execute} disabled={loading}
           className="flex-1 py-2 bg-glow-gradient text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-60">
           {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle className="w-4 h-4"/>}
-          Confirm
+          {loading
+            ? signingWith === "circle" ? "Signing via Circle…" : signingWith === "metamask" ? "Confirm in MetaMask…" : "Signing…"
+            : "Confirm"}
         </button>
         <button onClick={onReject} disabled={loading}
           className="px-4 py-2 bg-glow-card border border-glow-border text-glow-muted text-sm rounded-xl hover:border-red-500/30 hover:text-red-400">
