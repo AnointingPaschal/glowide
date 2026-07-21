@@ -6,6 +6,7 @@ import { useWalletStore } from "@/store/walletStore";
 import { useCircleStore } from "@/store/circleStore";
 import { useLocalWalletStore } from "@/store/localWalletStore";
 import { useActiveWalletStore } from "@/store/activeWalletStore";
+import { executeContractCall, executeTransfer } from "@/lib/walletExec";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import {
@@ -185,10 +186,6 @@ export default function DeFiPage() {
   const [treasury, setTreasury] = useState({ signers:"", threshold:"2", name:"" });
   const [tokenLogos, setTokenLogos] = useState<Record<string,string>>({});
 
-  // Password prompt for local self-custody wallet signing (never stored — asked fresh each time)
-  const [pwPrompt, setPwPrompt] = useState<{ resolve:(pw:string|null)=>void } | null>(null);
-  const askPassword = () => new Promise<string|null>(resolve => setPwPrompt({ resolve }));
-
   // Fetch admin-uploaded token logos
   useEffect(() => {
     fetch("/api/admin/public-settings").then(r=>r.json()).then(d=>{
@@ -210,78 +207,6 @@ export default function DeFiPage() {
     null
   );
   const hasWallet = !!resolvedActive;
-
-  // ── Minimal ABI encoder for the handful of function signatures DeFi calls need ──
-  function encodeUint256(n: string | bigint): string { return BigInt(n).toString(16).padStart(64, "0"); }
-  function encodeAddress(addr: string): string { return addr.replace(/^0x/i, "").toLowerCase().padStart(64, "0"); }
-  const SELECTORS: Record<string,string> = {
-    "supply(address,uint256)":                       "f2b9fdb8",
-    "borrow(address,uint256)":                        "4b8a3529",
-    "repay(address,uint256)":                         "22867d78",
-    "withdraw(address,uint256)":                      "f3fef3a3",
-    "deposit(uint256)":                                "b6b55f25",
-    "createStream(address,address,uint256,uint256)":  "b61b6ce2",
-  };
-  function encodeCall(sig: string, params: Array<string|bigint>): string {
-    const selector = SELECTORS[sig];
-    if (!selector) throw new Error(`Unknown function signature: ${sig}`);
-    const types = sig.slice(sig.indexOf("(")+1, sig.lastIndexOf(")")).split(",");
-    const encoded = types.map((t, i) => t === "address" ? encodeAddress(String(params[i])) : encodeUint256(params[i])).join("");
-    return "0x" + selector + encoded;
-  }
-
-  // ── Universal contract-call dispatcher: signs with whichever wallet is active ──
-  async function executeContractCall(opts: { contractAddress: string; signature: string; params: Array<string|bigint>; blockchain?: string }): Promise<{ txHash?: string; error?: string }> {
-    if (!resolvedActive) return { error: "No wallet connected" };
-
-    if (resolvedActive.type === "circle") {
-      const res = await fetch("/api/circle/dev-wallet", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          action: "contract", walletId: resolvedActive.id, blockchain: opts.blockchain ?? "ETH-SEPOLIA",
-          contractAddress: opts.contractAddress,
-          abiFunctionSignature: opts.signature,
-          abiParameters: opts.params.map(p => typeof p === "bigint" ? p.toString() : p),
-        }),
-      });
-      const d = await res.json() as { id?: string; txHash?: string; error?: string };
-      if (d.error) return { error: d.error };
-      return { txHash: d.txHash ?? d.id };
-    }
-
-    const data = encodeCall(opts.signature, opts.params);
-
-    if (resolvedActive.type === "metamask") {
-      const provider = (window as Window & { ethereum?: { request: (a:{method:string; params?:unknown[]}) => Promise<unknown> } }).ethereum;
-      if (!provider) return { error: "No wallet provider found" };
-      try {
-        const txHash = await provider.request({
-          method: "eth_sendTransaction",
-          params: [{ from: address, to: opts.contractAddress, data }],
-        }) as string;
-        return { txHash };
-      } catch (e) { return { error: (e as Error).message }; }
-    }
-
-    if (resolvedActive.type === "local") {
-      const wallet = localWallet.wallets.find(w => w.id === resolvedActive.id);
-      if (!wallet) return { error: "Wallet not found" };
-      const password = await askPassword();
-      if (!password) return { error: "Signing cancelled" };
-      try {
-        const { ethers } = await import("ethers");
-        const decrypted = await ethers.Wallet.fromEncryptedJson(wallet.encryptedJson, password);
-        const provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");
-        const connected = decrypted.connect(provider);
-        const tx = await connected.sendTransaction({ to: opts.contractAddress, data });
-        return { txHash: tx.hash };
-      } catch (e) {
-        return { error: /password|invalid/i.test(String(e)) ? "Incorrect password" : (e as Error).message };
-      }
-    }
-
-    return { error: "Unsupported wallet type" };
-  }
 
   const USDC_ARC = "0x3600000000000000000000000000000000000000";
 
@@ -332,7 +257,6 @@ export default function DeFiPage() {
           contractAddress: LENDING_POOL,
           signature: lendMode === "supply" ? "supply(address,uint256)" : "borrow(address,uint256)",
           params: [tokenAddr, amtInt],
-          blockchain: "ARC-TESTNET",
         });
         if (error) throw new Error(error);
         toast.success(`✓ ${lendMode === "supply" ? "Supplied" : "Borrowed"} ${amount} ${selectedPool.asset} at ${lendMode === "supply" ? selectedPool.supplyAPY : selectedPool.borrowAPY}% APY${txHash ? ` — ${txHash.slice(0,10)}…` : ""}`);
@@ -372,7 +296,6 @@ export default function DeFiPage() {
           contractAddress: PAYMENT_STREAM,
           signature: "createStream(address,address,uint256,uint256)",
           params: [payStream.recipient, USDC_ARC, totalInt, BigInt(durationSec)],
-          blockchain: "ARC-TESTNET",
         });
         if (error) throw new Error(error);
         toast.success(`✓ Stream created on-chain: ${payStream.ratePerHr} USDC/hr × ${payStream.duration}h = ${totalAmt} USDC${txHash ? ` — ${txHash.slice(0,10)}…` : ""}`);
@@ -827,7 +750,6 @@ export default function DeFiPage() {
                       contractAddress: YIELD_VAULT,
                       signature: "deposit(uint256)",
                       params: [amtInt],
-                      blockchain: "ARC-TESTNET",
                     });
                     if (error) throw new Error(error);
                     toast.success(`✓ Deposited ${amount} USDC to yield vault${txHash ? ` — ${txHash.slice(0,10)}…` : ""}`);
@@ -896,34 +818,7 @@ export default function DeFiPage() {
             </div>
           </Modal>
         )}
-
-        {/* ── Password prompt for local self-custody wallet signing ────────── */}
-        {pwPrompt && <PasswordPromptModal onSubmit={(pw)=>{ pwPrompt.resolve(pw); setPwPrompt(null); }} onCancel={()=>{ pwPrompt.resolve(null); setPwPrompt(null); }}/>}
       </div>
     </AppLayout>
-  );
-}
-
-function PasswordPromptModal({ onSubmit, onCancel }: { onSubmit:(pw:string)=>void; onCancel:()=>void }) {
-  const [pw, setPw] = useState("");
-  return (
-    <div className="fixed inset-0 z-[60] bg-black/75 flex items-end justify-center" onClick={e=>{if(e.target===e.currentTarget) onCancel();}}>
-      <div className="w-full max-w-md bg-glow-card border-t border-glow-border rounded-t-3xl p-5 pb-10 space-y-4">
-        <div className="w-12 h-1.5 bg-glow-border rounded-full mx-auto mb-2"/>
-        <div className="flex items-center gap-2">
-          <Lock className="w-4 h-4 text-glow-accent"/>
-          <h3 className="text-base font-bold text-glow-text">Confirm Transaction</h3>
-        </div>
-        <p className="text-xs text-glow-muted">Enter your wallet password to sign this transaction. Nothing is stored — you'll be asked again next time.</p>
-        <input value={pw} onChange={e=>setPw(e.target.value)} type="password" autoFocus
-          onKeyDown={e=>{if(e.key==="Enter"&&pw) onSubmit(pw);}}
-          placeholder="Wallet password"
-          className="w-full bg-glow-surface border-2 border-glow-border rounded-2xl px-4 py-3 text-sm text-glow-text focus:outline-none focus:border-glow-accent/50"/>
-        <div className="flex gap-2">
-          <button onClick={onCancel} className="flex-1 py-3 bg-glow-surface border border-glow-border text-glow-muted font-semibold rounded-2xl">Cancel</button>
-          <button onClick={()=>pw && onSubmit(pw)} disabled={!pw} className="flex-1 py-3 bg-glow-gradient text-white font-bold rounded-2xl disabled:opacity-50">Sign & Send</button>
-        </div>
-      </div>
-    </div>
   );
 }
