@@ -14,7 +14,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 
-const ARC_RPC   = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+const ARC_RPC   = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 const USDC_ADDR = "0x3600000000000000000000000000000000000000";
 const TRANSFER_SIG = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 

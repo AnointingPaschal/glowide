@@ -23,7 +23,7 @@ import { requestPassword } from "@/store/passwordPromptStore";
 
 const ARC_CHAIN_ID = 5042002;
 const ARC_CHAIN_ID_HEX = "0x" + ARC_CHAIN_ID.toString(16);
-const ARC_RPC_URL = "https://rpc.testnet.arc.network";
+const ARC_RPC_URL = (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 const ARC_BLOCKCHAIN_LABEL = "ARC-TESTNET"; // Circle's naming convention for their API
 
 export type ResolvedWallet =

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 import { NextRequest, NextResponse } from "next/server";
 
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 
 async function rpcCall(method: string, params: unknown[]) {
   const res = await fetch(ARC_RPC, {

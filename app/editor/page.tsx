@@ -341,7 +341,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<__Preview__ />);
     const lang = ext==="sol"?"solidity":ext==="ts"?"typescript":ext==="json"?"json":"typescript";
     const defaults: Record<string,string> = {
       sol:`// SPDX-License-Identifier: MIT\npragma solidity ${solcVersion.startsWith("0.8")?"^0.8.20":"^"+solcVersion};\n\ncontract ${name.replace(".sol","")} {\n    \n}\n`,
-      ts:`import { ethers } from "ethers";\n\nconst provider = new ethers.JsonRpcProvider("https://rpc.testnet.arc.network");\n\nasync function main() {\n    \n}\n\nmain().catch(console.error);\n`,
+      ts:`import { ethers } from "ethers";\n\nconst provider = new ethers.JsonRpcProvider((process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network"));\n\nasync function main() {\n    \n}\n\nmain().catch(console.error);\n`,
       json:`{\n  "name": "my-project",\n  "version": "1.0.0"\n}\n`,
     };
     const id="new-"+Date.now();

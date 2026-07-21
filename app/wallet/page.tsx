@@ -73,7 +73,7 @@ const CHAIN_BG: Record<string,string> = {
   USYC:"#16a34a", MATIC:"#8247e5", AVAX:"#e84142", ARB:"#12aaff",
   BASE:"#0052ff", OP:"#ff0420", BNB:"#f3ba2f",
 };
-const ARC_RPC  = "https://rpc.testnet.arc.network";
+const ARC_RPC  = (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 const ARC_USDC = "0x3600000000000000000000000000000000000000";
 
 function shortAddr(a:string) { return a ? `${a.slice(0,6)}…${a.slice(-4)}` : "—"; }
@@ -1613,7 +1613,7 @@ export default function WalletPage() {
                 <h2 className="text-base font-bold text-glow-text">Networks</h2>
               </div>
               {[
-                {name:"Arc Testnet",   id:5042002, rpc:"https://rpc.testnet.arc.network",          active:true},
+                {name:"Arc Testnet",   id:5042002, rpc:(process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network"),          active:true},
                 {name:"Ethereum",      id:1,        rpc:"https://eth.llamarpc.com",                  active:false},
                 {name:"Base",          id:8453,     rpc:"https://mainnet.base.org",                  active:false},
                 {name:"Polygon",       id:137,      rpc:"https://polygon-rpc.com",                   active:false},

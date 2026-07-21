@@ -12,8 +12,8 @@ const arcTestnet = defineChain({
   name: "Arc Testnet",
   nativeCurrency: { decimals: 6, name: "USD Coin", symbol: "USDC" },
   rpcUrls: {
-    default: { http: [process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network"] },
-    public:  { http: [process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network"] },
+    default: { http: [process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network")] },
+    public:  { http: [process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network")] },
   },
   blockExplorers: {
     default: { name: "ArcScan", url: process.env.NEXT_PUBLIC_ARC_EXPLORER_URL ?? "https://testnet.arcscan.app" },

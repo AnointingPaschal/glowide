@@ -12,7 +12,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 
 const TOKENS = [
   { symbol: "USDC",   address: "0x3600000000000000000000000000000000000000", decimals: 6, name: "USD Coin"       },

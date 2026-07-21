@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-const ARC_RPC  = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+const ARC_RPC  = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 const CHAIN_ID = 5042002;
 const USDC_ARC = "0x3600000000000000000000000000000000000000";
 const TREASURY = "0xCca907AE079DB7638A4d2D3e82defaea5FBDF383";

@@ -177,7 +177,7 @@ export function WalletButton() {
         await p.request({ method: "wallet_addEthereumChain", params: [{
           chainId: ARC_HEX, chainName: "Arc Testnet",
           nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 6 },
-          rpcUrls: [process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network"],
+          rpcUrls: [process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network")],
           blockExplorerUrls: ["https://testnet.arcscan.app"],
         }] });
       }

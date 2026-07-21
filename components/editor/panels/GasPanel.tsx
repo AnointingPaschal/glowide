@@ -11,7 +11,7 @@ interface GasEstimate {
   error?:  string;
 }
 
-const ARC_RPC = "https://rpc.testnet.arc.network";
+const ARC_RPC = (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 
 // Minimal ABI encoder — builds real calldata (zero-value args) so
 // eth_estimateGas gets an actual function call to estimate, not a guess.

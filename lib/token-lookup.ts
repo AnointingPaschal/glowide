@@ -24,7 +24,7 @@ const arcTestnet: Chain = {
   id: 5042002,
   name: "Arc Testnet",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } },
+  rpcUrls: { default: { http: [(process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network")] } },
 };
 
 // ── Network ID → viem chain mapping ──────────────────────────────────────────

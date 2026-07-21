@@ -28,7 +28,7 @@ interface TestResult { name: string; passed: boolean; message?: string; gas?: nu
 
 interface EthProvider { request:(a:{method:string;params?:unknown[]})=>Promise<unknown>; }
 
-const ARC_RPC = "https://rpc.testnet.arc.network";
+const ARC_RPC = (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 
 export function UnitTestPanel() {
   const { tabs, activeTabId } = useEditorStore();

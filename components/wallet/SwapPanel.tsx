@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { CIRCLE_ASSETS, ARC_CONTRACTS } from "@/lib/circle-chains";
 import toast from "react-hot-toast";
 
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 
 // ── ERC-20 selectors ──────────────────────────────────────────────────────────
 // approve(address,uint256) = 0x095ea7b3

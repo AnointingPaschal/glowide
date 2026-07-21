@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 const TREASURY_ABI = [
   { type:"function", name:"stats",          inputs:[], outputs:[{name:"bal",type:"uint256"},{name:"received",type:"uint256"},{name:"withdrawn",type:"uint256"},{name:"txCount",type:"uint256"}], stateMutability:"view" },
   { type:"function", name:"getTransactions",inputs:[{name:"offset",type:"uint256"},{name:"limit",type:"uint256"}], outputs:[{name:"records",type:"tuple[]",components:[{name:"from",type:"address"},{name:"amount",type:"uint256"},{name:"feeType",type:"string"},{name:"timestamp",type:"uint256"}]},{name:"total",type:"uint256"}], stateMutability:"view" },

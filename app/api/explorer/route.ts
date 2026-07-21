@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { NETWORKS } from "@/lib/circle-chains";
 
 const DEFAULT_NET = NETWORKS.find(n => n.id === "arc-testnet")!;
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 
 async function blockscout(apiBase: string, path: string): Promise<unknown> {
   const res = await fetch(`${apiBase}${path}`, {

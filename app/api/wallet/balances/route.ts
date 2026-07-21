@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL || "https://rpc.testnet.arc.network";
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC_URL || (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 
 export async function GET(req: NextRequest) {
   try {

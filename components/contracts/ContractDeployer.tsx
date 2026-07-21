@@ -17,7 +17,7 @@ interface EthProvider { request:(a:{method:string;params?:unknown[]})=>Promise<u
 interface AbiInput    { name:string; type:string; internalType?:string; }
 interface AbiItem     { type:string; inputs?:AbiInput[]; stateMutability?:string; name?:string; }
 
-const ARC_RPC      = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+const ARC_RPC      = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? (process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network");
 const ARC_CHAIN_ID = 5042002;
 
 // ── RPC helpers ───────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ export function ContractDeployer({ compiled }: { compiled: CompileOutput|null })
     } catch {
       await provider.request({ method:"wallet_addEthereumChain", params:[{
         chainId: hexId, chainName:"Arc Testnet",
-        rpcUrls:["https://rpc.testnet.arc.network"],
+        rpcUrls:[(process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network")],
         nativeCurrency:{name:"USDC",symbol:"USDC",decimals:18},
         blockExplorerUrls:["https://testnet.arcscan.app"],
       }]}).catch(()=>{});
