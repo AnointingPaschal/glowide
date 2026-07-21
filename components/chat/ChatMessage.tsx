@@ -382,6 +382,8 @@ interface TxHistoryItem {
   timestamp: string; status: string;
 }
 
+interface BalanceItem { symbol: string; name: string; amount: string; isNative?: boolean; }
+
 interface TxResult {
   success: boolean; message: string; txId?: string;
   walletType?: "local" | "circle" | "metamask"; from?: string; to?: string;
@@ -389,6 +391,9 @@ interface TxResult {
   // for history display
   resultType?: "history" | "balance";
   transactions?: TxHistoryItem[];
+  // for balance display
+  balanceItems?: BalanceItem[];
+  filterToken?: string; // set when user asked for a specific token
 }
 
 const ARC_EXPLORER = ARC_SCAN; // legacy alias
@@ -399,6 +404,7 @@ const ARC_EXPLORER = ARC_SCAN; // legacy alias
 function TxResultCard({ result, onRetry, onCancel }: { result: TxResult; onRetry?: () => void; onCancel?: () => void }) {
   const title = !result.success ? "Transaction Failed"
     : result.resultType === "history" ? "Transaction History"
+    : result.resultType === "balance" && result.filterToken ? `${result.filterToken} Balance`
     : result.resultType === "balance" ? "Wallet Balance"
     : result.txId ? "Transaction Confirmed"
     : "Done";
@@ -418,6 +424,53 @@ function TxResultCard({ result, onRetry, onCancel }: { result: TxResult; onRetry
       {result.success ? (
         <div className="px-4 py-3 space-y-2">
           {/* Transaction history list */}
+          {/* ── Balance display ── */}
+          {result.resultType === "balance" && result.balanceItems !== undefined && (
+            <div className="px-4 py-3">
+              <p className="text-[10px] text-glow-muted/60 mb-3 font-mono">
+                {result.from ? `${result.from.slice(0,8)}…${result.from.slice(-6)}` : ""} · Arc Testnet
+              </p>
+
+              {result.filterToken ? (
+                /* Single token requested — show it prominently */
+                <div className="text-center py-2">
+                  {result.balanceItems.length > 0 ? result.balanceItems.map(b => (
+                    <div key={b.symbol}>
+                      <p className="text-3xl font-bold text-glow-text tabular-nums">
+                        {b.amount}
+                      </p>
+                      <p className="text-base font-semibold text-glow-accent-light mt-1">{b.symbol}</p>
+                      <p className="text-[11px] text-glow-muted/70 mt-0.5">{b.name}</p>
+                    </div>
+                  )) : (
+                    <div>
+                      <p className="text-3xl font-bold text-glow-muted/50">0.00</p>
+                      <p className="text-base font-semibold text-glow-accent-light mt-1">{result.filterToken}</p>
+                      <p className="text-[11px] text-glow-muted/50 mt-0.5">No balance on Arc Testnet</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* All tokens — show as clean rows */
+                result.balanceItems.length === 0 ? (
+                  <p className="text-xs text-glow-muted/60 text-center py-2">All balances are 0 on Arc Testnet</p>
+                ) : (
+                  <div className="space-y-0">
+                    {result.balanceItems.map((b, i) => (
+                      <div key={b.symbol + i} className={cn("flex items-center justify-between py-2", i > 0 && "border-t border-glow-border/25")}>
+                        <div>
+                          <p className="text-xs font-semibold text-glow-text">{b.symbol}</p>
+                          <p className="text-[10px] text-glow-muted/60 mt-0.5">{b.name}</p>
+                        </div>
+                        <p className="text-sm font-bold text-glow-text tabular-nums">{b.amount}</p>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
           {result.resultType === "history" && result.transactions && (
             <>
               <p className="text-[10px] text-glow-muted/60 mb-1.5">{result.message}</p>
@@ -454,7 +507,7 @@ function TxResultCard({ result, onRetry, onCancel }: { result: TxResult; onRetry
           )}
 
           {/* Normal result / balance / tx confirmation */}
-          {result.resultType !== "history" && (
+          {result.resultType !== "history" && result.resultType !== "balance" && (
             <>
               {result.amount && !result.message.includes('\n') && (
                 <div className="text-center py-2 mb-1">
@@ -649,31 +702,55 @@ function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
       if (name === "get_wallet_balance") {
         const addr = wallet?.address;
         if (!addr) {
-          const r = { success: true, message: "No wallet connected — create or import one in the Wallet tab." };
+          const r: TxResult = { success: true, message: "No wallet connected — create or import one in the Wallet tab.", resultType: "balance", balanceItems: [] };
           setResult(r); onExecute(r); setLoading(false); return;
         }
+        // args.token is set by the AI when the user asks for a specific token
+        const filterToken = (args.token as string)?.toUpperCase().trim() || null;
         try {
           const res = await fetch(`/api/wallet/arc-balances?address=${addr}`);
           const d = await res.json() as {
             balances?: Record<string, { name: string; amount: string; decimals: number }>;
-            nativeGasUSDC?: string;
-            error?: string;
+            nativeGasUSDC?: string; error?: string;
           };
           if (d.error) throw new Error(d.error);
           const bals = d.balances ?? {};
-          const lines: string[] = [];
-          if (d.nativeGasUSDC && parseFloat(d.nativeGasUSDC) > 0)
-            lines.push(`USDC (native gas): ${parseFloat(d.nativeGasUSDC).toFixed(4)}`);
-          for (const [sym, b] of Object.entries(bals))
-            if (parseFloat(b.amount) > 0)
-              lines.push(`${sym}: ${parseFloat(b.amount).toFixed(sym === 'cirBTC' ? 6 : 2)}`);
-          const message = lines.length === 0
-            ? `Wallet: ${addr.slice(0,8)}…${addr.slice(-6)}\n\nAll balances are 0 on Arc Testnet.`
-            : `Wallet: ${addr.slice(0,8)}…${addr.slice(-6)}\n\n${lines.join('\n')}`;
-          const r = { success: true, message };
+
+          // Build structured list, filtering to the requested token if specified
+          const items: BalanceItem[] = [];
+
+          // Native USDC (gas)
+          const nativeVal = parseFloat(d.nativeGasUSDC ?? "0");
+          if ((!filterToken || filterToken === "USDC") && nativeVal > 0) {
+            items.push({ symbol: "USDC", name: "USD Coin (native gas)", amount: nativeVal.toFixed(4), isNative: true });
+          }
+
+          // ERC-20 tokens
+          for (const [sym, b] of Object.entries(bals)) {
+            const symUp = sym.toUpperCase();
+            if (filterToken && filterToken !== symUp) continue;
+            const val = parseFloat(b.amount);
+            // Always include the requested token even if 0, include others only if > 0
+            if (filterToken || val > 0) {
+              items.push({ symbol: sym, name: b.name, amount: val.toFixed(sym === "cirBTC" ? 6 : 2) });
+            }
+          }
+
+          // If user asked for a specific token but it wasn't in the response, show 0
+          if (filterToken && items.length === 0) {
+            items.push({ symbol: filterToken, name: filterToken, amount: "0.00" });
+          }
+
+          const r: TxResult = {
+            success: true,
+            message: filterToken ? `${filterToken} Balance` : "All Balances",
+            resultType: "balance", from: addr,
+            balanceItems: items,
+            filterToken: filterToken ?? undefined,
+          };
           setResult(r); onExecute(r); setLoading(false); return;
         } catch {
-          const r = { success: true, message: `Wallet: ${addr.slice(0,8)}…${addr.slice(-6)}\n\nCouldn't fetch live balances — check the Wallet tab.` };
+          const r: TxResult = { success: true, message: `Couldn't fetch balances — check the Wallet tab.`, resultType: "balance", balanceItems: [] };
           setResult(r); onExecute(r); setLoading(false); return;
         }
       }
