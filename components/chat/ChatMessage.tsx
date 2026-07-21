@@ -578,17 +578,11 @@ function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
   // Persist the final result into the actual message (and sync to DB) so
   // reloading the chat never reverts back to showing Confirm again — that
   // would risk the user accidentally re-sending the same transaction.
+  // Still update the in-memory message so the result card shows correctly
+  // within the current session. No DB sync since sessions are ephemeral.
   const persistResult = (r: TxResult) => {
     if (messageId && sessionId) {
       useChatStore.getState().updateMessage(sessionId, messageId, JSON.stringify({ __txResult: r }));
-      const session = useChatStore.getState().sessions.find(s => s.id === sessionId);
-      const wallet = resolveActiveWallet();
-      if (session && wallet?.address) {
-        fetch("/api/chat/sessions", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session, wallet: wallet.address }),
-        }).catch(() => {});
-      }
     }
   };
 
@@ -719,18 +713,33 @@ function TxConfirmCard({ toolCall, onExecute, onReject, messageId, sessionId }:{
           // Build structured list, filtering to the requested token if specified
           const items: BalanceItem[] = [];
 
-          // Native USDC (gas)
-          const nativeVal = parseFloat(d.nativeGasUSDC ?? "0");
-          if ((!filterToken || filterToken === "USDC") && nativeVal > 0) {
-            items.push({ symbol: "USDC", name: "USD Coin (native gas)", amount: nativeVal.toFixed(4), isNative: true });
+          const nativeVal  = parseFloat(d.nativeGasUSDC ?? "0");
+          const usdcErc20  = parseFloat(bals["USDC"]?.amount ?? "0");
+
+          // USDC logic: native gas + ERC-20 are both USDC.
+          // When showing a single-token USDC view → sum them into one clear number.
+          // When showing all balances → show native gas separately so the user knows
+          // where their gas comes from, plus the ERC-20 balance.
+          if (filterToken === "USDC") {
+            const total = nativeVal + usdcErc20;
+            items.push({ symbol: "USDC", name: "USD Coin", amount: total.toFixed(2) });
+          } else {
+            // Show native gas USDC only if it has a value
+            if (nativeVal > 0) {
+              items.push({ symbol: "USDC", name: "USD Coin (native gas)", amount: nativeVal.toFixed(2), isNative: true });
+            }
+            // Show ERC-20 USDC only if different/non-zero (skip if identical to avoid confusion)
+            if (usdcErc20 > 0 && Math.abs(usdcErc20 - nativeVal) > 0.001) {
+              items.push({ symbol: "USDC", name: "USD Coin (ERC-20)", amount: usdcErc20.toFixed(2) });
+            }
           }
 
-          // ERC-20 tokens
+          // Other ERC-20 tokens (EURC, cirBTC, USYC)
           for (const [sym, b] of Object.entries(bals)) {
+            if (sym === "USDC") continue; // already handled above
             const symUp = sym.toUpperCase();
             if (filterToken && filterToken !== symUp) continue;
             const val = parseFloat(b.amount);
-            // Always include the requested token even if 0, include others only if > 0
             if (filterToken || val > 0) {
               items.push({ symbol: sym, name: b.name, amount: val.toFixed(sym === "cirBTC" ? 6 : 2) });
             }
